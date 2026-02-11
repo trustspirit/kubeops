@@ -62,9 +62,34 @@ export const deploymentColumns: ColumnDef<any>[] = [
 export const serviceColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
   nsCol,
-  { id: 'type', header: 'Type', cell: ({ row }) => row.original.spec?.type || '-' },
-  { id: 'clusterIP', header: 'Cluster IP', cell: ({ row }) => row.original.spec?.clusterIP || '-' },
-  { id: 'ports', header: 'Ports', cell: ({ row }) => (row.original.spec?.ports || []).map((p: any) => `${p.port}/${p.protocol}`).join(', ') || '-' },
+  { id: 'type', header: 'Type', cell: ({ row }) => {
+    const type = row.original.spec?.type || 'ClusterIP';
+    return <Badge variant={type === 'LoadBalancer' ? 'default' : type === 'NodePort' ? 'secondary' : 'outline'} className="text-xs font-mono">{type}</Badge>;
+  }},
+  { id: 'clusterIP', header: 'Cluster IP', cell: ({ row }) => <span className="font-mono text-xs">{row.original.spec?.clusterIP || '-'}</span> },
+  { id: 'externalIP', header: 'External IP', cell: ({ row }) => {
+    const svc = row.original;
+    const lbIngress = svc.status?.loadBalancer?.ingress;
+    if (lbIngress?.length) return <span className="font-mono text-xs">{lbIngress[0].hostname || lbIngress[0].ip || '-'}</span>;
+    const externalIPs = svc.spec?.externalIPs;
+    if (externalIPs?.length) return <span className="font-mono text-xs">{externalIPs.join(', ')}</span>;
+    return <span className="text-muted-foreground">-</span>;
+  }},
+  { id: 'ports', header: 'Ports', cell: ({ row }) => {
+    const ports = row.original.spec?.ports || [];
+    return <span className="font-mono text-xs">{ports.map((p: any) => {
+      let s = `${p.port}`;
+      if (p.nodePort) s += `:${p.nodePort}`;
+      s += `/${p.protocol || 'TCP'}`;
+      return s;
+    }).join(', ') || '-'}</span>;
+  }},
+  { id: 'selector', header: 'Selector', cell: ({ row }) => {
+    const sel = row.original.spec?.selector || {};
+    const entries = Object.entries(sel);
+    if (entries.length === 0) return <span className="text-muted-foreground">-</span>;
+    return <span className="text-xs font-mono truncate max-w-[200px] block">{entries.map(([k, v]) => `${k}=${v}`).join(', ')}</span>;
+  }},
   { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
 ];
 
@@ -119,8 +144,22 @@ export const cronjobColumns: ColumnDef<any>[] = [
 export const ingressColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
   nsCol,
-  { id: 'class', header: 'Class', cell: ({ row }) => row.original.spec?.ingressClassName || '-' },
-  { id: 'hosts', header: 'Hosts', cell: ({ row }) => (row.original.spec?.rules || []).map((r: any) => r.host).filter(Boolean).join(', ') || '*' },
+  { id: 'class', header: 'Class', cell: ({ row }) => row.original.spec?.ingressClassName || row.original.metadata?.annotations?.['kubernetes.io/ingress.class'] || '-' },
+  { id: 'hosts', header: 'Hosts', cell: ({ row }) => {
+    const hosts = (row.original.spec?.rules || []).map((r: any) => r.host).filter(Boolean);
+    return hosts.length > 0 ? <span className="font-mono text-xs">{hosts.join(', ')}</span> : '*';
+  }},
+  { id: 'loadBalancer', header: 'Load Balancer', cell: ({ row }) => {
+    const ingress = row.original.status?.loadBalancer?.ingress;
+    if (!ingress?.length) return <span className="text-muted-foreground">-</span>;
+    const addr = ingress[0].hostname || ingress[0].ip || '-';
+    return <span className="font-mono text-xs truncate max-w-[200px] block">{addr}</span>;
+  }},
+  { id: 'rules', header: 'Rules', cell: ({ row }) => {
+    const rules = row.original.spec?.rules || [];
+    const pathCount = rules.reduce((sum: number, r: any) => sum + (r.http?.paths?.length || 0), 0);
+    return `${rules.length} rules, ${pathCount} paths`;
+  }},
   { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
 ];
 
@@ -231,6 +270,30 @@ export const clusterrolebindingColumns: ColumnDef<any>[] = [
   { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
 ];
 
+export const endpointColumns: ColumnDef<any>[] = [
+  { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
+  { id: 'endpoints', header: 'Endpoints', cell: ({ row }) => {
+    const subsets = row.original.subsets || [];
+    const addrs: string[] = [];
+    for (const s of subsets) {
+      const ports = (s.ports || []).map((p: any) => p.port);
+      for (const a of s.addresses || []) {
+        if (ports.length > 0) {
+          for (const port of ports) addrs.push(`${a.ip}:${port}`);
+        } else {
+          addrs.push(a.ip);
+        }
+      }
+    }
+    if (addrs.length === 0) return <span className="text-muted-foreground">None</span>;
+    const display = addrs.slice(0, 5).join(', ');
+    const more = addrs.length > 5 ? ` +${addrs.length - 5} more` : '';
+    return <span className="font-mono text-xs">{display}{more && <span className="text-muted-foreground">{more}</span>}</span>;
+  }},
+  { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
+];
+
 export const COLUMN_MAP: Record<string, ColumnDef<any>[]> = {
   pods: podColumns,
   deployments: deploymentColumns,
@@ -253,4 +316,5 @@ export const COLUMN_MAP: Record<string, ColumnDef<any>[]> = {
   pvs: pvColumns,
   clusterroles: clusterroleColumns,
   clusterrolebindings: clusterrolebindingColumns,
+  endpoints: endpointColumns,
 };

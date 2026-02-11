@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter, usePathname } from 'next/navigation';
 import { useNamespaces } from '@/hooks/use-namespaces';
 import { useNamespaceStore } from '@/stores/namespace-store';
@@ -24,6 +24,8 @@ export function NamespaceSelector() {
   const { setActiveNamespace, getActiveNamespace } = useNamespaceStore();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   const activeNamespace = decodedClusterId ? getActiveNamespace(decodedClusterId) : ALL_NAMESPACES;
 
@@ -40,17 +42,17 @@ export function NamespaceSelector() {
 
   if (!clusterId) return null;
 
-  const nsNames = new Set(namespaces.map((ns: { name: string }) => ns.name));
+  const nsNames = new Set<string>(namespaces.map((ns: { name: string }) => ns.name));
   if (activeNamespace && activeNamespace !== ALL_NAMESPACES) nsNames.add(activeNamespace);
-  const nsList = Array.from(nsNames).sort();
+  const nsList: string[] = Array.from(nsNames).sort();
 
   const trimmedQuery = query.trim().toLowerCase();
   const filtered = trimmedQuery
-    ? nsList.filter((name) => name.toLowerCase().includes(trimmedQuery))
+    ? nsList.filter((name: string) => name.toLowerCase().includes(trimmedQuery))
     : nsList;
 
   // Show option to use the typed value directly if it's not in the list
-  const exactMatch = nsList.some((name) => name.toLowerCase() === trimmedQuery);
+  const exactMatch = nsList.some((name: string) => name.toLowerCase() === trimmedQuery);
   const showUseCustom = trimmedQuery && !exactMatch;
 
   const displayName = activeNamespace === ALL_NAMESPACES ? 'All Namespaces' : activeNamespace;
@@ -67,12 +69,9 @@ export function NamespaceSelector() {
             className="w-[180px] h-8 justify-between overflow-hidden"
           >
             <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-              {activeNamespace === ALL_NAMESPACES
-                ? <Layers className="h-3.5 w-3.5 shrink-0" />
-                : <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-              }
+              <Layers className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate text-sm">
-                {isLoading ? 'Loading...' : displayName}
+                {!mounted || isLoading ? 'Loading...' : displayName}
               </span>
             </div>
             <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />

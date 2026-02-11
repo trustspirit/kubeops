@@ -160,7 +160,21 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
         )}
 
         <TabsContent value="yaml" className="mt-4">
-          <YamlEditor data={resource} apiUrl={yamlApiUrl} onSaved={() => mutate()} />
+          <YamlEditor
+            data={resource}
+            apiUrl={yamlApiUrl}
+            onSaved={() => mutate()}
+            portForwardContext={
+              !clusterScoped && (resourceType === 'services' || resourceType === 'pods')
+                ? {
+                    clusterId: decodeURIComponent(clusterId),
+                    namespace,
+                    resourceType: resourceType === 'services' ? 'svc' : 'pod',
+                    resourceName: name,
+                  }
+                : undefined
+            }
+          />
         </TabsContent>
       </Tabs>
 

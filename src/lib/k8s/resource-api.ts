@@ -171,6 +171,14 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
     kind: 'Event',
     namespaced: true,
   },
+  endpoints: {
+    apiClass: 'CoreV1Api',
+    listFn: 'listNamespacedEndpoints',
+    listAllFn: 'listEndpointsForAllNamespaces',
+    getFn: 'readNamespacedEndpoints',
+    kind: 'Endpoints',
+    namespaced: true,
+  },
 };
 
 export const CLUSTER_SCOPED_RESOURCES: Record<string, ResourceConfig> = {

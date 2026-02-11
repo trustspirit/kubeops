@@ -21,6 +21,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 export const apiClient = {
   get: <T>(url: string) => request<T>(url),
   put: <T>(url: string, data: unknown) => request<T>(url, { method: 'PUT', body: JSON.stringify(data) }),
+  patch: <T>(url: string, data: unknown) => request<T>(url, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: <T>(url: string) => request<T>(url, { method: 'DELETE' }),
   post: <T>(url: string, data: unknown) => request<T>(url, { method: 'POST', body: JSON.stringify(data) }),
 };

@@ -5,7 +5,6 @@ import { cn } from '@/lib/utils';
 import { SIDEBAR_SECTIONS } from '@/lib/constants';
 import { useSidebarStore } from '@/stores/sidebar-store';
 import { useNamespaceStore } from '@/stores/namespace-store';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -36,7 +35,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'flex flex-col border-r bg-card transition-all duration-200',
+        'flex flex-col border-r bg-card transition-all duration-200 overflow-hidden',
         collapsed ? 'w-14' : 'w-56'
       )}
     >
@@ -45,7 +44,7 @@ export function Sidebar() {
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </Button>
       </div>
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto min-h-0 scrollbar-thin">
         <nav className="flex flex-col gap-1 px-2 pb-4">
           {SIDEBAR_SECTIONS.map((section) => (
             <div key={section.title} className="mb-2">
@@ -79,7 +78,7 @@ export function Sidebar() {
             </div>
           ))}
         </nav>
-      </ScrollArea>
+      </div>
     </aside>
   );
 }

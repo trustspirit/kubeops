@@ -2,6 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
+import { useResourceList } from '@/hooks/use-resource-list';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
 import { ErrorDisplay } from '@/components/shared/error-display';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -11,11 +12,15 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { AgeDisplay } from '@/components/shared/age-display';
 import { ScaleDialog } from '@/components/resources/scale-dialog';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
-import { ArrowLeft, Trash2, Scaling } from 'lucide-react';
+import { YamlEditor } from '@/components/shared/yaml-editor';
+import { PodMetricsCharts } from '@/components/shared/metrics-charts';
+import { ArrowLeft, Trash2, Scaling, Terminal, ScrollText, RotateCcw } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useState } from 'react';
-import * as yaml from 'js-yaml';
+import Link from 'next/link';
+import { usePanelStore } from '@/stores/panel-store';
+import { PortForwardBtn } from '@/components/shared/port-forward-btn';
 
 export default function StatefulSetDetailPage() {
   const params = useParams();
@@ -26,12 +31,23 @@ export default function StatefulSetDetailPage() {
   const [scaleOpen, setScaleOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const { addTab } = usePanelStore();
+
+  const decodedClusterId = decodeURIComponent(clusterId);
 
   const { data: sts, error, isLoading, mutate } = useResourceDetail({
-    clusterId: decodeURIComponent(clusterId),
+    clusterId: decodedClusterId,
     namespace,
     resourceType: 'statefulsets',
     name,
+  });
+
+  // Get pods belonging to this statefulset
+  const { data: podsData } = useResourceList({
+    clusterId: decodedClusterId,
+    namespace,
+    resourceType: 'pods',
   });
 
   if (isLoading) return <LoadingSkeleton />;
@@ -42,6 +58,25 @@ export default function StatefulSetDetailPage() {
   const spec = sts.spec || {};
   const status = sts.status || {};
   const labels = metadata.labels || {};
+
+  // Filter pods by statefulset ownership
+  const stsPods = (podsData?.items || []).filter((p: any) =>
+    p.metadata?.ownerReferences?.some((ref: any) => ref.kind === 'StatefulSet' && ref.name === name)
+    || p.metadata?.name?.startsWith(`${name}-`)
+  );
+
+  const handleRestart = async () => {
+    setRestarting(true);
+    try {
+      await apiClient.patch(`/api/clusters/${clusterId}/resources/${namespace}/statefulsets/${name}`, {
+        spec: { template: { metadata: { annotations: { 'kubectl.kubernetes.io/restartedAt': new Date().toISOString() } } } }
+      });
+      toast.success(`${name} restarting...`);
+      mutate();
+    } catch (err: any) {
+      toast.error(`Restart failed: ${err.message}`);
+    } finally { setRestarting(false); }
+  };
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -71,6 +106,10 @@ export default function StatefulSetDetailPage() {
           <p className="text-sm text-muted-foreground">StatefulSet in {namespace} - Ready: {status.readyReplicas || 0}/{spec.replicas || 0}</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleRestart} disabled={restarting}>
+            <RotateCcw className={`h-4 w-4 mr-1 ${restarting ? 'animate-spin' : ''}`} />
+            {restarting ? 'Restarting...' : 'Restart'}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setScaleOpen(true)}>
             <Scaling className="h-4 w-4 mr-1" />
             Scale
@@ -87,6 +126,7 @@ export default function StatefulSetDetailPage() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="yaml">YAML</TabsTrigger>
         </TabsList>
+
         <TabsContent value="overview" className="space-y-4 mt-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-3">
@@ -113,15 +153,128 @@ export default function StatefulSetDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Pod Metrics */}
+          {stsPods.length > 0 && (
+            <PodMetricsCharts
+              clusterId={decodedClusterId}
+              namespace={namespace}
+              podName={stsPods[0].metadata?.name}
+              nodeName={stsPods[0].spec?.nodeName}
+            />
+          )}
+
+          {/* Containers & Ports */}
+          {(spec.template?.spec?.containers || []).length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">Containers</h3>
+              {(spec.template?.spec?.containers || []).map((ctr: any, idx: number) => (
+                <div key={idx} className="rounded-md border p-3 space-y-2 text-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold">{ctr.name}</span>
+                    <span className="font-mono text-xs text-muted-foreground break-all text-right max-w-[300px]">{ctr.image}</span>
+                  </div>
+                  {ctr.ports && ctr.ports.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {ctr.ports.map((p: any, pi: number) => (
+                        <div key={pi} className="inline-flex items-center gap-1.5">
+                          <Badge variant="outline" className="font-mono text-[11px] font-normal">
+                            {p.containerPort}/{p.protocol || 'TCP'}
+                            {p.name && <span className="text-muted-foreground ml-1">({p.name})</span>}
+                          </Badge>
+                          {stsPods.length > 0 && (
+                            <PortForwardBtn
+                              clusterId={decodedClusterId}
+                              namespace={namespace}
+                              resourceType="pod"
+                              resourceName={stsPods[0].metadata?.name}
+                              port={p.containerPort}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Pods */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold">Pods ({stsPods.length})</h3>
+            {stsPods.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No pods found for this StatefulSet.</p>
+            ) : (
+              <div className="rounded-md border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Name</th>
+                      <th className="px-3 py-2 text-left font-medium">Status</th>
+                      <th className="px-3 py-2 text-left font-medium">Restarts</th>
+                      <th className="px-3 py-2 text-left font-medium">Node</th>
+                      <th className="px-3 py-2 text-left font-medium">Age</th>
+                      <th className="px-3 py-2 text-left font-medium w-[80px]"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stsPods.map((pod: any) => {
+                      const pName = pod.metadata?.name;
+                      const pPhase = pod.metadata?.deletionTimestamp ? 'Terminating' : (pod.status?.phase || 'Unknown');
+                      const restarts = (pod.status?.containerStatuses || []).reduce((s: number, c: any) => s + (c.restartCount || 0), 0);
+                      const firstContainer = pod.spec?.containers?.[0]?.name;
+
+                      return (
+                        <tr key={pName} className="border-t hover:bg-muted/30">
+                          <td className="px-3 py-2">
+                            <Link href={`/clusters/${clusterId}/namespaces/${namespace}/pods/${pName}`} className="text-primary hover:underline font-medium">
+                              {pName}
+                            </Link>
+                          </td>
+                          <td className="px-3 py-2"><StatusBadge status={pPhase} /></td>
+                          <td className="px-3 py-2">{restarts > 0 ? <span className="text-red-500 font-medium">{restarts}</span> : 0}</td>
+                          <td className="px-3 py-2 font-mono text-muted-foreground text-xs">{pod.spec?.nodeName?.split('.')[0] || '-'}</td>
+                          <td className="px-3 py-2"><AgeDisplay timestamp={pod.metadata?.creationTimestamp} /></td>
+                          <td className="px-3 py-2">
+                            <div className="flex gap-1">
+                              <Button variant="ghost" size="icon" className="h-7 w-7" title="Logs" onClick={() => firstContainer && addTab({ id: `logs-${pName}-${firstContainer}`, type: 'logs', title: `Logs: ${pName}`, clusterId, namespace, podName: pName, container: firstContainer })}>
+                                <ScrollText className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-7 w-7" title="Exec" onClick={() => firstContainer && addTab({ id: `exec-${pName}-${firstContainer}`, type: 'exec', title: `Exec: ${pName}`, clusterId, namespace, podName: pName, container: firstContainer })}>
+                                <Terminal className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" title="Delete Pod" onClick={async () => {
+                                if (!confirm(`Delete pod ${pName}?`)) return;
+                                try {
+                                  await apiClient.delete(`/api/clusters/${clusterId}/resources/${namespace}/pods/${pName}`);
+                                  toast.success(`${pName} deleted`);
+                                } catch (err: any) { toast.error(err.message); }
+                              }}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </TabsContent>
+
         <TabsContent value="yaml" className="mt-4">
-          <pre className="rounded-md border bg-muted p-4 overflow-auto max-h-[600px] text-xs font-mono whitespace-pre">
-            {yaml.dump(sts, { lineWidth: -1 })}
-          </pre>
+          <YamlEditor
+            data={sts}
+            apiUrl={`/api/clusters/${clusterId}/resources/${namespace}/statefulsets/${name}`}
+            onSaved={() => mutate()}
+          />
         </TabsContent>
       </Tabs>
 
-      <ScaleDialog open={scaleOpen} onOpenChange={setScaleOpen} clusterId={decodeURIComponent(clusterId)} namespace={namespace} resourceType="statefulsets" name={name} currentReplicas={spec.replicas || 0} onScaled={() => mutate()} />
+      <ScaleDialog open={scaleOpen} onOpenChange={setScaleOpen} clusterId={decodedClusterId} namespace={namespace} resourceType="statefulsets" name={name} currentReplicas={spec.replicas || 0} onScaled={() => mutate()} />
       <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title={`Delete ${name}?`} description={`This will permanently delete the statefulset "${name}".`} confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} loading={deleting} />
     </div>
   );

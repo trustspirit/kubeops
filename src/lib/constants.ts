@@ -20,6 +20,7 @@ import {
   Link,
   FolderClosed,
   CalendarClock,
+  Plug,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -63,7 +64,9 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
     items: [
       { label: 'Services', resourceType: 'services', icon: Network },
       { label: 'Ingresses', resourceType: 'ingresses', icon: Globe },
+      { label: 'Endpoints', resourceType: 'endpoints', icon: Link },
       { label: 'Network Policies', resourceType: 'networkpolicies', icon: ShieldAlert },
+      { label: 'Port Forwarding', resourceType: 'port-forwarding', icon: Plug, clusterScoped: true },
     ],
   },
   {
@@ -117,4 +120,5 @@ export const RESOURCE_LABELS: Record<string, string> = {
   pvs: 'Persistent Volumes',
   clusterroles: 'Cluster Roles',
   clusterrolebindings: 'Cluster Role Bindings',
+  endpoints: 'Endpoints',
 };

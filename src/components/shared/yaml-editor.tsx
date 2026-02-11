@@ -1,26 +1,130 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, createContext, useContext } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Save, RotateCcw, Pencil, Table2, Code, ChevronRight, ChevronDown } from 'lucide-react';
+import { Save, RotateCcw, Pencil, Table2, Code, ChevronRight, ChevronDown, Plug, ExternalLink, X } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import * as yaml from 'js-yaml';
+import useSWR, { mutate as globalMutate } from 'swr';
+
+// === Types ===
+
+interface PortForwardContext {
+  clusterId: string;
+  namespace: string;
+  resourceType: string;
+  resourceName: string;
+}
 
 interface YamlEditorProps {
   data: any;
   apiUrl: string;
   onSaved?: () => void;
+  portForwardContext?: PortForwardContext;
+}
+
+interface PortForward {
+  id: string;
+  localPort: number;
+  containerPort: number;
+  status: string;
+}
+
+// Context for port forward info
+const PFContext = createContext<PortForwardContext | null>(null);
+
+// === Port Forward Button ===
+
+function PortForwardButton({ containerPort }: { containerPort: number }) {
+  const ctx = useContext(PFContext);
+  const { data: pfData } = useSWR('/api/port-forward', { refreshInterval: 3000 });
+  const [starting, setStarting] = useState(false);
+
+  if (!ctx) return null;
+
+  const forwards: PortForward[] = pfData?.forwards || [];
+  const active = forwards.find(
+    f => f.containerPort === containerPort && f.id.includes(ctx.resourceName)
+  );
+
+  const startForward = async () => {
+    setStarting(true);
+    try {
+      await apiClient.post('/api/port-forward', {
+        clusterId: ctx.clusterId,
+        namespace: ctx.namespace,
+        resourceType: ctx.resourceType,
+        resourceName: ctx.resourceName,
+        containerPort,
+        localPort: containerPort,
+      });
+      globalMutate('/api/port-forward');
+      toast.success(`Forwarding localhost:${containerPort} → ${containerPort}`);
+    } catch (err: any) {
+      toast.error(`Port forward failed: ${err.message}`);
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const stopForward = async () => {
+    if (!active) return;
+    try {
+      await apiClient.delete(`/api/port-forward?id=${encodeURIComponent(active.id)}`);
+      globalMutate('/api/port-forward');
+      toast.success('Port forward stopped');
+    } catch { /* ignore */ }
+  };
+
+  if (active) {
+    return (
+      <span className="inline-flex items-center gap-1 ml-2">
+        <a
+          href={`http://localhost:${active.localPort}`}
+          target="_blank"
+          rel="noopener"
+          className="inline-flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400 hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ExternalLink className="h-3 w-3" />
+          :{active.localPort}
+        </a>
+        <button onClick={stopForward} className="text-muted-foreground hover:text-destructive p-0.5">
+          <X className="h-3 w-3" />
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      onClick={startForward}
+      disabled={starting}
+      className="inline-flex items-center gap-1 ml-2 text-[10px] text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+    >
+      <Plug className="h-3 w-3" />
+      {starting ? 'Starting...' : 'Forward'}
+    </button>
+  );
 }
 
 // === Table View Components ===
 
-function ValueDisplay({ value }: { value: any }) {
+function ValueDisplay({ value, fieldKey }: { value: any; fieldKey?: string }) {
   if (value === null || value === undefined) return <span className="text-muted-foreground italic">null</span>;
   if (typeof value === 'boolean') return <Badge variant={value ? 'default' : 'secondary'} className="text-xs font-mono">{String(value)}</Badge>;
-  if (typeof value === 'number') return <span className="font-mono text-blue-600 dark:text-blue-400">{value}</span>;
+  if (typeof value === 'number') {
+    const isPort = fieldKey && (fieldKey === 'containerPort' || fieldKey === 'port' || fieldKey === 'targetPort');
+    return (
+      <span className="font-mono text-blue-600 dark:text-blue-400">
+        {value}
+        {isPort && <PortForwardButton containerPort={value} />}
+      </span>
+    );
+  }
   if (typeof value === 'string') {
     if (value.length > 120) return <span className="font-mono text-xs break-all">{value.substring(0, 120)}...</span>;
     return <span className="font-mono text-xs break-all">{value}</span>;
@@ -35,7 +139,6 @@ function ObjectTable({ data, depth = 0 }: { data: any; depth?: number }) {
 
   if (Array.isArray(data)) {
     if (data.length === 0) return <span className="text-muted-foreground italic text-xs">[]</span>;
-    // Simple arrays (strings, numbers)
     if (data.every(item => typeof item !== 'object')) {
       return (
         <div className="flex flex-wrap gap-1">
@@ -45,7 +148,6 @@ function ObjectTable({ data, depth = 0 }: { data: any; depth?: number }) {
         </div>
       );
     }
-    // Complex arrays
     return (
       <div className="space-y-2">
         {data.map((item, i) => (
@@ -66,7 +168,7 @@ function ObjectTable({ data, depth = 0 }: { data: any; depth?: number }) {
       <table className="w-full text-sm">
         <tbody>
           {entries.map(([key, value]) => {
-            const isObject = value && typeof value === 'object';
+            const isObject = value !== null && value !== undefined && typeof value === 'object';
             const isCollapsed = collapsed[key];
             const toggleKey = () => setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
 
@@ -76,7 +178,7 @@ function ObjectTable({ data, depth = 0 }: { data: any; depth?: number }) {
                   className={cn(
                     'py-1.5 pr-3 text-xs font-medium text-muted-foreground whitespace-nowrap',
                     depth === 0 ? 'w-[180px]' : 'w-[140px]',
-                    isObject && 'cursor-pointer hover:text-foreground select-none'
+                    isObject ? 'cursor-pointer hover:text-foreground select-none' : ''
                   )}
                   onClick={isObject ? toggleKey : undefined}
                 >
@@ -97,7 +199,7 @@ function ObjectTable({ data, depth = 0 }: { data: any; depth?: number }) {
                         </span>
                       : <ObjectTable data={value} depth={depth + 1} />
                   ) : (
-                    <ValueDisplay value={value} />
+                    <ValueDisplay value={value} fieldKey={key} />
                   )}
                 </td>
               </tr>
@@ -112,7 +214,6 @@ function ObjectTable({ data, depth = 0 }: { data: any; depth?: number }) {
 function ResourceTableView({ data }: { data: any }) {
   if (!data) return null;
 
-  // Organize K8s resource into logical sections
   const sections: { title: string; data: any; defaultOpen: boolean }[] = [];
 
   if (data.metadata) {
@@ -126,7 +227,6 @@ function ResourceTableView({ data }: { data: any }) {
   if (data.roleRef) sections.push({ title: 'Role Ref', data: data.roleRef, defaultOpen: true });
   if (data.subjects) sections.push({ title: 'Subjects', data: data.subjects, defaultOpen: true });
 
-  // Remaining top-level keys
   const handled = new Set(['apiVersion', 'kind', 'metadata', 'spec', 'status', 'data', 'rules', 'roleRef', 'subjects']);
   const remaining = Object.fromEntries(Object.entries(data).filter(([k]) => !handled.has(k)));
   if (Object.keys(remaining).length > 0) {
@@ -135,12 +235,10 @@ function ResourceTableView({ data }: { data: any }) {
 
   return (
     <div className="space-y-4">
-      {/* Kind & API Version header */}
       <div className="flex items-center gap-3">
         <Badge className="text-xs">{data.kind}</Badge>
         <span className="text-xs text-muted-foreground">{data.apiVersion}</span>
       </div>
-
       {sections.map((section) => (
         <SectionCard key={section.title} title={section.title} defaultOpen={section.defaultOpen}>
           <ObjectTable data={section.data} />
@@ -152,7 +250,6 @@ function ResourceTableView({ data }: { data: any }) {
 
 function SectionCard({ title, defaultOpen, children }: { title: string; defaultOpen: boolean; children: React.ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
-
   return (
     <div className="rounded-md border">
       <button
@@ -162,18 +259,43 @@ function SectionCard({ title, defaultOpen, children }: { title: string; defaultO
         {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         {title}
       </button>
-      {open && (
-        <div className="px-3 pb-3 pt-1">
-          {children}
-        </div>
-      )}
+      {open && <div className="px-3 pb-3 pt-1">{children}</div>}
+    </div>
+  );
+}
+
+// === Active Port Forwards Banner ===
+
+function ActiveForwardsBanner() {
+  const { data } = useSWR('/api/port-forward', { refreshInterval: 3000 });
+  const forwards: PortForward[] = data?.forwards || [];
+
+  if (forwards.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-3 rounded-md border border-green-500/30 bg-green-500/5 px-3 py-2">
+      <Plug className="h-4 w-4 text-green-500 shrink-0" />
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        {forwards.map(f => (
+          <a
+            key={f.id}
+            href={`http://localhost:${f.localPort}`}
+            target="_blank"
+            rel="noopener"
+            className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-green-700 dark:text-green-400 hover:underline"
+          >
+            <ExternalLink className="h-3 w-3" />
+            :{f.localPort} → {f.containerPort}
+          </a>
+        ))}
+      </div>
     </div>
   );
 }
 
 // === Main Component ===
 
-export function YamlEditor({ data, apiUrl, onSaved }: YamlEditorProps) {
+export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEditorProps) {
   const [mode, setMode] = useState<'table' | 'yaml' | 'edit'>('table');
   const [saving, setSaving] = useState(false);
   const [editValue, setEditValue] = useState('');
@@ -224,88 +346,92 @@ export function YamlEditor({ data, apiUrl, onSaved }: YamlEditorProps) {
   };
 
   return (
-    <div className="space-y-3">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2">
-        {mode === 'edit' ? (
-          <>
-            <Button size="sm" onClick={handleSave} disabled={saving}>
-              <Save className="h-4 w-4 mr-1" />
-              {saving ? 'Saving...' : 'Apply'}
-            </Button>
-            <Button variant="outline" size="sm" onClick={cancelEditing} disabled={saving}>
-              <RotateCcw className="h-4 w-4 mr-1" />
-              Cancel
-            </Button>
-            <span className="text-xs text-muted-foreground ml-2">Cmd+S to save</span>
-          </>
-        ) : (
-          <>
-            <div className="flex rounded-md border overflow-hidden">
-              <button
-                className={cn('px-2.5 py-1 text-xs flex items-center gap-1 transition-colors', mode === 'table' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
-                onClick={() => setMode('table')}
-              >
-                <Table2 className="h-3 w-3" /> Table
-              </button>
-              <button
-                className={cn('px-2.5 py-1 text-xs flex items-center gap-1 border-l transition-colors', mode === 'yaml' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
-                onClick={() => setMode('yaml')}
-              >
-                <Code className="h-3 w-3" /> YAML
-              </button>
-            </div>
-            <Button variant="outline" size="sm" onClick={startEditing}>
-              <Pencil className="h-4 w-4 mr-1" />
-              Edit
-            </Button>
-          </>
+    <PFContext.Provider value={portForwardContext || null}>
+      <div className="space-y-3">
+        {/* Active forwards banner */}
+        <ActiveForwardsBanner />
+
+        {/* Toolbar */}
+        <div className="flex items-center gap-2">
+          {mode === 'edit' ? (
+            <>
+              <Button size="sm" onClick={handleSave} disabled={saving}>
+                <Save className="h-4 w-4 mr-1" />
+                {saving ? 'Saving...' : 'Apply'}
+              </Button>
+              <Button variant="outline" size="sm" onClick={cancelEditing} disabled={saving}>
+                <RotateCcw className="h-4 w-4 mr-1" />
+                Cancel
+              </Button>
+              <span className="text-xs text-muted-foreground ml-2">Cmd+S to save</span>
+            </>
+          ) : (
+            <>
+              <div className="flex rounded-md border overflow-hidden">
+                <button
+                  className={cn('px-2.5 py-1 text-xs flex items-center gap-1 transition-colors', mode === 'table' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
+                  onClick={() => setMode('table')}
+                >
+                  <Table2 className="h-3 w-3" /> Table
+                </button>
+                <button
+                  className={cn('px-2.5 py-1 text-xs flex items-center gap-1 border-l transition-colors', mode === 'yaml' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
+                  onClick={() => setMode('yaml')}
+                >
+                  <Code className="h-3 w-3" /> YAML
+                </button>
+              </div>
+              <Button variant="outline" size="sm" onClick={startEditing}>
+                <Pencil className="h-4 w-4 mr-1" />
+                Edit
+              </Button>
+            </>
+          )}
+        </div>
+
+        {yamlError && (
+          <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+            {yamlError}
+          </div>
+        )}
+
+        {mode === 'table' && <ResourceTableView data={data} />}
+
+        {mode === 'yaml' && (
+          <pre className="rounded-md border bg-muted p-4 overflow-auto min-h-[50vh] max-h-[75vh] text-xs font-mono whitespace-pre">
+            {yamlStr}
+          </pre>
+        )}
+
+        {mode === 'edit' && (
+          <textarea
+            ref={textareaRef}
+            value={editValue}
+            onChange={(e) => { setEditValue(e.target.value); setYamlError(null); }}
+            spellCheck={false}
+            className="w-full rounded-md border bg-[#1e1e2e] text-[#cdd6f4] p-4 font-mono text-xs leading-5 whitespace-pre resize-y min-h-[70vh] focus:outline-none focus:ring-2 focus:ring-ring"
+            style={{ tabSize: 2 }}
+            onKeyDown={(e) => {
+              if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = e.currentTarget.selectionStart;
+                const end = e.currentTarget.selectionEnd;
+                const val = e.currentTarget.value;
+                setEditValue(val.substring(0, start) + '  ' + val.substring(end));
+                requestAnimationFrame(() => {
+                  if (textareaRef.current) {
+                    textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 2;
+                  }
+                });
+              }
+              if (e.key === 's' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                handleSave();
+              }
+            }}
+          />
         )}
       </div>
-
-      {yamlError && (
-        <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
-          {yamlError}
-        </div>
-      )}
-
-      {/* Content */}
-      {mode === 'table' && <ResourceTableView data={data} />}
-
-      {mode === 'yaml' && (
-        <pre className="rounded-md border bg-muted p-4 overflow-auto min-h-[50vh] max-h-[75vh] text-xs font-mono whitespace-pre">
-          {yamlStr}
-        </pre>
-      )}
-
-      {mode === 'edit' && (
-        <textarea
-          ref={textareaRef}
-          value={editValue}
-          onChange={(e) => { setEditValue(e.target.value); setYamlError(null); }}
-          spellCheck={false}
-          className="w-full rounded-md border bg-[#1e1e2e] text-[#cdd6f4] p-4 font-mono text-xs leading-5 whitespace-pre resize-y min-h-[70vh] focus:outline-none focus:ring-2 focus:ring-ring"
-          style={{ tabSize: 2 }}
-          onKeyDown={(e) => {
-            if (e.key === 'Tab') {
-              e.preventDefault();
-              const start = e.currentTarget.selectionStart;
-              const end = e.currentTarget.selectionEnd;
-              const val = e.currentTarget.value;
-              setEditValue(val.substring(0, start) + '  ' + val.substring(end));
-              requestAnimationFrame(() => {
-                if (textareaRef.current) {
-                  textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 2;
-                }
-              });
-            }
-            if (e.key === 's' && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              handleSave();
-            }
-          }}
-        />
-      )}
-    </div>
+    </PFContext.Provider>
   );
 }
