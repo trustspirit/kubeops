@@ -21,14 +21,16 @@
 
 ## Download
 
-| Platform | Download |
-|----------|----------|
-| macOS (Apple Silicon) | [KubeOps-arm64.dmg](https://github.com/trustspirit/kubeops/releases/latest/download/KubeOps-arm64.dmg) |
-| macOS (Intel) | [KubeOps-x64.dmg](https://github.com/trustspirit/kubeops/releases/latest/download/KubeOps-x64.dmg) |
-| Linux | [KubeOps-linux.AppImage](https://github.com/trustspirit/kubeops/releases/latest/download/KubeOps-linux.AppImage) |
-| Windows | [KubeOps-Setup.exe](https://github.com/trustspirit/kubeops/releases/latest/download/KubeOps-Setup.exe) |
+Download the latest version for your platform from the **[Releases](https://github.com/trustspirit/kubeops/releases/latest)** page.
 
-> Links always point to the latest release. The app supports auto-update after installation.
+| Platform | File |
+|----------|------|
+| macOS (Apple Silicon) | `KubeOps-{version}-arm64.dmg` |
+| macOS (Intel) | `KubeOps-{version}-x64.dmg` |
+| Linux | `KubeOps-{version}.AppImage` |
+| Windows | `KubeOps-{version}.exe` |
+
+> The app supports auto-update after installation.
 
 ---
 
