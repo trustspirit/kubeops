@@ -12,9 +12,8 @@ export function Header() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
-    <header className="flex h-14 items-center justify-between border-b px-4 drag-region">
+    <header className="electron-header-inset flex h-14 items-center justify-between border-b px-4 drag-region">
       <div className="flex items-center gap-3 no-drag-region">
-        <div className="electron-spacer" />
         <h1 className="text-lg font-bold tracking-tight">KubeOps</h1>
         <ClusterSelector />
         <NamespaceSelector />

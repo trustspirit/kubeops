@@ -156,15 +156,9 @@
   -webkit-app-region: no-drag;
 }
 
-/* Electron traffic light spacer - hidden by default, shown only in Electron */
-.electron-spacer {
-  display: none;
-}
-
-:root.electron .electron-spacer {
-  display: block;
-  width: 76px;
-  flex-shrink: 0;
+/* Electron: push header content right to avoid traffic light overlap */
+:root.electron .electron-header-inset {
+  padding-left: 80px;
 }
 
 /* React Flow Controls - ensure icons are visible in both themes */

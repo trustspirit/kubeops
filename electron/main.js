@@ -1,5 +1,6 @@
-const { app, BrowserWindow, shell, Menu } = require('electron');
+const { app, BrowserWindow, shell, Menu, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const net = require('net');
 
 const isDev = !app.isPackaged;
@@ -8,6 +9,48 @@ const iconPath = path.join(__dirname, '..', 'resources', 'icon.png');
 
 let mainWindow = null;
 let serverProcess = null;
+
+// === Error Log ===
+const LOG_DIR = path.join(app.getPath('userData'), 'logs');
+const LOG_FILE = path.join(LOG_DIR, 'error.log');
+const MAX_LOG_SIZE = 5 * 1024 * 1024; // 5 MB
+
+function ensureLogDir() {
+  if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+}
+
+function rotateLogIfNeeded() {
+  try {
+    if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > MAX_LOG_SIZE) {
+      const old = LOG_FILE + '.old';
+      if (fs.existsSync(old)) fs.unlinkSync(old);
+      fs.renameSync(LOG_FILE, old);
+    }
+  } catch { /* ignore rotation errors */ }
+}
+
+function writeErrorLog(source, err) {
+  try {
+    ensureLogDir();
+    rotateLogIfNeeded();
+    const ts = new Date().toISOString();
+    const msg = err instanceof Error
+      ? `${err.message}\n${err.stack || ''}`
+      : String(err);
+    const entry = `[${ts}] [${source}]\n${msg}\n\n`;
+    fs.appendFileSync(LOG_FILE, entry, 'utf-8');
+  } catch { /* never throw from logger */ }
+}
+
+// Capture main process errors
+process.on('uncaughtException', (err) => {
+  writeErrorLog('main:uncaughtException', err);
+  console.error('Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  writeErrorLog('main:unhandledRejection', reason);
+  console.error('Unhandled rejection:', reason);
+});
 
 function createWindow() {
   const isMac = process.platform === 'darwin';
@@ -40,9 +83,18 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  if (isDev) {
-    mainWindow.webContents.openDevTools();
-  }
+  // Capture renderer crashes
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    writeErrorLog('renderer:crash', `Renderer gone: ${details.reason} (exitCode: ${details.exitCode})`);
+  });
+
+  // Capture renderer console errors
+  mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+    // level 3 = error
+    if (level >= 3) {
+      writeErrorLog('renderer:console.error', `${message}\n  at ${sourceId}:${line}`);
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -88,7 +140,7 @@ function buildMenu() {
       submenu: [
         { role: 'reload' },
         { role: 'forceReload' },
-        { role: 'toggleDevTools' },
+        ...(isDev ? [{ role: 'toggleDevTools' }] : []),
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },
@@ -105,6 +157,54 @@ function buildMenu() {
         ...(isMac
           ? [{ type: 'separator' }, { role: 'front' }]
           : [{ role: 'close' }]),
+      ],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'Open Error Log',
+          click: () => {
+            ensureLogDir();
+            if (fs.existsSync(LOG_FILE)) {
+              shell.openPath(LOG_FILE);
+            } else {
+              dialog.showMessageBox(mainWindow, {
+                type: 'info',
+                title: 'Error Log',
+                message: 'No error log found.',
+                detail: `Log path: ${LOG_FILE}`,
+              });
+            }
+          },
+        },
+        {
+          label: 'Show Log Folder',
+          click: () => {
+            ensureLogDir();
+            shell.openPath(LOG_DIR);
+          },
+        },
+        {
+          label: 'Export Error Log…',
+          click: async () => {
+            if (!fs.existsSync(LOG_FILE)) {
+              dialog.showMessageBox(mainWindow, {
+                type: 'info',
+                title: 'Export Error Log',
+                message: 'No error log to export.',
+              });
+              return;
+            }
+            const { filePath } = await dialog.showSaveDialog(mainWindow, {
+              defaultPath: `kubeops-error-${new Date().toISOString().slice(0, 10)}.log`,
+              filters: [{ name: 'Log Files', extensions: ['log', 'txt'] }],
+            });
+            if (filePath) {
+              fs.copyFileSync(LOG_FILE, filePath);
+            }
+          },
+        },
       ],
     },
   ];
@@ -159,10 +259,20 @@ function startProductionServer() {
   });
 
   serverProcess.stdout?.on('data', (d) => process.stdout.write(d));
-  serverProcess.stderr?.on('data', (d) => process.stderr.write(d));
+  serverProcess.stderr?.on('data', (d) => {
+    process.stderr.write(d);
+    writeErrorLog('server:stderr', d.toString());
+  });
 
   serverProcess.on('error', (err) => {
+    writeErrorLog('server:error', err);
     console.error('Server process error:', err);
+  });
+
+  serverProcess.on('exit', (code, signal) => {
+    if (code !== 0 && code !== null) {
+      writeErrorLog('server:exit', `Server exited with code ${code}, signal ${signal}`);
+    }
   });
 
   return waitForServer(PORT);
@@ -186,6 +296,7 @@ app.whenReady().then(async () => {
     }
     createWindow();
   } catch (err) {
+    writeErrorLog('main:startup', err);
     console.error('Failed to start KubeOps:', err);
     app.quit();
   }

@@ -157,6 +157,39 @@ Output is written to `dist-electron/`.
 
 ---
 
+## Error Logs
+
+KubeOps automatically captures errors and writes them to a log file so you can diagnose issues even without DevTools.
+
+**What gets logged:**
+
+- Main process crashes (uncaught exceptions, unhandled rejections)
+- Renderer process crashes and `console.error()` output
+- Production server stderr and unexpected exits
+- Startup failures
+
+**Log location:**
+
+| Platform | Path |
+|----------|------|
+| macOS | `~/Library/Application Support/KubeOps/logs/error.log` |
+| Windows | `%APPDATA%\KubeOps\logs\error.log` |
+| Linux | `~/.config/KubeOps/logs/error.log` |
+
+**Accessing logs from the app:**
+
+Use the **Help** menu:
+
+| Menu Item | Action |
+|-----------|--------|
+| Open Error Log | Opens the log file in your default text editor |
+| Show Log Folder | Opens the log directory in Finder / Explorer |
+| Export Error Log… | Save a copy to a location of your choice |
+
+Logs rotate automatically at 5 MB (previous log kept as `error.log.old`).
+
+---
+
 ## Troubleshooting
 
 | Problem | Solution |
@@ -166,3 +199,4 @@ Output is written to `dist-electron/`.
 | Metrics charts empty | Ensure `metrics-server` is installed in the cluster |
 | Network/FS charts missing | Requires Prometheus with `container_network_*` and `container_fs_*` metrics |
 | Port forward fails | Check that `kubectl` is on your PATH and the target pod is running |
+| Diagnosing crashes | Open **Help → Open Error Log** to see captured errors |
