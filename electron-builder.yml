@@ -13,6 +13,7 @@ files:
   - dist/**/*
   - src/**/*
   - ws/**/*
+  - resources/**/*
   - server.ts
   - next.config.ts
   - package.json
@@ -20,6 +21,7 @@ files:
   - "!**/*.map"
 
 mac:
+  icon: resources/icon.icns
   category: public.app-category.developer-tools
   target:
     - target: dmg
@@ -29,6 +31,7 @@ mac:
   darkModeSupport: true
 
 linux:
+  icon: resources/icon.png
   category: Development
   target:
     - target: AppImage
@@ -36,6 +39,7 @@ linux:
         - x64
 
 win:
+  icon: resources/icon.ico
   target:
     - target: nsis
       arch:

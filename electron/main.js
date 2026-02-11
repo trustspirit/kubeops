@@ -4,6 +4,7 @@ const net = require('net');
 
 const isDev = !app.isPackaged;
 const PORT = parseInt(process.env.PORT || '51230', 10);
+const iconPath = path.join(__dirname, '..', 'resources', 'icon.png');
 
 let mainWindow = null;
 let serverProcess = null;
@@ -17,6 +18,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: 'KubeOps',
+    icon: iconPath,
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
     ...(isMac ? { trafficLightPosition: { x: 15, y: 15 } } : {}),
     backgroundColor: '#0a0a0a',
@@ -168,6 +170,11 @@ function startProductionServer() {
 
 app.whenReady().then(async () => {
   buildMenu();
+
+  // Set dock icon for macOS dev mode (production uses .icns from bundle)
+  if (isDev && process.platform === 'darwin') {
+    app.dock.setIcon(iconPath);
+  }
 
   try {
     if (isDev) {

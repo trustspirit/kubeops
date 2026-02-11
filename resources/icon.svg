@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a3a6e"/>
+      <stop offset="100%" stop-color="#0d1f3c"/>
+    </linearGradient>
+    <linearGradient id="wheelGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4da3ff"/>
+      <stop offset="100%" stop-color="#326CE5"/>
+    </linearGradient>
+    <linearGradient id="termGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00e5ff"/>
+      <stop offset="100%" stop-color="#40c4ff"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="innerShadow">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6" result="blur"/>
+      <feOffset dx="0" dy="4" result="offsetBlur"/>
+      <feComposite in="SourceGraphic" in2="offsetBlur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="512" cy="512" r="480" fill="url(#bgGrad)"/>
+  <circle cx="512" cy="512" r="480" fill="none" stroke="#326CE5" stroke-width="6" opacity="0.4"/>
+
+  <!-- Kubernetes-style helm wheel (7 spokes) -->
+  <g transform="translate(512,512)" opacity="0.25">
+    <!-- Outer ring -->
+    <circle cx="0" cy="0" r="420" fill="none" stroke="#326CE5" stroke-width="18"/>
+    <!-- Spokes -->
+    <g stroke="#326CE5" stroke-width="16" stroke-linecap="round">
+      <line x1="0" y1="-200" x2="0" y2="-410"/>
+      <line x1="174" y1="-100" x2="356" y2="-205"/>
+      <line x1="174" y1="100" x2="356" y2="205"/>
+      <line x1="0" y1="200" x2="0" y2="410"/>
+      <line x1="-174" y1="100" x2="-356" y2="205"/>
+      <line x1="-174" y1="-100" x2="-356" y2="-205"/>
+    </g>
+    <!-- Spoke end circles -->
+    <g fill="#326CE5">
+      <circle cx="0" cy="-420" r="28"/>
+      <circle cx="364" cy="-210" r="28"/>
+      <circle cx="364" cy="210" r="28"/>
+      <circle cx="0" cy="420" r="28"/>
+      <circle cx="-364" cy="210" r="28"/>
+      <circle cx="-364" cy="-210" r="28"/>
+    </g>
+    <!-- Center hub -->
+    <circle cx="0" cy="0" r="80" fill="none" stroke="#326CE5" stroke-width="18"/>
+  </g>
+
+  <!-- Inner circle for terminal area -->
+  <circle cx="512" cy="512" r="280" fill="#0d1f3c" opacity="0.85"/>
+  <circle cx="512" cy="512" r="280" fill="none" stroke="#326CE5" stroke-width="3" opacity="0.5"/>
+
+  <!-- Terminal prompt >_ -->
+  <g filter="glow">
+    <!-- > chevron -->
+    <polyline
+      points="370,440 460,512 370,584"
+      fill="none"
+      stroke="url(#termGrad)"
+      stroke-width="42"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <!-- _ underscore / cursor -->
+    <line
+      x1="490" y1="580"
+      x2="650" y2="580"
+      stroke="url(#termGrad)"
+      stroke-width="42"
+      stroke-linecap="round"
+    />
+  </g>
+
+  <!-- Subtle ring accent -->
+  <circle cx="512" cy="512" r="350" fill="none" stroke="#4da3ff" stroke-width="2" opacity="0.3"/>
+</svg>
