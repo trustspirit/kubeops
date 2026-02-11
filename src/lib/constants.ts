@@ -21,6 +21,7 @@ import {
   FolderClosed,
   CalendarClock,
   Plug,
+  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -41,6 +42,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
     title: 'Cluster',
     items: [
       { label: 'Overview', resourceType: '', icon: LayoutDashboard, clusterScoped: true },
+      { label: 'App Map', resourceType: 'app-map', icon: Workflow, clusterScoped: true },
       { label: 'Nodes', resourceType: 'nodes', icon: Server, clusterScoped: true },
       { label: 'Persistent Volumes', resourceType: 'pvs', icon: HardDrive, clusterScoped: true },
       { label: 'Cluster Roles', resourceType: 'clusterroles', icon: Shield, clusterScoped: true },

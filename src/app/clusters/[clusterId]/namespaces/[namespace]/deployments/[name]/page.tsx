@@ -22,6 +22,8 @@ import { usePanelStore } from '@/stores/panel-store';
 import useSWR from 'swr';
 import Link from 'next/link';
 import { PortForwardBtn } from '@/components/shared/port-forward-btn';
+import { ResourceTreeView } from '@/components/shared/resource-tree';
+import { useResourceTree } from '@/hooks/use-resource-tree';
 
 export default function DeploymentDetailPage() {
   const params = useParams();
@@ -63,6 +65,14 @@ export default function DeploymentDetailPage() {
     clusterId: decodedClusterId,
     namespace,
     resourceType: 'events',
+  });
+
+  // Resource tree
+  const { nodes: treeNodes, edges: treeEdges, isLoading: treeLoading } = useResourceTree({
+    clusterId: decodedClusterId,
+    namespace,
+    rootKind: 'Deployment',
+    rootName: name,
   });
 
   // Pod metrics
@@ -186,6 +196,17 @@ export default function DeploymentDetailPage() {
 
         {/* Overview */}
         <TabsContent value="overview" className="space-y-4 mt-4">
+          {/* Resource Tree */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold">Resource Tree</h3>
+            <ResourceTreeView
+              treeNodes={treeNodes}
+              treeEdges={treeEdges}
+              isLoading={treeLoading}
+              height={300}
+            />
+          </div>
+
           {/* Compact info table */}
           <div className="rounded-md border overflow-hidden">
             <table className="w-full text-xs">

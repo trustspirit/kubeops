@@ -21,6 +21,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePanelStore } from '@/stores/panel-store';
 import { PortForwardBtn } from '@/components/shared/port-forward-btn';
+import { ResourceTreeView } from '@/components/shared/resource-tree';
+import { useResourceTree } from '@/hooks/use-resource-tree';
 
 export default function StatefulSetDetailPage() {
   const params = useParams();
@@ -41,6 +43,14 @@ export default function StatefulSetDetailPage() {
     namespace,
     resourceType: 'statefulsets',
     name,
+  });
+
+  // Resource tree
+  const { nodes: treeNodes, edges: treeEdges, isLoading: treeLoading } = useResourceTree({
+    clusterId: decodedClusterId,
+    namespace,
+    rootKind: 'StatefulSet',
+    rootName: name,
   });
 
   // Get pods belonging to this statefulset
@@ -128,6 +138,17 @@ export default function StatefulSetDetailPage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4 mt-4">
+          {/* Resource Tree */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold">Resource Tree</h3>
+            <ResourceTreeView
+              treeNodes={treeNodes}
+              treeEdges={treeEdges}
+              isLoading={treeLoading}
+              height={300}
+            />
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-3">
               <h3 className="text-sm font-semibold">StatefulSet Info</h3>
