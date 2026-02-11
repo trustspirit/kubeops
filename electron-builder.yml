@@ -20,11 +20,21 @@ files:
   - "!node_modules/.cache"
   - "!**/*.map"
 
+publish:
+  - provider: github
+    owner: trustspirit
+    repo: kubeops
+    releaseType: release
+
 mac:
   icon: resources/icon.icns
   category: public.app-category.developer-tools
   target:
     - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
       arch:
         - arm64
         - x64

@@ -1,7 +1,8 @@
-const { app, BrowserWindow, shell, Menu, dialog } = require('electron');
+const { app, BrowserWindow, shell, Menu, dialog, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
+const { autoUpdater } = require('electron-updater');
 
 const isDev = !app.isPackaged;
 const PORT = parseInt(process.env.PORT || '51230', 10);
@@ -52,6 +53,78 @@ process.on('unhandledRejection', (reason) => {
   console.error('Unhandled rejection:', reason);
 });
 
+// === Auto-Updater ===
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.logger = null;
+
+function sendUpdateStatus(status) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('updater:status', status);
+  }
+}
+
+function setupAutoUpdater() {
+  autoUpdater.on('checking-for-update', () => {
+    writeErrorLog('updater', 'Checking for updates...');
+    sendUpdateStatus({ status: 'checking' });
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    writeErrorLog('updater', `Update available: ${info.version}`);
+    sendUpdateStatus({
+      status: 'available',
+      version: info.version,
+      releaseNotes: info.releaseNotes,
+      releaseDate: info.releaseDate,
+    });
+  });
+
+  autoUpdater.on('update-not-available', (info) => {
+    writeErrorLog('updater', `Up to date: ${info.version}`);
+    sendUpdateStatus({ status: 'not-available', version: info.version });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    sendUpdateStatus({
+      status: 'downloading',
+      percent: progress.percent,
+      bytesPerSecond: progress.bytesPerSecond,
+      transferred: progress.transferred,
+      total: progress.total,
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    writeErrorLog('updater', `Update downloaded: ${info.version}`);
+    sendUpdateStatus({ status: 'downloaded', version: info.version });
+  });
+
+  autoUpdater.on('error', (err) => {
+    writeErrorLog('updater:error', err);
+    sendUpdateStatus({ status: 'error', message: err.message });
+  });
+}
+
+function setupUpdaterIPC() {
+  ipcMain.handle('updater:check', async () => {
+    const result = await autoUpdater.checkForUpdates();
+    return result?.updateInfo;
+  });
+
+  ipcMain.handle('updater:download', async () => {
+    await autoUpdater.downloadUpdate();
+  });
+
+  ipcMain.handle('updater:install', () => {
+    autoUpdater.quitAndInstall(false, true);
+  });
+
+  ipcMain.handle('updater:get-version', () => {
+    return app.getVersion();
+  });
+}
+
 function createWindow() {
   const isMac = process.platform === 'darwin';
 
@@ -68,6 +141,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
     },
     show: false,
   });
@@ -162,6 +236,28 @@ function buildMenu() {
     {
       label: 'Help',
       submenu: [
+        {
+          label: 'Check for Updates…',
+          click: () => {
+            if (isDev) {
+              dialog.showMessageBox(mainWindow, {
+                type: 'info',
+                title: 'Updates',
+                message: 'Auto-update is not available in development mode.',
+              });
+              return;
+            }
+            autoUpdater.checkForUpdates().catch((err) => {
+              writeErrorLog('updater:menu-check', err);
+              dialog.showMessageBox(mainWindow, {
+                type: 'error',
+                title: 'Update Check Failed',
+                message: err.message,
+              });
+            });
+          },
+        },
+        { type: 'separator' },
         {
           label: 'Open Error Log',
           click: () => {
@@ -295,6 +391,17 @@ app.whenReady().then(async () => {
       await startProductionServer();
     }
     createWindow();
+
+    // Auto-update setup (production only)
+    if (!isDev) {
+      setupAutoUpdater();
+      setupUpdaterIPC();
+      setTimeout(() => {
+        autoUpdater.checkForUpdates().catch((err) => {
+          writeErrorLog('updater:auto-check', err);
+        });
+      }, 5000);
+    }
   } catch (err) {
     writeErrorLog('main:startup', err);
     console.error('Failed to start KubeOps:', err);

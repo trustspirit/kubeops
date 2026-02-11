@@ -12,7 +12,11 @@
     "electron:build": "npm run build && node scripts/build-server.mjs && electron-builder",
     "electron:build:mac": "npm run build && node scripts/build-server.mjs && electron-builder --mac",
     "electron:build:linux": "npm run build && node scripts/build-server.mjs && electron-builder --linux",
-    "electron:build:win": "npm run build && node scripts/build-server.mjs && electron-builder --win"
+    "electron:build:win": "npm run build && node scripts/build-server.mjs && electron-builder --win",
+    "electron:publish": "npm run build && node scripts/build-server.mjs && electron-builder --publish always",
+    "electron:publish:mac": "npm run build && node scripts/build-server.mjs && electron-builder --mac --publish always",
+    "electron:publish:linux": "npm run build && node scripts/build-server.mjs && electron-builder --linux --publish always",
+    "electron:publish:win": "npm run build && node scripts/build-server.mjs && electron-builder --win --publish always"
   },
   "dependencies": {
     "@kubernetes/client-node": "^1.4.0",
@@ -26,6 +30,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "dagre": "^0.8.5",
+    "electron-updater": "^6.7.3",
     "js-yaml": "^4.1.1",
     "lucide-react": "^0.563.0",
     "next": "16.1.6",
