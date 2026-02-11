@@ -125,7 +125,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName }: Us
     const addNode = (id: string, data: ResourceNodeData) => {
       if (nodeIds.has(id)) return;
       nodeIds.add(id);
-      nodes.push({ id, data });
+      nodes.push({ id, data: { ...data, namespace, clusterId } });
     };
 
     const addEdge = (source: string, target: string, animated = false) => {

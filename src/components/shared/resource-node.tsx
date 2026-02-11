@@ -1,6 +1,6 @@
 'use client';
 
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import {
@@ -11,6 +11,8 @@ import {
   Globe,
   Database,
   Cpu,
+  ExternalLink,
+  Info,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -44,30 +46,49 @@ export interface ResourceNodeData {
   health: 'Healthy' | 'Progressing' | 'Degraded' | 'Unknown';
   info?: string;
   href?: string;
+  namespace?: string;
+  clusterId?: string;
+  onInfoClick?: (data: ResourceNodeData) => void;
   [key: string]: unknown;
 }
 
 function ResourceNodeComponent({ data }: NodeProps) {
   const router = useRouter();
-  const { kind, name, health, info, href } = data as unknown as ResourceNodeData;
+  const { kind, name, health, info, href, onInfoClick } = data as unknown as ResourceNodeData;
   const Icon = KIND_ICONS[kind] || Box;
   const borderClass = HEALTH_BORDER[health] || HEALTH_BORDER.Unknown;
   const dotClass = HEALTH_DOT[health] || HEALTH_DOT.Unknown;
 
-  const handleClick = () => {
-    if (href) {
-      router.push(href as string);
-    }
-  };
+  const stopEvent = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+  }, []);
+
+  const handleDetail = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (href) router.push(href as string);
+    },
+    [href, router]
+  );
+
+  const handleInfo = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (onInfoClick) (onInfoClick as (d: ResourceNodeData) => void)(data as unknown as ResourceNodeData);
+    },
+    [onInfoClick, data]
+  );
 
   return (
     <>
       <Handle type="target" position={Position.Left} className="!w-2 !h-2 !bg-muted-foreground/40 !border-0" />
       <div
-        onClick={handleClick}
         className={`
-          flex items-center gap-2.5 rounded-lg border-2 bg-card px-3 py-2 shadow-sm
-          min-w-[160px] max-w-[240px] cursor-pointer
+          group flex items-center gap-2.5 rounded-lg border-2 bg-card px-3 py-2 shadow-sm
+          min-w-[160px] max-w-[260px]
           hover:shadow-md hover:bg-accent/50 transition-all
           ${borderClass}
         `}
@@ -87,6 +108,32 @@ function ResourceNodeComponent({ data }: NodeProps) {
             <span className="text-[10px] text-muted-foreground truncate">{info}</span>
           )}
         </div>
+
+        {/* Action buttons */}
+        {(href || onInfoClick) && (
+          <div className="flex flex-col gap-0.5 shrink-0">
+            {href && (
+              <button
+                onMouseDown={stopEvent}
+                onClick={handleDetail}
+                className="nopan nodrag nowheel pointer-events-auto cursor-pointer rounded bg-muted/80 p-1 hover:bg-accent transition-colors"
+                title="Open detail page"
+              >
+                <ExternalLink className="h-3 w-3 text-muted-foreground" />
+              </button>
+            )}
+            {onInfoClick && (
+              <button
+                onMouseDown={stopEvent}
+                onClick={handleInfo}
+                className="nopan nodrag nowheel pointer-events-auto cursor-pointer rounded bg-muted/80 p-1 hover:bg-accent transition-colors"
+                title="Quick info"
+              >
+                <Info className="h-3 w-3 text-muted-foreground" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
       <Handle type="source" position={Position.Right} className="!w-2 !h-2 !bg-muted-foreground/40 !border-0" />
     </>

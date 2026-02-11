@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useState, useCallback } from 'react';
 import {
   ReactFlow,
   Background,
@@ -17,7 +17,8 @@ import {
 } from '@xyflow/react';
 import { useTheme } from 'next-themes';
 import dagre from 'dagre';
-import { ResourceNode } from './resource-node';
+import { ResourceNode, type ResourceNodeData } from './resource-node';
+import { ResourceInfoDrawer } from './resource-info-drawer';
 import type { TreeNode, TreeEdge } from '@/hooks/use-resource-tree';
 
 import '@xyflow/react/dist/style.css';
@@ -26,7 +27,7 @@ const nodeTypes: NodeTypes = {
   resource: ResourceNode,
 };
 
-const NODE_WIDTH = 200;
+const NODE_WIDTH = 220;
 const NODE_HEIGHT = 60;
 
 function getLayoutedElements(
@@ -87,6 +88,7 @@ interface ResourceTreeViewInnerProps {
   direction?: 'LR' | 'TB';
   className?: string;
   focusNodeId?: string;
+  onInfoClick: (data: ResourceNodeData) => void;
 }
 
 function ResourceTreeViewInner({
@@ -97,14 +99,25 @@ function ResourceTreeViewInner({
   direction = 'LR',
   className,
   focusNodeId,
+  onInfoClick,
 }: ResourceTreeViewInnerProps) {
   const { fitView } = useReactFlow();
   const { resolvedTheme } = useTheme();
   const colorMode: ColorMode = resolvedTheme === 'dark' ? 'dark' : 'light';
 
+  // Inject onInfoClick into each node's data
+  const nodesWithCallback = useMemo(
+    () =>
+      treeNodes.map((n) => ({
+        ...n,
+        data: { ...n.data, onInfoClick },
+      })),
+    [treeNodes, onInfoClick]
+  );
+
   const { nodes: layoutedNodes, edges: layoutedEdges } = useMemo(
-    () => getLayoutedElements(treeNodes, treeEdges, direction),
-    [treeNodes, treeEdges, direction]
+    () => getLayoutedElements(nodesWithCallback, treeEdges, direction),
+    [nodesWithCallback, treeEdges, direction]
   );
 
   const [nodes, , onNodesChange] = useNodesState(layoutedNodes);
@@ -189,9 +202,27 @@ interface ResourceTreeViewProps {
 }
 
 export function ResourceTreeView(props: ResourceTreeViewProps) {
+  const [selectedNode, setSelectedNode] = useState<ResourceNodeData | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const handleInfoClick = useCallback((data: ResourceNodeData) => {
+    setSelectedNode(data);
+    setDrawerOpen(true);
+  }, []);
+
+  const handleDrawerOpenChange = useCallback((open: boolean) => {
+    setDrawerOpen(open);
+    if (!open) setSelectedNode(null);
+  }, []);
+
   return (
     <ReactFlowProvider>
-      <ResourceTreeViewInner {...props} />
+      <ResourceTreeViewInner {...props} onInfoClick={handleInfoClick} />
+      <ResourceInfoDrawer
+        node={selectedNode}
+        open={drawerOpen}
+        onOpenChange={handleDrawerOpenChange}
+      />
     </ReactFlowProvider>
   );
 }
