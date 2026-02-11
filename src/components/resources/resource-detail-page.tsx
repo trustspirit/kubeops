@@ -14,7 +14,6 @@ import { useState } from 'react';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import * as yaml from 'js-yaml';
 import { YamlEditor } from '@/components/shared/yaml-editor';
 
 interface ResourceDetailPageProps {
@@ -51,7 +50,6 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
   const metadata = resource.metadata || {};
   const labels = metadata.labels || {};
   const annotations = metadata.annotations || {};
-  const yamlStr = yaml.dump(resource, { lineWidth: -1 });
 
   const handleDelete = async () => {
     setDeleting(true);

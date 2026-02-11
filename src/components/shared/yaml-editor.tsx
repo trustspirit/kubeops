@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, createContext, useContext } from 'react';
+import { useState, useMemo, useRef, useCallback, createContext, useContext } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Save, RotateCcw, Pencil, Table2, Code, ChevronRight, ChevronDown, Plug, ExternalLink, X } from 'lucide-react';
@@ -8,7 +8,8 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import * as yaml from 'js-yaml';
-import useSWR, { mutate as globalMutate } from 'swr';
+import { mutate as globalMutate } from 'swr';
+import { usePortForwards } from '@/hooks/use-port-forwards';
 
 // === Types ===
 
@@ -40,12 +41,10 @@ const PFContext = createContext<PortForwardContext | null>(null);
 
 function PortForwardButton({ containerPort }: { containerPort: number }) {
   const ctx = useContext(PFContext);
-  const { data: pfData } = useSWR('/api/port-forward', { refreshInterval: 3000 });
+  const { forwards } = usePortForwards();
   const [starting, setStarting] = useState(false);
 
   if (!ctx) return null;
-
-  const forwards: PortForward[] = pfData?.forwards || [];
   const active = forwards.find(
     f => f.containerPort === containerPort && f.id.includes(ctx.resourceName)
   );
@@ -267,8 +266,7 @@ function SectionCard({ title, defaultOpen, children }: { title: string; defaultO
 // === Active Port Forwards Banner ===
 
 function ActiveForwardsBanner() {
-  const { data } = useSWR('/api/port-forward', { refreshInterval: 3000 });
-  const forwards: PortForward[] = data?.forwards || [];
+  const { forwards } = usePortForwards();
 
   if (forwards.length === 0) return null;
 
@@ -302,7 +300,10 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
   const [yamlError, setYamlError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const yamlStr = yaml.dump(data, { lineWidth: -1 });
+  const yamlStr = useMemo(
+    () => (mode === 'yaml' ? yaml.dump(data, { lineWidth: -1 }) : ''),
+    [data, mode]
+  );
 
   const startEditing = useCallback(() => {
     const clean = { ...data };

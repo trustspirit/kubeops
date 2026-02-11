@@ -35,15 +35,23 @@ const HEALTH_BORDER: Record<string, string> = {
 
 const HEALTH_DOT: Record<string, string> = {
   Healthy: 'bg-green-500',
-  Progressing: 'bg-yellow-500',
-  Degraded: 'bg-red-500',
+  Progressing: 'bg-yellow-500 animate-pulse',
+  Degraded: 'bg-red-500 animate-pulse',
   Unknown: 'bg-gray-400',
+};
+
+const STATUS_COLOR: Record<string, string> = {
+  Healthy: 'text-muted-foreground',
+  Progressing: 'text-yellow-500',
+  Degraded: 'text-red-500',
+  Unknown: 'text-muted-foreground',
 };
 
 export interface ResourceNodeData {
   kind: string;
   name: string;
   health: 'Healthy' | 'Progressing' | 'Degraded' | 'Unknown';
+  status?: string;
   info?: string;
   href?: string;
   namespace?: string;
@@ -54,10 +62,11 @@ export interface ResourceNodeData {
 
 function ResourceNodeComponent({ data }: NodeProps) {
   const router = useRouter();
-  const { kind, name, health, info, href, onInfoClick } = data as unknown as ResourceNodeData;
+  const { kind, name, health, status, info, href, onInfoClick } = data as unknown as ResourceNodeData;
   const Icon = KIND_ICONS[kind] || Box;
   const borderClass = HEALTH_BORDER[health] || HEALTH_BORDER.Unknown;
   const dotClass = HEALTH_DOT[health] || HEALTH_DOT.Unknown;
+  const statusColor = STATUS_COLOR[health] || STATUS_COLOR.Unknown;
 
   const stopEvent = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -99,7 +108,12 @@ function ResourceNodeComponent({ data }: NodeProps) {
             <span className="text-[10px] font-medium uppercase text-muted-foreground tracking-wide">
               {kind}
             </span>
-            <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+            <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} />
+            {status && (
+              <span className={`text-[10px] font-medium truncate ${statusColor}`}>
+                {status}
+              </span>
+            )}
           </div>
           <span className="text-xs font-semibold truncate" title={name}>
             {name}

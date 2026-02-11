@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import useSWR, { mutate as globalMutate } from 'swr';
+import { mutate as globalMutate } from 'swr';
 import { Plug, ExternalLink, X } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { usePortForwards } from '@/hooks/use-port-forwards';
 
 interface PortForwardBtnProps {
   clusterId: string;
@@ -16,9 +17,8 @@ interface PortForwardBtnProps {
 }
 
 export function PortForwardBtn({ clusterId, namespace, resourceType, resourceName, port }: PortForwardBtnProps) {
-  const { data: pfData } = useSWR('/api/port-forward', { refreshInterval: 3000 });
+  const { forwards } = usePortForwards();
   const [starting, setStarting] = useState(false);
-  const forwards = pfData?.forwards || [];
   const active = forwards.find((f: any) => f.containerPort === port && f.id.includes(resourceName));
 
   const start = async () => {

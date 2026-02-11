@@ -9,7 +9,15 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
 export function BottomPanel() {
-  const { open, height, tabs, activeTabId, setHeight, removeTab, setActiveTab, toggle, setOpen } = usePanelStore();
+  const open = usePanelStore((s) => s.open);
+  const height = usePanelStore((s) => s.height);
+  const tabs = usePanelStore((s) => s.tabs);
+  const activeTabId = usePanelStore((s) => s.activeTabId);
+  const setHeight = usePanelStore((s) => s.setHeight);
+  const removeTab = usePanelStore((s) => s.removeTab);
+  const setActiveTab = usePanelStore((s) => s.setActiveTab);
+  const toggle = usePanelStore((s) => s.toggle);
+  const setOpen = usePanelStore((s) => s.setOpen);
   const panelRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
   const startY = useRef(0);
@@ -100,15 +108,18 @@ export function BottomPanel() {
       {/* Tab content */}
       {open && activeTab && (
         <div className="flex-1 min-h-0 overflow-hidden">
-          {tabs.map((tab) => (
+          {/* Terminal tabs use CSS hidden to preserve xterm state */}
+          {tabs.filter((tab) => tab.type === 'exec').map((tab) => (
             <div key={tab.id} className={cn('h-full', tab.id === activeTabId ? 'block' : 'hidden')}>
-              {tab.type === 'exec' ? (
-                <TerminalTab tab={tab} active={tab.id === activeTabId} />
-              ) : (
-                <LogsTab tab={tab} />
-              )}
+              <TerminalTab tab={tab} active={tab.id === activeTabId} />
             </div>
           ))}
+          {/* Logs tabs mount only when active to avoid idle WebSocket connections */}
+          {activeTab.type === 'logs' && (
+            <div className="h-full">
+              <LogsTab tab={activeTab} />
+            </div>
+          )}
         </div>
       )}
     </div>

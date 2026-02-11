@@ -9,7 +9,7 @@ export function SWRProvider({ children }: { children: ReactNode }) {
     <SWRConfig
       value={{
         fetcher,
-        revalidateOnFocus: true,
+        revalidateOnFocus: false,
         dedupingInterval: 2000,
         errorRetryCount: 3,
       }}

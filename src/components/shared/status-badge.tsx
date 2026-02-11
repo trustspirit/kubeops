@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
@@ -24,11 +25,11 @@ interface StatusBadgeProps {
   className?: string;
 }
 
-export function StatusBadge({ status, className }: StatusBadgeProps) {
+export const StatusBadge = memo(function StatusBadge({ status, className }: StatusBadgeProps) {
   const colorClass = STATUS_COLORS[status] || STATUS_COLORS.Unknown;
   return (
     <Badge variant="outline" className={cn('font-medium', colorClass, className)}>
       {status}
     </Badge>
   );
-}
+});

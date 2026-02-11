@@ -8,6 +8,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowLeft, Pause, Play, Download } from 'lucide-react';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
 
+const MAX_LOG_SIZE = 512 * 1024; // 512KB
+
+function trimLogs(logs: string): string {
+  if (logs.length <= MAX_LOG_SIZE) return logs;
+  const trimmed = logs.slice(logs.length - MAX_LOG_SIZE);
+  const firstNewline = trimmed.indexOf('\n');
+  return firstNewline >= 0 ? trimmed.slice(firstNewline + 1) : trimmed;
+}
+
 export default function PodLogsPage() {
   const params = useParams();
   const router = useRouter();
@@ -52,11 +61,11 @@ export default function PodLogsPage() {
         try {
           const msg = JSON.parse(data);
           if (msg.type === 'error') {
-            setLogs(prev => prev + `\n[ERROR] ${msg.message}\n`);
+            setLogs(prev => trimLogs(prev + `\n[ERROR] ${msg.message}\n`));
             return;
           }
         } catch { /* not JSON, it's log data */ }
-        setLogs(prev => prev + data);
+        setLogs(prev => trimLogs(prev + data));
       }
     };
     ws.onclose = () => setConnected(false);

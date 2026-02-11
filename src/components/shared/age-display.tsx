@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { memo } from 'react';
+import { useAgeTick } from '@/hooks/use-age-tick';
 
 function formatAge(timestamp: string): string {
   const now = Date.now();
@@ -18,16 +19,9 @@ function formatAge(timestamp: string): string {
   return `${seconds}s`;
 }
 
-export function AgeDisplay({ timestamp }: { timestamp?: string }) {
-  const [age, setAge] = useState('');
-
-  useEffect(() => {
-    if (!timestamp) return;
-    setAge(formatAge(timestamp));
-    const interval = setInterval(() => setAge(formatAge(timestamp)), 30000);
-    return () => clearInterval(interval);
-  }, [timestamp]);
+export const AgeDisplay = memo(function AgeDisplay({ timestamp }: { timestamp?: string }) {
+  useAgeTick(); // re-render every 30s via shared global timer
 
   if (!timestamp) return <span className="text-muted-foreground">-</span>;
-  return <span title={new Date(timestamp).toLocaleString()}>{age}</span>;
-}
+  return <span title={new Date(timestamp).toLocaleString()}>{formatAge(timestamp)}</span>;
+});

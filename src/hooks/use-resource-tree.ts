@@ -66,6 +66,64 @@ function ingressHealth(ingress: any): 'Healthy' | 'Progressing' {
   return 'Progressing';
 }
 
+function podStatus(pod: any): string {
+  if (pod.metadata?.deletionTimestamp) return 'Terminating';
+  const phase = pod.status?.phase;
+  const containerStatuses: any[] = pod.status?.containerStatuses || [];
+
+  // Check waiting containers first
+  for (const cs of containerStatuses) {
+    const waitingReason = cs.state?.waiting?.reason;
+    if (waitingReason) return waitingReason; // CrashLoopBackOff, ImagePullBackOff, ErrImagePull, ContainerCreating, etc.
+  }
+
+  // Check terminated containers
+  for (const cs of containerStatuses) {
+    const terminatedReason = cs.state?.terminated?.reason;
+    if (terminatedReason) return terminatedReason; // OOMKilled, Error, Completed, etc.
+  }
+
+  if (phase === 'Pending' && containerStatuses.length === 0) return 'Pending';
+  if (phase === 'Succeeded') return 'Completed';
+  if (phase === 'Failed') return 'Failed';
+  if (phase === 'Running') {
+    const allReady = containerStatuses.every((c: any) => c.ready);
+    if (allReady) return 'Running';
+  }
+  return 'Progressing';
+}
+
+function workloadStatus(resource: any): string {
+  const spec = resource.spec || {};
+  const status = resource.status || {};
+  const desired = spec.replicas ?? 1;
+  const ready = status.readyReplicas || 0;
+  if (desired === 0) return 'Scaled to 0';
+  if (ready >= desired) return 'Healthy';
+  const updated = status.updatedReplicas || 0;
+  if (updated < desired) return 'Updating';
+  if (ready > 0) return 'ScalingUp';
+  return 'Degraded';
+}
+
+function rsStatus(rs: any): string {
+  const desired = rs.spec?.replicas ?? 0;
+  const ready = rs.status?.readyReplicas || 0;
+  if (desired === 0) return 'Scaled to 0';
+  if (ready >= desired) return 'Active';
+  return 'ScalingUp';
+}
+
+function serviceStatus(): string {
+  return 'Active';
+}
+
+function ingressStatus(ingress: any): string {
+  const lbIngress = ingress.status?.loadBalancer?.ingress;
+  if (lbIngress && lbIngress.length > 0) return 'Active';
+  return 'Pending';
+}
+
 function podInfo(pod: any): string {
   const statuses = pod.status?.containerStatuses || [];
   const readyCt = statuses.filter((c: any) => c.ready).length;
@@ -147,6 +205,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName }: Us
           kind: 'Deployment',
           name: rootName,
           health: workloadHealth(dep),
+          status: workloadStatus(dep),
           info: `${dep.status?.readyReplicas || 0}/${dep.spec?.replicas || 0} ready`,
           href: `${basePath}/deployments/${rootName}`,
         });
@@ -162,6 +221,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName }: Us
             kind: 'ReplicaSet',
             name: rs.metadata?.name,
             health: rsHealth(rs),
+            status: rsStatus(rs),
             info: `${rs.status?.readyReplicas || 0}/${rs.spec?.replicas || 0} ready`,
             href: `${basePath}/replicasets/${rs.metadata?.name}`,
           });
@@ -177,6 +237,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName }: Us
               kind: 'Pod',
               name: pod.metadata?.name,
               health: podHealth(pod),
+              status: podStatus(pod),
               info: podInfo(pod),
               href: `${basePath}/pods/${pod.metadata?.name}`,
             });
@@ -192,6 +253,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName }: Us
           kind: 'StatefulSet',
           name: rootName,
           health: workloadHealth(sts),
+          status: workloadStatus(sts),
           info: `${sts.status?.readyReplicas || 0}/${sts.spec?.replicas || 0} ready`,
           href: `${basePath}/statefulsets/${rootName}`,
         });
@@ -206,6 +268,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName }: Us
             kind: 'Pod',
             name: pod.metadata?.name,
             health: podHealth(pod),
+            status: podStatus(pod),
             info: podInfo(pod),
             href: `${basePath}/pods/${pod.metadata?.name}`,
           });
@@ -225,6 +288,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName }: Us
         kind: 'Deployment',
         name: dep.metadata?.name,
         health: workloadHealth(dep),
+        status: workloadStatus(dep),
         info: `${dep.status?.readyReplicas || 0}/${dep.spec?.replicas || 0} ready`,
         href: `${basePath}/deployments/${dep.metadata?.name}`,
       });
@@ -238,6 +302,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName }: Us
         kind: 'StatefulSet',
         name: sts.metadata?.name,
         health: workloadHealth(sts),
+        status: workloadStatus(sts),
         info: `${sts.status?.readyReplicas || 0}/${sts.spec?.replicas || 0} ready`,
         href: `${basePath}/statefulsets/${sts.metadata?.name}`,
       });
@@ -251,6 +316,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName }: Us
         kind: 'DaemonSet',
         name: ds.metadata?.name,
         health: workloadHealth(ds),
+        status: workloadStatus(ds),
         info: `${ds.status?.numberReady || 0}/${ds.status?.desiredNumberScheduled || 0} ready`,
         href: `${basePath}/daemonsets/${ds.metadata?.name}`,
       });
@@ -267,6 +333,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName }: Us
         kind: 'ReplicaSet',
         name: rs.metadata?.name,
         health: rsHealth(rs),
+        status: rsStatus(rs),
         info: `${rs.status?.readyReplicas || 0}/${rs.spec?.replicas || 0} ready`,
         href: `${basePath}/replicasets/${rs.metadata?.name}`,
       });
@@ -282,6 +349,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName }: Us
         kind: 'Pod',
         name: pod.metadata?.name,
         health: podHealth(pod),
+        status: podStatus(pod),
         info: podInfo(pod),
         href: `${basePath}/pods/${pod.metadata?.name}`,
       });
@@ -299,6 +367,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName }: Us
         kind: 'Service',
         name: svc.metadata?.name,
         health: serviceHealth(),
+        status: serviceStatus(),
         info: `${svc.spec?.type || 'ClusterIP'}${svc.spec?.ports?.[0] ? ` :${svc.spec.ports[0].port}` : ''}`,
         href: `${basePath}/services/${svc.metadata?.name}`,
       });
@@ -340,6 +409,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName }: Us
         kind: 'Ingress',
         name: ing.metadata?.name,
         health: ingressHealth(ing),
+        status: ingressStatus(ing),
         info: (ing.spec?.rules || []).map((r: any) => r.host).filter(Boolean).join(', ') || undefined,
         href: `${basePath}/ingresses/${ing.metadata?.name}`,
       });

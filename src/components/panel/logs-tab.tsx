@@ -5,6 +5,15 @@ import { Button } from '@/components/ui/button';
 import { Pause, Play, Download, ArrowDown } from 'lucide-react';
 import type { PanelTab } from '@/stores/panel-store';
 
+const MAX_LOG_SIZE = 512 * 1024; // 512KB
+
+function trimLogs(logs: string): string {
+  if (logs.length <= MAX_LOG_SIZE) return logs;
+  const trimmed = logs.slice(logs.length - MAX_LOG_SIZE);
+  const firstNewline = trimmed.indexOf('\n');
+  return firstNewline >= 0 ? trimmed.slice(firstNewline + 1) : trimmed;
+}
+
 interface LogsTabProps {
   tab: PanelTab;
 }
@@ -33,11 +42,11 @@ export function LogsTab({ tab }: LogsTabProps) {
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'error') {
-            setLogs((prev) => prev + `\n[ERROR] ${msg.message}\n`);
+            setLogs((prev) => trimLogs(prev + `\n[ERROR] ${msg.message}\n`));
             return;
           }
         } catch { /* not JSON */ }
-        setLogs((prev) => prev + event.data);
+        setLogs((prev) => trimLogs(prev + event.data));
       }
     };
     ws.onclose = () => setConnected(false);

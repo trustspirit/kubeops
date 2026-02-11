@@ -3,7 +3,7 @@ const path = require('path');
 const net = require('net');
 
 const isDev = !app.isPackaged;
-const PORT = parseInt(process.env.PORT || '3000', 10);
+const PORT = parseInt(process.env.PORT || '51230', 10);
 
 let mainWindow = null;
 let serverProcess = null;
