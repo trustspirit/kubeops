@@ -15,6 +15,7 @@
   <img src="https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=flat&logo=tailwindcss&logoColor=white" alt="Tailwind CSS" />
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-blue" alt="Platform" />
   <a href="https://github.com/trustspirit/kubeops/releases/latest"><img src="https://img.shields.io/github/v/release/trustspirit/kubeops?label=version" alt="Latest Release" /></a>
+  <a href="https://www.npmjs.com/package/kubeops"><img src="https://img.shields.io/npm/v/kubeops?color=cb3837&logo=npm" alt="npm" /></a>
 </p>
 
 ---

@@ -1,8 +1,34 @@
 {
   "name": "kubeops",
   "version": "0.1.0",
-  "private": true,
+  "description": "A modern desktop client for Kubernetes cluster management",
   "main": "electron/main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/trustspirit/kubeops.git"
+  },
+  "keywords": [
+    "kubernetes",
+    "k8s",
+    "electron",
+    "desktop",
+    "cluster",
+    "devops"
+  ],
+  "author": "trustspirit",
+  "license": "MIT",
+  "files": [
+    "electron",
+    "src",
+    "ws",
+    "resources",
+    "scripts",
+    "server.ts",
+    "next.config.ts",
+    "tsconfig.json",
+    "postcss.config.mjs",
+    "electron-builder.yml"
+  ],
   "scripts": {
     "dev": "tsx server.ts",
     "build": "next build",
