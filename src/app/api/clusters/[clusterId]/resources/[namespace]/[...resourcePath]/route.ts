@@ -6,7 +6,8 @@ import { NAMESPACED_RESOURCES, CLUSTER_SCOPED_RESOURCES, getResourceConfig } fro
 export const dynamic = 'force-dynamic';
 
 function extractK8sError(error: any): { status: number; message: string } {
-  const status = error?.code || error?.statusCode || error?.response?.statusCode || 500;
+  const raw = error?.statusCode || error?.response?.statusCode || error?.code;
+  const status = (typeof raw === 'number' && raw >= 200 && raw <= 599) ? raw : 500;
 
   // error.body can be a parsed object or a raw JSON string
   let body = error?.body;

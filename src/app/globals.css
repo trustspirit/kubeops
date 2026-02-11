@@ -163,7 +163,7 @@
 
 :root.electron .electron-spacer {
   display: block;
-  width: 52px;
+  width: 76px;
   flex-shrink: 0;
 }
 

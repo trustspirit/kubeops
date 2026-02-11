@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Cpu, MemoryStick, Network, HardDrive } from 'lucide-react';
 import {
-  AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
 } from 'recharts';
 
 interface MetricsPoint {
@@ -352,6 +352,22 @@ interface NodeMetricsProps {
   clusterId: string;
 }
 
+function NodeMetricTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-lg border bg-popover/95 backdrop-blur-sm px-3 py-2 text-xs shadow-xl space-y-1">
+      <p className="font-medium">{label}</p>
+      {payload.map((p: any) => (
+        <div key={p.dataKey} className="flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+          <span className="text-muted-foreground">{p.dataKey === 'cpu' ? 'CPU' : 'Memory'}:</span>
+          <span className="font-semibold">{p.dataKey === 'cpu' ? formatCpu(p.value) : formatMemory(p.value)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function NodeMetricsSummary({ clusterId }: NodeMetricsProps) {
   const { data } = useSWR(
     `/api/clusters/${encodeURIComponent(clusterId)}/metrics?type=nodes`,
@@ -366,20 +382,52 @@ export function NodeMetricsSummary({ clusterId }: NodeMetricsProps) {
     memory: parseMemory(n.usage?.memory || '0'),
   }));
 
+  const barHeight = Math.max(120, nodes.length * 32 + 30);
+
   return (
     <Card>
       <CardHeader className="pb-0">
         <CardTitle className="text-sm font-medium">Node Resource Usage</CardTitle>
       </CardHeader>
       <CardContent className="pt-4">
-        <ResponsiveContainer width="100%" height={Math.max(120, nodes.length * 28 + 30)}>
-          <AreaChart data={nodes} layout="vertical" margin={{ top: 5, right: 15, bottom: 5, left: 5 }}>
-            <XAxis type="number" tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} tickFormatter={(v) => formatCpu(v)} />
-            <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} width={80} />
-            <Tooltip content={<MetricTooltip />} />
-            <Area type="monotone" dataKey="cpu" stroke="#3b82f6" fill="#3b82f680" />
-          </AreaChart>
-        </ResponsiveContainer>
+        <div className="grid grid-cols-2 gap-4">
+          {/* CPU */}
+          <div>
+            <p className="text-[10px] text-muted-foreground mb-1 font-medium text-center">CPU</p>
+            <ResponsiveContainer width="100%" height={barHeight}>
+              <BarChart data={nodes} layout="vertical" margin={{ top: 5, right: 10, bottom: 5, left: 5 }}>
+                <defs>
+                  <linearGradient id="nodeCpuGrad" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.8} />
+                    <stop offset="100%" stopColor="#6366f1" stopOpacity={1} />
+                  </linearGradient>
+                </defs>
+                <XAxis type="number" tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} tickFormatter={(v) => formatCpu(v)} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} width={70} />
+                <Tooltip content={<NodeMetricTooltip />} />
+                <Bar dataKey="cpu" fill="url(#nodeCpuGrad)" radius={[0, 6, 6, 0]} animationDuration={600} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          {/* Memory */}
+          <div>
+            <p className="text-[10px] text-muted-foreground mb-1 font-medium text-center">Memory</p>
+            <ResponsiveContainer width="100%" height={barHeight}>
+              <BarChart data={nodes} layout="vertical" margin={{ top: 5, right: 10, bottom: 5, left: 5 }}>
+                <defs>
+                  <linearGradient id="nodeMemGrad" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#a855f7" stopOpacity={0.8} />
+                    <stop offset="100%" stopColor="#7c3aed" stopOpacity={1} />
+                  </linearGradient>
+                </defs>
+                <XAxis type="number" tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} tickFormatter={(v) => formatMemory(v)} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} width={70} />
+                <Tooltip content={<NodeMetricTooltip />} />
+                <Bar dataKey="memory" fill="url(#nodeMemGrad)" radius={[0, 6, 6, 0]} animationDuration={600} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

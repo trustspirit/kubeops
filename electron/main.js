@@ -20,7 +20,7 @@ function createWindow() {
     title: 'KubeOps',
     icon: iconPath,
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
-    ...(isMac ? { trafficLightPosition: { x: 15, y: 15 } } : {}),
+    ...(isMac ? { trafficLightPosition: { x: 15, y: 20 } } : {}),
     backgroundColor: '#0a0a0a',
     webPreferences: {
       nodeIntegration: false,
