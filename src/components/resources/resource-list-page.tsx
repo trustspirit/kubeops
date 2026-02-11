@@ -9,6 +9,7 @@ import { ErrorDisplay } from '@/components/shared/error-display';
 import { COLUMN_MAP } from './resource-columns';
 import { RESOURCE_LABELS } from '@/lib/constants';
 import { ColumnDef } from '@tanstack/react-table';
+import { usePodRestartWatcher } from '@/hooks/use-pod-watcher';
 
 interface ResourceListPageProps {
   resourceType: string;
@@ -29,8 +30,14 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
   const columns = COLUMN_MAP[resourceType] || [];
   const label = RESOURCE_LABELS[resourceType] || resourceType;
 
+  // Watch for pod restarts when viewing pods list
+  usePodRestartWatcher(
+    decodeURIComponent(clusterId),
+    resourceType === 'pods' ? data?.items : undefined
+  );
+
   if (isLoading) return <LoadingSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} />;
+  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
 
   const items = data?.items || [];
 

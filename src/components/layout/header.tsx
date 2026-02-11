@@ -1,12 +1,16 @@
 'use client';
 
+import { useState } from 'react';
 import { ThemeToggle } from './theme-toggle';
 import { ClusterSelector } from '@/components/clusters/cluster-selector';
 import { NamespaceSelector } from '@/components/namespaces/namespace-selector';
 import { Button } from '@/components/ui/button';
-import { Search } from 'lucide-react';
+import { Search, Settings } from 'lucide-react';
+import { SettingsDialog } from '@/components/settings/settings-dialog';
 
 export function Header() {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
   return (
     <header className="flex h-14 items-center justify-between border-b px-4 drag-region">
       <div className="flex items-center gap-3 no-drag-region">
@@ -30,8 +34,17 @@ export function Header() {
             <span className="text-xs">⌘</span>K
           </kbd>
         </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => setSettingsOpen(true)}
+        >
+          <Settings className="h-4 w-4" />
+        </Button>
         <ThemeToggle />
       </div>
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </header>
   );
 }

@@ -61,7 +61,7 @@ export default function StatefulSetDetailPage() {
   });
 
   if (isLoading) return <LoadingSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} />;
+  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
   if (!sts) return null;
 
   const metadata = sts.metadata || {};

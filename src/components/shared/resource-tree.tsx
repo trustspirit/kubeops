@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useCallback } from 'react';
+import { useMemo, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
@@ -10,8 +10,12 @@ import {
   type NodeTypes,
   useNodesState,
   useEdgesState,
+  useReactFlow,
+  ReactFlowProvider,
   ConnectionLineType,
+  type ColorMode,
 } from '@xyflow/react';
+import { useTheme } from 'next-themes';
 import dagre from 'dagre';
 import { ResourceNode } from './resource-node';
 import type { TreeNode, TreeEdge } from '@/hooks/use-resource-tree';
@@ -75,23 +79,29 @@ function getLayoutedElements(
   return { nodes, edges };
 }
 
-interface ResourceTreeViewProps {
+interface ResourceTreeViewInnerProps {
   treeNodes: TreeNode[];
   treeEdges: TreeEdge[];
   isLoading?: boolean;
   height?: number | string;
   direction?: 'LR' | 'TB';
   className?: string;
+  focusNodeId?: string;
 }
 
-export function ResourceTreeView({
+function ResourceTreeViewInner({
   treeNodes,
   treeEdges,
   isLoading,
   height = 300,
   direction = 'LR',
   className,
-}: ResourceTreeViewProps) {
+  focusNodeId,
+}: ResourceTreeViewInnerProps) {
+  const { fitView } = useReactFlow();
+  const { resolvedTheme } = useTheme();
+  const colorMode: ColorMode = resolvedTheme === 'dark' ? 'dark' : 'light';
+
   const { nodes: layoutedNodes, edges: layoutedEdges } = useMemo(
     () => getLayoutedElements(treeNodes, treeEdges, direction),
     [treeNodes, treeEdges, direction]
@@ -105,6 +115,17 @@ export function ResourceTreeView({
   const currentEdges = layoutedEdges.length !== edges.length ? layoutedEdges : edges;
 
   const proOptions = useMemo(() => ({ hideAttribution: true }), []);
+
+  // Focus on specific node when focusNodeId changes
+  useEffect(() => {
+    if (focusNodeId && currentNodes.some((n) => n.id === focusNodeId)) {
+      // Small delay to let ReactFlow render first
+      const timer = setTimeout(() => {
+        fitView({ nodes: [{ id: focusNodeId }], padding: 0.5, duration: 300 });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [focusNodeId, currentNodes, fitView]);
 
   if (isLoading) {
     return (
@@ -140,6 +161,7 @@ export function ResourceTreeView({
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         connectionLineType={ConnectionLineType.SmoothStep}
+        colorMode={colorMode}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.3}
@@ -153,5 +175,23 @@ export function ResourceTreeView({
         <Controls showInteractive={false} className="!shadow-md" />
       </ReactFlow>
     </div>
+  );
+}
+
+interface ResourceTreeViewProps {
+  treeNodes: TreeNode[];
+  treeEdges: TreeEdge[];
+  isLoading?: boolean;
+  height?: number | string;
+  direction?: 'LR' | 'TB';
+  className?: string;
+  focusNodeId?: string;
+}
+
+export function ResourceTreeView(props: ResourceTreeViewProps) {
+  return (
+    <ReactFlowProvider>
+      <ResourceTreeViewInner {...props} />
+    </ReactFlowProvider>
   );
 }

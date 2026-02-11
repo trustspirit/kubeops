@@ -166,3 +166,8 @@
   width: 52px;
   flex-shrink: 0;
 }
+
+/* React Flow Controls - ensure icons are visible in both themes */
+.react-flow__controls-button svg {
+  fill: currentColor !important;
+}

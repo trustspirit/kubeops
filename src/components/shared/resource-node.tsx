@@ -1,8 +1,8 @@
 'use client';
 
 import { memo } from 'react';
+import { useRouter } from 'next/navigation';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { Badge } from '@/components/ui/badge';
 import {
   Layers,
   Copy,
@@ -48,6 +48,7 @@ export interface ResourceNodeData {
 }
 
 function ResourceNodeComponent({ data }: NodeProps) {
+  const router = useRouter();
   const { kind, name, health, info, href } = data as unknown as ResourceNodeData;
   const Icon = KIND_ICONS[kind] || Box;
   const borderClass = HEALTH_BORDER[health] || HEALTH_BORDER.Unknown;
@@ -55,7 +56,7 @@ function ResourceNodeComponent({ data }: NodeProps) {
 
   const handleClick = () => {
     if (href) {
-      window.location.href = href as string;
+      router.push(href as string);
     }
   };
 

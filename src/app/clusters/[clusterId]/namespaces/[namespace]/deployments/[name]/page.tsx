@@ -82,7 +82,7 @@ export default function DeploymentDetailPage() {
   );
 
   if (isLoading) return <LoadingSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} />;
+  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
   if (!dep) return null;
 
   const metadata = dep.metadata || {};

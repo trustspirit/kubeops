@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AgeDisplay } from '@/components/shared/age-display';
 import { ArrowLeft, Terminal, ScrollText, Trash2, KeyRound } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { usePanelStore } from '@/stores/panel-store';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { apiClient } from '@/lib/api-client';
@@ -20,6 +20,32 @@ import { YamlEditor } from '@/components/shared/yaml-editor';
 import { PodMetricsCharts } from '@/components/shared/metrics-charts';
 import { EnvValueCell, EnvFromRows, MountedSecretRows, PodLinkedSecrets } from '@/components/shared/env-value-resolver';
 import { PortForwardBtn } from '@/components/shared/port-forward-btn';
+import { PodWatchButton } from '@/components/pods/pod-watch-button';
+import { usePodRestartWatcher } from '@/hooks/use-pod-watcher';
+import { ResourceTreeView } from '@/components/shared/resource-tree';
+import { useResourceTree } from '@/hooks/use-resource-tree';
+
+function PodResourceTree({ clusterId, namespace, rootKind, rootName, focusPodName }: {
+  clusterId: string;
+  namespace: string;
+  rootKind: 'Deployment' | 'StatefulSet';
+  rootName: string;
+  focusPodName: string;
+}) {
+  const { nodes, edges, isLoading } = useResourceTree({ clusterId, namespace, rootKind, rootName });
+  return (
+    <div className="space-y-2">
+      <h3 className="text-sm font-semibold">Resource Tree</h3>
+      <ResourceTreeView
+        treeNodes={nodes}
+        treeEdges={edges}
+        isLoading={isLoading}
+        height={300}
+        focusNodeId={`Pod/${focusPodName}`}
+      />
+    </div>
+  );
+}
 
 export default function PodDetailPage() {
   const params = useParams();
@@ -32,15 +58,45 @@ export default function PodDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [envDrawerOpen, setEnvDrawerOpen] = useState(false);
   const { addTab } = usePanelStore();
+  const decodedClusterId = decodeURIComponent(clusterId);
+
   const { data: pod, error, isLoading, mutate } = useResourceDetail({
-    clusterId: decodeURIComponent(clusterId),
+    clusterId: decodedClusterId,
     namespace,
     resourceType: 'pods',
     name: podName,
   });
 
+  // Resolve pod's owner to determine tree root
+  const ownerRef = pod?.metadata?.ownerReferences?.[0];
+
+  const { data: ownerRS } = useResourceDetail({
+    clusterId: decodedClusterId,
+    namespace,
+    resourceType: 'replicasets',
+    name: ownerRef?.name || '',
+    enabled: ownerRef?.kind === 'ReplicaSet',
+  });
+
+  const treeRoot = useMemo(() => {
+    if (!ownerRef) return null;
+    if (ownerRef.kind === 'StatefulSet') {
+      return { rootKind: 'StatefulSet' as const, rootName: ownerRef.name };
+    }
+    if (ownerRef.kind === 'ReplicaSet') {
+      const depRef = ownerRS?.metadata?.ownerReferences?.find((r: any) => r.kind === 'Deployment');
+      if (depRef) {
+        return { rootKind: 'Deployment' as const, rootName: depRef.name };
+      }
+    }
+    return null;
+  }, [ownerRef, ownerRS]);
+
+  // Watch for restarts on this single pod
+  usePodRestartWatcher(decodedClusterId, pod ? [pod] : undefined);
+
   if (isLoading) return <LoadingSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} />;
+  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
   if (!pod) return null;
 
   const metadata = pod.metadata || {};
@@ -112,6 +168,7 @@ export default function PodDetailPage() {
               </Button>
             </div>
           ))}
+          <PodWatchButton clusterId={decodedClusterId} namespace={namespace} podName={podName} />
           <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
             <Trash2 className="h-4 w-4 mr-1" />Delete
           </Button>
@@ -125,9 +182,20 @@ export default function PodDetailPage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4 mt-4">
+          {/* Resource Tree */}
+          {treeRoot && (
+            <PodResourceTree
+              clusterId={decodedClusterId}
+              namespace={namespace}
+              rootKind={treeRoot.rootKind}
+              rootName={treeRoot.rootName}
+              focusPodName={podName}
+            />
+          )}
+
           {/* Metrics */}
           <PodMetricsCharts
-            clusterId={decodeURIComponent(clusterId)}
+            clusterId={decodedClusterId}
             namespace={namespace}
             podName={podName}
             nodeName={spec.nodeName}
@@ -235,7 +303,7 @@ export default function PodDetailPage() {
                                         {p.name && <span className="text-muted-foreground ml-1">({p.name})</span>}
                                       </Badge>
                                       <PortForwardBtn
-                                        clusterId={decodeURIComponent(clusterId)}
+                                        clusterId={decodedClusterId}
                                         namespace={namespace}
                                         resourceType="pod"
                                         resourceName={podName}
@@ -314,7 +382,7 @@ export default function PodDetailPage() {
             apiUrl={`/api/clusters/${clusterId}/resources/${namespace}/pods/${podName}`}
             onSaved={() => mutate()}
             portForwardContext={{
-              clusterId: decodeURIComponent(clusterId),
+              clusterId: decodedClusterId,
               namespace,
               resourceType: 'pod',
               resourceName: podName,
@@ -356,13 +424,13 @@ export default function PodDetailPage() {
                             <td className="px-3 py-1 font-mono font-medium text-blue-600 dark:text-blue-400 truncate" title={env.name}>{env.name}</td>
                             <td className="px-3 py-1 font-mono overflow-hidden">
                               <div className="break-all">
-                                <EnvValueCell env={env} clusterId={decodeURIComponent(clusterId)} namespace={namespace} />
+                                <EnvValueCell env={env} clusterId={decodedClusterId} namespace={namespace} />
                               </div>
                             </td>
                           </tr>
                         ))}
-                        <EnvFromRows envFrom={envFrom} clusterId={decodeURIComponent(clusterId)} namespace={namespace} />
-                        <MountedSecretRows volumes={spec.volumes || []} volumeMounts={ctr.volumeMounts || []} clusterId={decodeURIComponent(clusterId)} namespace={namespace} />
+                        <EnvFromRows envFrom={envFrom} clusterId={decodedClusterId} namespace={namespace} />
+                        <MountedSecretRows volumes={spec.volumes || []} volumeMounts={ctr.volumeMounts || []} clusterId={decodedClusterId} namespace={namespace} />
                       </tbody>
                     </table>
                   </div>
@@ -371,7 +439,7 @@ export default function PodDetailPage() {
             })}
 
             {/* Linked Secrets & ConfigMaps */}
-            <PodLinkedSecrets podSpec={spec} clusterId={decodeURIComponent(clusterId)} namespace={namespace} />
+            <PodLinkedSecrets podSpec={spec} clusterId={decodedClusterId} namespace={namespace} />
           </div>
         </SheetContent>
       </Sheet>

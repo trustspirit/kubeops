@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/opt/homebrew/bin/kubectl --context ovdr-teleport-dev-alp-aws-apne2-a02 get secret ovdr-official-frontend-config -n qa -o json)",
+      "Bash(node:*)",
+      "Bash(npx next build:*)",
+      "Bash(kubectl get:*)",
+      "Bash(find:*)",
+      "Bash(python3:*)",
+      "Bash(# Check what labels are available for container_fs_reads_bytes_total kubectl get --raw ''/api/v1/namespaces/victoria-metrics/services/vmsingle-victoria-metrics:8429/proxy/api/v1/query?query=container_fs_reads_bytes_total%7Bnamespace%3D%22qa%22%7D'')",
+      "Bash(# Check without namespace filter - just see what pods have this metric kubectl get --raw ''/api/v1/namespaces/victoria-metrics/services/vmsingle-victoria-metrics:8429/proxy/api/v1/query?query=count\\(container_fs_reads_bytes_total\\)%20by%20\\(namespace\\)'')",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx eslint:*)"
+    ]
+  }
+}

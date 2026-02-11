@@ -44,7 +44,7 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
     : `/api/clusters/${clusterId}/resources/${namespace}/${resourceType}/${name}`;
 
   if (isLoading) return <LoadingSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} />;
+  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
   if (!data) return null;
 
   const resource = data;
