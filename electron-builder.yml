@@ -1,0 +1,46 @@
+appId: com.kubeops.app
+productName: KubeOps
+copyright: Copyright © 2026 KubeOps
+
+directories:
+  output: dist-electron
+
+asar: false
+
+files:
+  - electron/**/*
+  - .next/**/*
+  - dist/**/*
+  - src/**/*
+  - ws/**/*
+  - server.ts
+  - next.config.ts
+  - package.json
+  - "!node_modules/.cache"
+  - "!**/*.map"
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  darkModeSupport: true
+
+linux:
+  category: Development
+  target:
+    - target: AppImage
+      arch:
+        - x64
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
