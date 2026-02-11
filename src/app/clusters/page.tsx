@@ -1,14 +1,25 @@
 'use client';
 
+import { useState } from 'react';
 import { useClusters } from '@/hooks/use-clusters';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Server, ArrowRight } from 'lucide-react';
+import { Server, ArrowRight, Search } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ClustersPage() {
   const { clusters, isLoading, error } = useClusters();
+  const [search, setSearch] = useState('');
+
+  const filtered = clusters.filter((c) => {
+    const q = search.toLowerCase();
+    return (
+      c.name.toLowerCase().includes(q) ||
+      (c.server?.toLowerCase().includes(q) ?? false) ||
+      c.cluster.toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -20,9 +31,9 @@ export default function ClustersPage() {
       </div>
 
       {isLoading && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-40" />
+        <div className="flex flex-col gap-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-14" />
           ))}
         </div>
       )}
@@ -48,52 +59,79 @@ export default function ClustersPage() {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {clusters.map((cluster) => (
-          <Link
-            key={cluster.name}
-            href={`/clusters/${encodeURIComponent(cluster.name)}`}
-          >
-            <Card className="transition-colors hover:border-primary/50 hover:bg-accent/50 cursor-pointer group">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-base font-medium truncate">
-                  {cluster.name}
-                </CardTitle>
-                <ArrowRight className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground" />
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant="outline"
-                    className={
-                      cluster.status === 'connected'
-                        ? 'bg-green-500/10 text-green-500 border-green-500/20'
-                        : cluster.status === 'error'
-                        ? 'bg-red-500/10 text-red-500 border-red-500/20'
-                        : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
-                    }
-                  >
-                    {cluster.status}
-                  </Badge>
+      {!isLoading && clusters.length > 0 && (
+        <>
+          <div className="flex items-center gap-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search clusters..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-8 h-9"
+              />
+            </div>
+            <span className="text-sm text-muted-foreground">
+              {filtered.length} of {clusters.length} clusters
+            </span>
+          </div>
+
+          <div className="flex flex-col rounded-md border divide-y">
+            {filtered.map((cluster) => (
+              <Link
+                key={cluster.name}
+                href={`/clusters/${encodeURIComponent(cluster.name)}`}
+                className="flex items-center gap-4 px-4 py-3 hover:bg-accent/50 transition-colors group"
+              >
+                <div
+                  className={`h-2 w-2 rounded-full shrink-0 ${
+                    cluster.status === 'connected'
+                      ? 'bg-green-500'
+                      : cluster.status === 'error'
+                      ? 'bg-red-500'
+                      : 'bg-yellow-500'
+                  }`}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3">
+                    <span className="font-medium truncate">{cluster.name}</span>
+                    <Badge
+                      variant="outline"
+                      className={
+                        cluster.status === 'connected'
+                          ? 'bg-green-500/10 text-green-500 border-green-500/20'
+                          : cluster.status === 'error'
+                          ? 'bg-red-500/10 text-red-500 border-red-500/20'
+                          : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
+                      }
+                    >
+                      {cluster.status}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {cluster.server && (
+                      <span className="text-xs text-muted-foreground truncate">
+                        {cluster.server}
+                      </span>
+                    )}
+                    {cluster.error && (
+                      <span className="text-xs text-destructive truncate">
+                        {cluster.error}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                {cluster.server && (
-                  <p className="text-xs text-muted-foreground truncate">
-                    {cluster.server}
-                  </p>
-                )}
-                {cluster.error && (
-                  <p className="text-xs text-destructive truncate">
-                    {cluster.error}
-                  </p>
-                )}
-                <div className="flex gap-2 text-xs text-muted-foreground">
-                  <span>Cluster: {cluster.cluster}</span>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
-      </div>
+                <ArrowRight className="h-4 w-4 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground" />
+              </Link>
+            ))}
+            {filtered.length === 0 && (
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                No clusters matching &ldquo;{search}&rdquo;
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
