@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import * as k8s from '@kubernetes/client-node';
-import { getContexts, getClusterServer } from '@/lib/k8s/kubeconfig-manager';
+import { getContexts, getClusterServer, getContextNamespace } from '@/lib/k8s/kubeconfig-manager';
 import { getCoreV1Api } from '@/lib/k8s/client-factory';
 import { ClusterInfo } from '@/lib/k8s/types';
 
@@ -20,6 +20,7 @@ export async function GET() {
             context: ctx.name,
             cluster: ctx.cluster,
             user: ctx.user,
+            namespace: ctx.namespace || undefined,
             server: getClusterServer(ctx.name),
             status: 'connected',
           };
@@ -30,6 +31,7 @@ export async function GET() {
             context: ctx.name,
             cluster: ctx.cluster,
             user: ctx.user,
+            namespace: ctx.namespace || undefined,
             server: getClusterServer(ctx.name),
             status: 'error',
             error: message,

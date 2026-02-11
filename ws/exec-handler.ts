@@ -7,12 +7,13 @@ import { PassThrough } from 'stream';
 export function handleExecConnection(ws: WebSocket, req: IncomingMessage) {
   const { pathname, query } = parse(req.url!, true);
   const parts = pathname!.split('/').filter(Boolean);
-  // parts: ['ws', 'exec', clusterId, namespace, podName]
   const clusterId = decodeURIComponent(parts[2]);
   const namespace = parts[3];
   const podName = parts[4];
   const container = query.container as string;
   const command = (query.command as string) || '/bin/sh';
+
+  console.log(`[Exec] Connecting: ${namespace}/${podName} (${container}) command="${command}"`);
 
   const kc = new k8s.KubeConfig();
   kc.loadFromDefault();
@@ -32,6 +33,7 @@ export function handleExecConnection(ws: WebSocket, req: IncomingMessage) {
 
   stderrStream.on('data', (chunk: Buffer) => {
     if (ws.readyState === WebSocket.OPEN) {
+      // Send stderr as visible output too
       ws.send(chunk);
     }
   });
@@ -43,18 +45,14 @@ export function handleExecConnection(ws: WebSocket, req: IncomingMessage) {
     const payload = data.subarray(1);
 
     if (type === 0) {
-      // stdin data
       stdinStream.write(payload);
     } else if (type === 1) {
-      // resize event
       try {
         const { cols, rows } = JSON.parse(payload.toString());
-        // Terminal resize - the k8s exec API handles this via the status channel
-        // For now we just handle stdin/stdout
         void cols;
         void rows;
       } catch {
-        // ignore parse errors
+        // ignore
       }
     }
   });
@@ -64,19 +62,38 @@ export function handleExecConnection(ws: WebSocket, req: IncomingMessage) {
       namespace,
       podName,
       container,
-      [command],
+      command,  // pass as string, not array - let the K8s API handle it
       stdoutStream,
       stderrStream,
       stdinStream,
-      true, // tty
+      true,
       (status: k8s.V1Status) => {
+        const code = (status as any)?.details?.causes?.[0]?.message || status?.message || status?.reason || 'unknown';
+        console.log(`[Exec] Exit ${namespace}/${podName}: code=${code}`, JSON.stringify(status));
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'exit', status }));
+          ws.send(JSON.stringify({ type: 'exit', reason: code, status }));
           ws.close();
         }
       }
     )
+    .then((k8sWs) => {
+      console.log(`[Exec] K8s WebSocket connected for ${namespace}/${podName}`);
+      // Notify client that K8s exec is actually connected
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'connected' }));
+      }
+
+      // If K8s WebSocket closes, clean up
+      k8sWs.on('close', () => {
+        console.log(`[Exec] K8s WebSocket closed for ${namespace}/${podName}`);
+      });
+
+      k8sWs.on('error', (err: Error) => {
+        console.error(`[Exec] K8s WebSocket error for ${namespace}/${podName}:`, err.message);
+      });
+    })
     .catch((err) => {
+      console.error(`[Exec] Failed: ${namespace}/${podName}:`, err.message, err.stack);
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'error', message: err.message }));
         ws.close();

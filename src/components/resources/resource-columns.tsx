@@ -3,6 +3,18 @@
 import { ColumnDef } from '@tanstack/react-table';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AgeDisplay } from '@/components/shared/age-display';
+import { Badge } from '@/components/ui/badge';
+
+const nsCol: ColumnDef<any> = {
+  accessorFn: (row) => row.metadata?.namespace,
+  id: 'namespace',
+  header: 'Namespace',
+  cell: ({ row }) => (
+    <Badge variant="outline" className="font-normal text-xs">
+      {row.original.metadata?.namespace}
+    </Badge>
+  ),
+};
 
 function getPodStatus(pod: any): string {
   if (pod.metadata?.deletionTimestamp) return 'Terminating';
@@ -30,6 +42,7 @@ function getDeploymentReady(dep: any): string {
 
 export const podColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'status', header: 'Status', cell: ({ row }) => <StatusBadge status={getPodStatus(row.original)} /> },
   { id: 'ready', header: 'Ready', cell: ({ row }) => getReadyContainers(row.original) },
   { id: 'restarts', header: 'Restarts', cell: ({ row }) => getPodRestarts(row.original) },
@@ -39,6 +52,7 @@ export const podColumns: ColumnDef<any>[] = [
 
 export const deploymentColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'ready', header: 'Ready', cell: ({ row }) => getDeploymentReady(row.original) },
   { id: 'upToDate', header: 'Up-to-date', cell: ({ row }) => row.original.status?.updatedReplicas || 0 },
   { id: 'available', header: 'Available', cell: ({ row }) => row.original.status?.availableReplicas || 0 },
@@ -47,6 +61,7 @@ export const deploymentColumns: ColumnDef<any>[] = [
 
 export const serviceColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'type', header: 'Type', cell: ({ row }) => row.original.spec?.type || '-' },
   { id: 'clusterIP', header: 'Cluster IP', cell: ({ row }) => row.original.spec?.clusterIP || '-' },
   { id: 'ports', header: 'Ports', cell: ({ row }) => (row.original.spec?.ports || []).map((p: any) => `${p.port}/${p.protocol}`).join(', ') || '-' },
@@ -55,12 +70,14 @@ export const serviceColumns: ColumnDef<any>[] = [
 
 export const statefulsetColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'ready', header: 'Ready', cell: ({ row }) => `${row.original.status?.readyReplicas || 0}/${row.original.spec?.replicas || 0}` },
   { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
 ];
 
 export const daemonsetColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'desired', header: 'Desired', cell: ({ row }) => row.original.status?.desiredNumberScheduled || 0 },
   { id: 'current', header: 'Current', cell: ({ row }) => row.original.status?.currentNumberScheduled || 0 },
   { id: 'ready', header: 'Ready', cell: ({ row }) => row.original.status?.numberReady || 0 },
@@ -69,6 +86,7 @@ export const daemonsetColumns: ColumnDef<any>[] = [
 
 export const replicasetColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'desired', header: 'Desired', cell: ({ row }) => row.original.spec?.replicas || 0 },
   { id: 'current', header: 'Current', cell: ({ row }) => row.original.status?.replicas || 0 },
   { id: 'ready', header: 'Ready', cell: ({ row }) => row.original.status?.readyReplicas || 0 },
@@ -77,6 +95,7 @@ export const replicasetColumns: ColumnDef<any>[] = [
 
 export const jobColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'completions', header: 'Completions', cell: ({ row }) => `${row.original.status?.succeeded || 0}/${row.original.spec?.completions || 1}` },
   { id: 'status', header: 'Status', cell: ({ row }) => {
     if (row.original.status?.succeeded) return <StatusBadge status="Succeeded" />;
@@ -89,6 +108,7 @@ export const jobColumns: ColumnDef<any>[] = [
 
 export const cronjobColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'schedule', header: 'Schedule', cell: ({ row }) => row.original.spec?.schedule || '-' },
   { id: 'suspend', header: 'Suspend', cell: ({ row }) => row.original.spec?.suspend ? 'Yes' : 'No' },
   { id: 'active', header: 'Active', cell: ({ row }) => (row.original.status?.active || []).length },
@@ -98,6 +118,7 @@ export const cronjobColumns: ColumnDef<any>[] = [
 
 export const ingressColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'class', header: 'Class', cell: ({ row }) => row.original.spec?.ingressClassName || '-' },
   { id: 'hosts', header: 'Hosts', cell: ({ row }) => (row.original.spec?.rules || []).map((r: any) => r.host).filter(Boolean).join(', ') || '*' },
   { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
@@ -105,12 +126,14 @@ export const ingressColumns: ColumnDef<any>[] = [
 
 export const configmapColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'data', header: 'Data', cell: ({ row }) => Object.keys(row.original.data || {}).length },
   { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
 ];
 
 export const secretColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'type', header: 'Type', cell: ({ row }) => row.original.type || '-' },
   { id: 'data', header: 'Data', cell: ({ row }) => Object.keys(row.original.data || {}).length },
   { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
@@ -118,6 +141,7 @@ export const secretColumns: ColumnDef<any>[] = [
 
 export const pvcColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'status', header: 'Status', cell: ({ row }) => <StatusBadge status={row.original.status?.phase || 'Unknown'} /> },
   { id: 'volume', header: 'Volume', cell: ({ row }) => row.original.spec?.volumeName || '-' },
   { id: 'capacity', header: 'Capacity', cell: ({ row }) => row.original.status?.capacity?.storage || '-' },
@@ -127,18 +151,21 @@ export const pvcColumns: ColumnDef<any>[] = [
 
 export const serviceaccountColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'secrets', header: 'Secrets', cell: ({ row }) => (row.original.secrets || []).length },
   { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
 ];
 
 export const roleColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'rules', header: 'Rules', cell: ({ row }) => (row.original.rules || []).length },
   { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
 ];
 
 export const rolebindingColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'role', header: 'Role', cell: ({ row }) => `${row.original.roleRef?.kind}/${row.original.roleRef?.name}` },
   { id: 'subjects', header: 'Subjects', cell: ({ row }) => (row.original.subjects || []).length },
   { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
@@ -146,6 +173,7 @@ export const rolebindingColumns: ColumnDef<any>[] = [
 
 export const networkpolicyColumns: ColumnDef<any>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
   { id: 'podSelector', header: 'Pod Selector', cell: ({ row }) => {
     const labels = row.original.spec?.podSelector?.matchLabels || {};
     const entries = Object.entries(labels);
@@ -155,6 +183,7 @@ export const networkpolicyColumns: ColumnDef<any>[] = [
 ];
 
 export const eventColumns: ColumnDef<any>[] = [
+  nsCol,
   { id: 'type', header: 'Type', cell: ({ row }) => <StatusBadge status={row.original.type || 'Normal'} /> },
   { id: 'reason', header: 'Reason', cell: ({ row }) => row.original.reason || '-' },
   { id: 'object', header: 'Object', cell: ({ row }) => `${row.original.involvedObject?.kind}/${row.original.involvedObject?.name}` },

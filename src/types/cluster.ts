@@ -3,6 +3,7 @@ export interface ClusterInfo {
   context: string;
   cluster: string;
   user: string;
+  namespace?: string;
   server?: string;
   status: 'connected' | 'disconnected' | 'error';
   error?: string;

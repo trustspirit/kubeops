@@ -124,3 +124,23 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Electron window drag region */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag-region {
+  -webkit-app-region: no-drag;
+}
+
+/* Electron traffic light spacer - hidden by default, shown only in Electron */
+.electron-spacer {
+  display: none;
+}
+
+:root.electron .electron-spacer {
+  display: block;
+  width: 52px;
+  flex-shrink: 0;
+}

@@ -31,31 +31,34 @@ export function ClusterSelector() {
   }
 
   return (
-    <Select value={clusterId ? decodeURIComponent(clusterId) : undefined} onValueChange={handleChange}>
-      <SelectTrigger className="w-[240px] h-8">
-        <div className="flex items-center gap-2">
-          <Server className="h-3.5 w-3.5" />
-          <SelectValue placeholder="Select cluster" />
-        </div>
-      </SelectTrigger>
-      <SelectContent>
-        {clusters.map((cluster) => (
-          <SelectItem key={cluster.name} value={cluster.name}>
-            <div className="flex items-center gap-2">
-              <div
-                className={`h-2 w-2 rounded-full ${
-                  cluster.status === 'connected'
-                    ? 'bg-green-500'
-                    : cluster.status === 'error'
-                    ? 'bg-red-500'
-                    : 'bg-yellow-500'
-                }`}
-              />
-              <span className="truncate">{cluster.name}</span>
-            </div>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs text-muted-foreground shrink-0">Cluster</span>
+      <Select value={clusterId ? decodeURIComponent(clusterId) : undefined} onValueChange={handleChange}>
+        <SelectTrigger className="w-[360px] h-8 overflow-hidden">
+          <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+            <Server className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate"><SelectValue placeholder="Select cluster" /></span>
+          </div>
+        </SelectTrigger>
+        <SelectContent>
+          {clusters.map((cluster) => (
+            <SelectItem key={cluster.name} value={cluster.name}>
+              <div className="flex items-center gap-2">
+                <div
+                  className={`h-2 w-2 rounded-full shrink-0 ${
+                    cluster.status === 'connected'
+                      ? 'bg-green-500'
+                      : cluster.status === 'error'
+                      ? 'bg-red-500'
+                      : 'bg-yellow-500'
+                  }`}
+                />
+                <span>{cluster.name}</span>
+              </div>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }

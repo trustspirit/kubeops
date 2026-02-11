@@ -3,6 +3,7 @@ export interface ClusterInfo {
   context: string;
   cluster: string;
   user: string;
+  namespace?: string;
   server?: string;
   status: 'connected' | 'disconnected' | 'error';
   error?: string;
@@ -11,6 +12,7 @@ export interface ClusterInfo {
 export interface ResourceConfig {
   apiClass: string;
   listFn: string;
+  listAllFn?: string;
   getFn: string;
   replaceFn?: string;
   deleteFn?: string;

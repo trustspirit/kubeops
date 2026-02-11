@@ -5,6 +5,19 @@ import { NAMESPACED_RESOURCES, CLUSTER_SCOPED_RESOURCES, getResourceConfig } fro
 
 export const dynamic = 'force-dynamic';
 
+function extractK8sError(error: any): { status: number; message: string } {
+  const status = error?.code || error?.statusCode || error?.response?.statusCode || 500;
+
+  // error.body can be a parsed object or a raw JSON string
+  let body = error?.body;
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch { /* keep as string */ }
+  }
+
+  const message = body?.message || error?.message || 'Request failed';
+  return { status, message };
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const API_CLASS_MAP: Record<string, any> = {
   CoreV1Api: k8s.CoreV1Api,
@@ -49,14 +62,20 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       const result = await client[config.getFn](args);
       return NextResponse.json(result);
     } else {
+      // Use "all namespaces" API when namespace is _all
+      const isAllNamespaces = namespace === '_all' && config.namespaced && config.listAllFn;
+      if (isAllNamespaces) {
+        const result = await client[config.listAllFn!]();
+        return NextResponse.json(result);
+      }
       const args: any = {};
       if (config.namespaced) args.namespace = namespace;
       const result = await client[config.listFn](args);
       return NextResponse.json(result);
     }
   } catch (error: any) {
-    const status = error?.statusCode || error?.response?.statusCode || 500;
-    const message = error?.body?.message || error?.message || 'Request failed';
+    const { status, message } = extractK8sError(error);
+    console.error(`[K8s API] GET ${resourceType}${resourceName ? `/${resourceName}` : ''} in ${namespace}: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });
   }
 }
@@ -81,8 +100,8 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
     const result = await client[config.replaceFn](args);
     return NextResponse.json(result);
   } catch (error: any) {
-    const status = error?.statusCode || error?.response?.statusCode || 500;
-    const message = error?.body?.message || error?.message || 'Update failed';
+    const { status, message } = extractK8sError(error);
+    console.error(`[K8s API] PUT ${resourceType}/${resourceName} in ${namespace}: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });
   }
 }
@@ -106,8 +125,8 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     const result = await client[config.deleteFn](args);
     return NextResponse.json(result);
   } catch (error: any) {
-    const status = error?.statusCode || error?.response?.statusCode || 500;
-    const message = error?.body?.message || error?.message || 'Delete failed';
+    const { status, message } = extractK8sError(error);
+    console.error(`[K8s API] DELETE ${resourceType}/${resourceName} in ${namespace}: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });
   }
 }

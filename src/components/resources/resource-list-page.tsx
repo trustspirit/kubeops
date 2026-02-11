@@ -34,16 +34,17 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
 
   const items = data?.items || [];
 
-  // Make name column clickable
+  // Make name column clickable - use resource's own namespace for detail link
   const clickableColumns: ColumnDef<any>[] = columns.map((col: any) => {
     if (col.id === 'name') {
       return {
         ...col,
         cell: ({ row }: any) => {
           const name = row.original.metadata?.name;
+          const itemNs = row.original.metadata?.namespace || namespace;
           const basePath = clusterScoped
             ? `/clusters/${clusterId}/${resourceType}/${name}`
-            : `/clusters/${clusterId}/namespaces/${namespace}/${resourceType}/${name}`;
+            : `/clusters/${clusterId}/namespaces/${itemNs}/${resourceType}/${name}`;
           return (
             <Link href={basePath} className="font-medium text-primary hover:underline">
               {name}

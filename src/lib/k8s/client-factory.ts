@@ -1,7 +1,13 @@
 import * as k8s from '@kubernetes/client-node';
 import { getKubeConfigForContext } from './kubeconfig-manager';
 
-const clientCache = new Map<string, Map<string, unknown>>();
+interface CachedClient {
+  client: unknown;
+  createdAt: number;
+}
+
+const CLIENT_CACHE_TTL = 60_000; // 1 minute - short TTL for Teleport exec credential compatibility
+const clientCache = new Map<string, Map<string, CachedClient>>();
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getApiClient<T>(contextName: string, ApiClass: any): T {
@@ -10,13 +16,16 @@ export function getApiClient<T>(contextName: string, ApiClass: any): T {
   }
   const contextClients = clientCache.get(contextName)!;
   const className = ApiClass.name || String(ApiClass);
+  const cached = contextClients.get(className);
 
-  if (!contextClients.has(className)) {
-    const kc = getKubeConfigForContext(contextName);
-    const client = kc.makeApiClient(ApiClass);
-    contextClients.set(className, client);
+  if (cached && Date.now() - cached.createdAt < CLIENT_CACHE_TTL) {
+    return cached.client as T;
   }
-  return contextClients.get(className) as T;
+
+  const kc = getKubeConfigForContext(contextName);
+  const client = kc.makeApiClient(ApiClass);
+  contextClients.set(className, { client, createdAt: Date.now() });
+  return client as T;
 }
 
 export function clearClientCache(contextName?: string) {

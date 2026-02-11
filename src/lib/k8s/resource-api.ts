@@ -4,6 +4,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   pods: {
     apiClass: 'CoreV1Api',
     listFn: 'listNamespacedPod',
+    listAllFn: 'listPodForAllNamespaces',
     getFn: 'readNamespacedPod',
     replaceFn: 'replaceNamespacedPod',
     deleteFn: 'deleteNamespacedPod',
@@ -13,6 +14,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   deployments: {
     apiClass: 'AppsV1Api',
     listFn: 'listNamespacedDeployment',
+    listAllFn: 'listDeploymentForAllNamespaces',
     getFn: 'readNamespacedDeployment',
     replaceFn: 'replaceNamespacedDeployment',
     deleteFn: 'deleteNamespacedDeployment',
@@ -22,6 +24,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   statefulsets: {
     apiClass: 'AppsV1Api',
     listFn: 'listNamespacedStatefulSet',
+    listAllFn: 'listStatefulSetForAllNamespaces',
     getFn: 'readNamespacedStatefulSet',
     replaceFn: 'replaceNamespacedStatefulSet',
     deleteFn: 'deleteNamespacedStatefulSet',
@@ -31,6 +34,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   daemonsets: {
     apiClass: 'AppsV1Api',
     listFn: 'listNamespacedDaemonSet',
+    listAllFn: 'listDaemonSetForAllNamespaces',
     getFn: 'readNamespacedDaemonSet',
     replaceFn: 'replaceNamespacedDaemonSet',
     deleteFn: 'deleteNamespacedDaemonSet',
@@ -40,6 +44,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   replicasets: {
     apiClass: 'AppsV1Api',
     listFn: 'listNamespacedReplicaSet',
+    listAllFn: 'listReplicaSetForAllNamespaces',
     getFn: 'readNamespacedReplicaSet',
     replaceFn: 'replaceNamespacedReplicaSet',
     deleteFn: 'deleteNamespacedReplicaSet',
@@ -49,6 +54,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   services: {
     apiClass: 'CoreV1Api',
     listFn: 'listNamespacedService',
+    listAllFn: 'listServiceForAllNamespaces',
     getFn: 'readNamespacedService',
     replaceFn: 'replaceNamespacedService',
     deleteFn: 'deleteNamespacedService',
@@ -58,6 +64,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   ingresses: {
     apiClass: 'NetworkingV1Api',
     listFn: 'listNamespacedIngress',
+    listAllFn: 'listIngressForAllNamespaces',
     getFn: 'readNamespacedIngress',
     replaceFn: 'replaceNamespacedIngress',
     deleteFn: 'deleteNamespacedIngress',
@@ -67,6 +74,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   configmaps: {
     apiClass: 'CoreV1Api',
     listFn: 'listNamespacedConfigMap',
+    listAllFn: 'listConfigMapForAllNamespaces',
     getFn: 'readNamespacedConfigMap',
     replaceFn: 'replaceNamespacedConfigMap',
     deleteFn: 'deleteNamespacedConfigMap',
@@ -76,6 +84,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   secrets: {
     apiClass: 'CoreV1Api',
     listFn: 'listNamespacedSecret',
+    listAllFn: 'listSecretForAllNamespaces',
     getFn: 'readNamespacedSecret',
     replaceFn: 'replaceNamespacedSecret',
     deleteFn: 'deleteNamespacedSecret',
@@ -85,6 +94,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   pvcs: {
     apiClass: 'CoreV1Api',
     listFn: 'listNamespacedPersistentVolumeClaim',
+    listAllFn: 'listPersistentVolumeClaimForAllNamespaces',
     getFn: 'readNamespacedPersistentVolumeClaim',
     replaceFn: 'replaceNamespacedPersistentVolumeClaim',
     deleteFn: 'deleteNamespacedPersistentVolumeClaim',
@@ -94,6 +104,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   serviceaccounts: {
     apiClass: 'CoreV1Api',
     listFn: 'listNamespacedServiceAccount',
+    listAllFn: 'listServiceAccountForAllNamespaces',
     getFn: 'readNamespacedServiceAccount',
     replaceFn: 'replaceNamespacedServiceAccount',
     deleteFn: 'deleteNamespacedServiceAccount',
@@ -103,6 +114,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   roles: {
     apiClass: 'RbacAuthorizationV1Api',
     listFn: 'listNamespacedRole',
+    listAllFn: 'listRoleForAllNamespaces',
     getFn: 'readNamespacedRole',
     replaceFn: 'replaceNamespacedRole',
     deleteFn: 'deleteNamespacedRole',
@@ -112,6 +124,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   rolebindings: {
     apiClass: 'RbacAuthorizationV1Api',
     listFn: 'listNamespacedRoleBinding',
+    listAllFn: 'listRoleBindingForAllNamespaces',
     getFn: 'readNamespacedRoleBinding',
     replaceFn: 'replaceNamespacedRoleBinding',
     deleteFn: 'deleteNamespacedRoleBinding',
@@ -121,6 +134,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   networkpolicies: {
     apiClass: 'NetworkingV1Api',
     listFn: 'listNamespacedNetworkPolicy',
+    listAllFn: 'listNetworkPolicyForAllNamespaces',
     getFn: 'readNamespacedNetworkPolicy',
     replaceFn: 'replaceNamespacedNetworkPolicy',
     deleteFn: 'deleteNamespacedNetworkPolicy',
@@ -130,6 +144,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   jobs: {
     apiClass: 'BatchV1Api',
     listFn: 'listNamespacedJob',
+    listAllFn: 'listJobForAllNamespaces',
     getFn: 'readNamespacedJob',
     replaceFn: 'replaceNamespacedJob',
     deleteFn: 'deleteNamespacedJob',
@@ -139,6 +154,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   cronjobs: {
     apiClass: 'BatchV1Api',
     listFn: 'listNamespacedCronJob',
+    listAllFn: 'listCronJobForAllNamespaces',
     getFn: 'readNamespacedCronJob',
     replaceFn: 'replaceNamespacedCronJob',
     deleteFn: 'deleteNamespacedCronJob',
@@ -148,6 +164,7 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
   events: {
     apiClass: 'CoreV1Api',
     listFn: 'listNamespacedEvent',
+    listAllFn: 'listEventForAllNamespaces',
     getFn: 'readNamespacedEvent',
     replaceFn: 'replaceNamespacedEvent',
     deleteFn: 'deleteNamespacedEvent',

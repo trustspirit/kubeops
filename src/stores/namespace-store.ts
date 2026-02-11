@@ -16,7 +16,7 @@ export const useNamespaceStore = create<NamespaceState>()(
           activeNamespaces: { ...state.activeNamespaces, [clusterId]: namespace },
         })),
       getActiveNamespace: (clusterId) => {
-        return get().activeNamespaces[clusterId] || 'default';
+        return get().activeNamespaces[clusterId] || '_all';
       },
     }),
     {

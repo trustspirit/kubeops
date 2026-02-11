@@ -8,13 +8,14 @@ import { Search } from 'lucide-react';
 
 export function Header() {
   return (
-    <header className="flex h-14 items-center justify-between border-b px-4">
-      <div className="flex items-center gap-3">
+    <header className="flex h-14 items-center justify-between border-b px-4 drag-region">
+      <div className="flex items-center gap-3 no-drag-region">
+        <div className="electron-spacer" />
         <h1 className="text-lg font-bold tracking-tight">KubeOps</h1>
         <ClusterSelector />
         <NamespaceSelector />
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 no-drag-region">
         <Button
           variant="outline"
           size="sm"

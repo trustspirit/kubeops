@@ -10,8 +10,9 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AgeDisplay } from '@/components/shared/age-display';
 import { ArrowLeft, Terminal, ScrollText } from 'lucide-react';
-import Link from 'next/link';
 import * as yaml from 'js-yaml';
+import { usePanelStore } from '@/stores/panel-store';
+import { YamlEditor } from '@/components/shared/yaml-editor';
 
 export default function PodDetailPage() {
   const params = useParams();
@@ -20,6 +21,7 @@ export default function PodDetailPage() {
   const namespace = params.namespace as string;
   const podName = params.podName as string;
 
+  const { addTab } = usePanelStore();
   const { data: pod, error, isLoading, mutate } = useResourceDetail({
     clusterId: decodeURIComponent(clusterId),
     namespace,
@@ -53,18 +55,42 @@ export default function PodDetailPage() {
           <p className="text-sm text-muted-foreground">Pod in {namespace}</p>
         </div>
         <div className="flex gap-2">
-          <Link href={`/clusters/${clusterId}/namespaces/${namespace}/pods/${podName}/logs`}>
-            <Button variant="outline" size="sm">
-              <ScrollText className="h-4 w-4 mr-1" />
-              Logs
-            </Button>
-          </Link>
-          <Link href={`/clusters/${clusterId}/namespaces/${namespace}/pods/${podName}/exec`}>
-            <Button variant="outline" size="sm">
-              <Terminal className="h-4 w-4 mr-1" />
-              Exec
-            </Button>
-          </Link>
+          {containers.map((c: any) => c.name).slice(0, 1).map((containerName: string) => (
+            <div key={containerName} className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => addTab({
+                  id: `logs-${podName}-${containerName}`,
+                  type: 'logs',
+                  title: `Logs: ${podName}`,
+                  clusterId,
+                  namespace,
+                  podName,
+                  container: containerName,
+                })}
+              >
+                <ScrollText className="h-4 w-4 mr-1" />
+                Logs
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => addTab({
+                  id: `exec-${podName}-${containerName}`,
+                  type: 'exec',
+                  title: `Exec: ${podName}`,
+                  clusterId,
+                  namespace,
+                  podName,
+                  container: containerName,
+                })}
+              >
+                <Terminal className="h-4 w-4 mr-1" />
+                Exec
+              </Button>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -172,9 +198,11 @@ export default function PodDetailPage() {
         </TabsContent>
 
         <TabsContent value="yaml" className="mt-4">
-          <pre className="rounded-md border bg-muted p-4 overflow-auto max-h-[600px] text-xs font-mono whitespace-pre">
-            {yaml.dump(pod, { lineWidth: -1 })}
-          </pre>
+          <YamlEditor
+            data={pod}
+            apiUrl={`/api/clusters/${clusterId}/resources/${namespace}/pods/${podName}`}
+            onSaved={() => mutate()}
+          />
         </TabsContent>
       </Tabs>
     </div>

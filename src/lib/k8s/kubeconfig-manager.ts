@@ -35,3 +35,9 @@ export function getClusterServer(contextName: string): string | undefined {
   const cluster = kc.getClusters().find(c => c.name === context.cluster);
   return cluster?.server;
 }
+
+export function getContextNamespace(contextName: string): string | undefined {
+  const kc = loadKubeConfig();
+  const context = kc.getContexts().find(c => c.name === contextName);
+  return context?.namespace || undefined;
+}

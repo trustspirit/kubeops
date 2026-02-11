@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import * as yaml from 'js-yaml';
+import { YamlEditor } from '@/components/shared/yaml-editor';
 
 interface ResourceDetailPageProps {
   resourceType: string;
@@ -37,6 +38,10 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
     resourceType,
     name,
   });
+
+  const yamlApiUrl = clusterScoped
+    ? `/api/clusters/${clusterId}/resources/_/${resourceType}/${name}`
+    : `/api/clusters/${clusterId}/resources/${namespace}/${resourceType}/${name}`;
 
   if (isLoading) return <LoadingSkeleton />;
   if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} />;
@@ -155,9 +160,7 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
         )}
 
         <TabsContent value="yaml" className="mt-4">
-          <pre className="rounded-md border bg-muted p-4 overflow-auto max-h-[600px] text-xs font-mono whitespace-pre">
-            {yamlStr}
-          </pre>
+          <YamlEditor data={resource} apiUrl={yamlApiUrl} onSaved={() => mutate()} />
         </TabsContent>
       </Tabs>
 
