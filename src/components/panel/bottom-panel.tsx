@@ -103,7 +103,7 @@ export function BottomPanel() {
           {tabs.map((tab) => (
             <div key={tab.id} className={cn('h-full', tab.id === activeTabId ? 'block' : 'hidden')}>
               {tab.type === 'exec' ? (
-                <TerminalTab tab={tab} />
+                <TerminalTab tab={tab} active={tab.id === activeTabId} />
               ) : (
                 <LogsTab tab={tab} />
               )}

@@ -1,36 +1,72 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# KubeOps
 
-## Getting Started
+**KubeOps** is a modern, powerful desktop client for Kubernetes, designed to simplify cluster management and monitoring. Built with **Electron**, **Next.js**, and **Tailwind CSS**, it offers a sleek, high-performance interface for DevOps engineers and developers.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- **🚀 Multi-Context Support**: Seamlessly switch between different Kubernetes clusters defined in your local `~/.kube/config`. No manual configuration required.
+- **⚡ Real-Time Monitoring**: View live status updates for Pods, Deployments, Services, and other resources.
+- **💻 Interactive Terminal**: Execute commands directly into your running pods with a fully functional, integrated terminal.
+- **📄 Log Streaming**: Stream container logs in real-time to debug issues instantly.
+- **🛠️ Comprehensive Resource View**: Drill down into Namespaces, Nodes, specialized workloads (DaemonSets, StatefulSets, Jobs), and configuration (ConfigMaps, Secrets).
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Installation
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Prerequisites
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Node.js**: Verify you have Node.js installed (v18+ recommended).
+- **Kubeconfig**: Ensure you have a valid `~/.kube/config` file accessible.
 
-## Learn More
+### Running from Source
 
-To learn more about Next.js, take a look at the following resources:
+To run KubeOps locally for development or testing:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1.  **Clone the repository**:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+    ```bash
+    git clone https://github.com/trustspirit/kubeops.git
+    cd kubeops
+    ```
 
-## Deploy on Vercel
+2.  **Install dependencies**:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+    ```bash
+    npm install
+    ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+3.  **Start the application**:
+    ```bash
+    npm run electron:dev
+    ```
+    This command starts both the Next.js development server and the Electron window.
+
+### Building the App
+
+To build a production-ready application for your OS:
+
+- **macOS**: `npm run electron:build:mac`
+- **Windows**: `npm run electron:build:win`
+- **Linux**: `npm run electron:build:linux`
+
+The output binaries will be located in the `dist` or `release` directory (depending on configuration).
+
+## Usage Guide
+
+1.  **Connect to a Cluster**:
+    - Upon launch, KubeOps automatically detects clusters from your default kubeconfig.
+    - Click on a cluster card to connect.
+
+2.  **Navigate Resources**:
+    - Use the sidebar to explore Namespaces, Nodes, Workloads, Network, and Storage resources.
+    - Click on a specific resource to view details.
+
+3.  **Interact with Pods**:
+    - Navigate to **Workloads > Pods**.
+    - Select a pod to view its details.
+    - Click the **Exec** tab to open a terminal session inside the container.
+    - Click the **Logs** tab to view real-time logs.
+
+## Troubleshooting
+
+- **"No clusters found"**: Ensure your `~/.kube/config` is valid and contains at least one context. You can verify this by running `kubectl config get-contexts` in your terminal.
+- **Connection Refused**: If the app fails to connect to the local server, try restarting the application or checking if port 3000 is occupied.

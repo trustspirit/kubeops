@@ -1,3 +1,10 @@
+// Suppress punycode deprecation warning from dependencies
+process.removeAllListeners('warning');
+process.on('warning', (warning) => {
+  if (warning.name === 'DeprecationWarning' && warning.message.includes('punycode')) return;
+  console.warn(warning.name, warning.message);
+});
+
 import { createServer } from 'http';
 import { parse } from 'url';
 import next from 'next';

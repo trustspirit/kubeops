@@ -13,6 +13,7 @@ import { ArrowLeft, Terminal, ScrollText } from 'lucide-react';
 import * as yaml from 'js-yaml';
 import { usePanelStore } from '@/stores/panel-store';
 import { YamlEditor } from '@/components/shared/yaml-editor';
+import { PodMetricsCharts } from '@/components/shared/metrics-charts';
 
 export default function PodDetailPage() {
   const params = useParams();
@@ -102,6 +103,11 @@ export default function PodDetailPage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4 mt-4">
+          <PodMetricsCharts
+            clusterId={decodeURIComponent(clusterId)}
+            namespace={namespace}
+            podName={podName}
+          />
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-3">
               <h3 className="text-sm font-semibold">Pod Info</h3>

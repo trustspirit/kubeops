@@ -1,36 +1,45 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import type { PanelTab } from '@/stores/panel-store';
 
 interface TerminalTabProps {
   tab: PanelTab;
+  active: boolean;
 }
 
-export function TerminalTab({ tab }: TerminalTabProps) {
+export function TerminalTab({ tab, active }: TerminalTabProps) {
   const { clusterId, namespace, podName, container } = tab;
-  const [shell, setShell] = useState('/bin/sh');
   const [connected, setConnected] = useState(false);
   const terminalRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<any>(null);
   const fitRef = useRef<any>(null);
+  const initDone = useRef(false);
+
+  const focusTerminal = useCallback(() => {
+    if (termRef.current) {
+      termRef.current.focus();
+    }
+  }, []);
 
   useEffect(() => {
-    if (!container || !terminalRef.current) return;
+    if (!container || !terminalRef.current || initDone.current) return;
+    initDone.current = true;
 
     let term: any;
+    let fitAddon: any;
+    let ws: WebSocket;
     let disposed = false;
 
     async function init() {
-      const { Terminal } = await import('@xterm/xterm');
-      const { FitAddon } = await import('@xterm/addon-fit');
+      const xtermModule = await import('@xterm/xterm');
+      const fitModule = await import('@xterm/addon-fit');
       await import('@xterm/xterm/css/xterm.css');
 
       if (disposed) return;
 
-      term = new Terminal({
+      term = new xtermModule.Terminal({
         cursorBlink: true,
         fontSize: 13,
         fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
@@ -38,57 +47,50 @@ export function TerminalTab({ tab }: TerminalTabProps) {
           background: '#1e1e2e',
           foreground: '#cdd6f4',
           cursor: '#f5e0dc',
+          selectionBackground: '#585b70',
         },
       });
       termRef.current = term;
 
-      const fitAddon = new FitAddon();
+      fitAddon = new fitModule.FitAddon();
       fitRef.current = fitAddon;
       term.loadAddon(fitAddon);
       term.open(terminalRef.current!);
+      fitAddon.fit();
+      term.focus();
 
-      // Delay fit to ensure DOM is laid out
-      requestAnimationFrame(() => {
-        if (!disposed) fitAddon.fit();
-      });
-
+      // WebSocket connection
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const decodedCluster = decodeURIComponent(clusterId);
-      const wsUrl = `${protocol}//${window.location.host}/ws/exec/${encodeURIComponent(decodedCluster)}/${namespace}/${podName}?container=${container}&command=${encodeURIComponent(shell)}`;
+      const wsUrl = `${protocol}//${window.location.host}/ws/exec/${encodeURIComponent(decodedCluster)}/${namespace}/${podName}?container=${container}`;
 
-      const ws = new WebSocket(wsUrl);
+      ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
 
       ws.onopen = () => {
         setConnected(true);
-        term.writeln(`\x1b[2m# ${decodedCluster} / ${namespace} / ${podName} (${container})\x1b[0m\r\n`);
+        // Send initial terminal size
+        sendResize(ws, term);
+        term.focus();
       };
 
       ws.onmessage = (event) => {
         if (typeof event.data === 'string') {
           try {
             const msg = JSON.parse(event.data);
-            if (msg.type === 'connected') {
-              // K8s exec WebSocket connected
-              return;
-            } else if (msg.type === 'exit') {
-              term.writeln(`\r\n\x1b[33mProcess exited: ${msg.reason || 'unknown'}\x1b[0m`);
-              if (msg.reason?.includes('not found') || msg.reason?.includes('forbidden') || msg.reason?.includes('Forbidden')) {
-                term.writeln(`\x1b[2m  Check: kubectl auth can-i create pods/exec -n ${namespace}\x1b[0m`);
-              }
-              term.writeln(`\x1b[2m  Try a different shell or check RBAC permissions.\x1b[0m`);
+            if (msg.type === 'connected') return;
+            if (msg.type === 'exit') {
+              term.writeln(`\r\n\x1b[33m${msg.reason || 'Session ended'}\x1b[0m`);
               setConnected(false);
               return;
-            } else if (msg.type === 'error') {
+            }
+            if (msg.type === 'error') {
               term.writeln(`\r\n\x1b[31mError: ${msg.message}\x1b[0m`);
-              if (msg.message?.includes('not found') || msg.message?.includes('forbidden')) {
-                term.writeln(`\x1b[2m  Check RBAC: kubectl auth can-i create pods/exec -n ${namespace}\x1b[0m`);
-              }
               return;
             }
           } catch {
-            // Not JSON - treat as terminal output
+            // Not JSON - terminal output from PTY
           }
           term.write(event.data);
         } else {
@@ -99,64 +101,80 @@ export function TerminalTab({ tab }: TerminalTabProps) {
       ws.onclose = () => setConnected(false);
       ws.onerror = () => setConnected(false);
 
+      // Keyboard input → WebSocket stdin
       term.onData((data: string) => {
         if (ws.readyState === WebSocket.OPEN) {
           const encoder = new TextEncoder();
           const encoded = encoder.encode(data);
           const buffer = new Uint8Array(encoded.length + 1);
-          buffer[0] = 0; // stdin type
+          buffer[0] = 0; // type: stdin
           buffer.set(encoded, 1);
           ws.send(buffer);
         }
       });
 
-      const resizeObserver = new ResizeObserver(() => {
+      // Terminal resize → WebSocket resize event
+      term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
+        sendResize(ws, term);
+      });
+
+      // Watch container size changes
+      const ro = new ResizeObserver(() => {
         if (!disposed) {
           try { fitAddon.fit(); } catch { /* ignore */ }
         }
       });
-      resizeObserver.observe(terminalRef.current!);
+      ro.observe(terminalRef.current!);
 
-      return () => resizeObserver.disconnect();
+      return () => ro.disconnect();
+    }
+
+    function sendResize(ws: WebSocket, term: any) {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      const payload = JSON.stringify({ cols: term.cols || 80, rows: term.rows || 24 });
+      const buf = new Uint8Array(payload.length + 1);
+      buf[0] = 1; // type: resize
+      for (let i = 0; i < payload.length; i++) buf[i + 1] = payload.charCodeAt(i);
+      ws.send(buf);
     }
 
     const cleanup = init();
 
     return () => {
       disposed = true;
+      initDone.current = false;
       cleanup.then((fn) => fn?.());
       wsRef.current?.close();
       termRef.current?.dispose();
       termRef.current = null;
     };
-  }, [container, shell, clusterId, namespace, podName]);
+  }, [container, clusterId, namespace, podName]);
 
-  // Refit when panel resizes
+  // Focus on tab activation
   useEffect(() => {
-    const interval = setInterval(() => {
-      try { fitRef.current?.fit(); } catch { /* ignore */ }
-    }, 300);
-    const timer = setTimeout(() => clearInterval(interval), 2000);
-    return () => { clearInterval(interval); clearTimeout(timer); };
-  }, []);
+    if (active) {
+      setTimeout(() => {
+        try { fitRef.current?.fit(); } catch { /* ignore */ }
+        focusTerminal();
+      }, 50);
+    }
+  }, [active, focusTerminal]);
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-card shrink-0">
-        <Select value={shell} onValueChange={setShell}>
-          <SelectTrigger className="w-[100px] h-6 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="/bin/sh">sh</SelectItem>
-            <SelectItem value="/bin/bash">bash</SelectItem>
-            <SelectItem value="/bin/zsh">zsh</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="flex items-center gap-2 px-3 py-1 border-b bg-card shrink-0">
         <div className={`h-2 w-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
-        <span className="text-xs text-muted-foreground">{connected ? 'Connected' : 'Disconnected'}</span>
+        <span className="text-xs text-muted-foreground">
+          {connected ? 'Connected' : 'Disconnected'}
+        </span>
       </div>
-      <div ref={terminalRef} className="flex-1 min-h-0" />
+      <div
+        ref={terminalRef}
+        className="flex-1 min-h-0"
+        onClick={focusTerminal}
+        onFocus={focusTerminal}
+        style={{ cursor: 'text' }}
+      />
     </div>
   );
 }
