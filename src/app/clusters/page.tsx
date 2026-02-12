@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { useClusters } from '@/hooks/use-clusters';
+import { useClustersFiltering } from '@/hooks/use-clusters-filtering';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useClusterCatalogStore } from '@/stores/cluster-catalog-store';
+import { parseClusterName } from '@/lib/cluster-names';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -19,14 +21,6 @@ import { ClusterCard } from '@/components/clusters/cluster-card';
 import { ClusterTagEditor } from '@/components/clusters/cluster-tag-editor';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-
-function parseClusterName(contextName: string, clusterField: string) {
-  const prefix = clusterField + '-';
-  if (contextName.startsWith(prefix) && contextName.length > prefix.length) {
-    return { prefix, realName: contextName.slice(prefix.length) };
-  }
-  return { prefix: '', realName: contextName };
-}
 
 export default function ClustersPage() {
   const router = useRouter();
@@ -42,6 +36,14 @@ export default function ClustersPage() {
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const { data: tshStatus, isLoading: tshLoading, mutate: mutateTshStatus } = useSWR('/api/tsh/status', { refreshInterval: 60_000 });
   const tshLoggedIn = tshStatus?.loggedIn === true;
+
+  const { filtered, allTags, grouped, hasGroups } = useClustersFiltering({
+    clusters,
+    search,
+    showFavoritesOnly,
+    tagFilter,
+    getClusterMeta,
+  });
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -113,50 +115,6 @@ export default function ClustersPage() {
     }
   }, [router, mutate]);
 
-  // Filter and group clusters
-  const filtered = useMemo(() => {
-    let result = clusters.filter((c) => {
-      const q = search.toLowerCase();
-      return (
-        c.name.toLowerCase().includes(q) ||
-        (c.server?.toLowerCase().includes(q) ?? false) ||
-        c.cluster.toLowerCase().includes(q)
-      );
-    });
-
-    if (showFavoritesOnly) {
-      result = result.filter((c) => getClusterMeta(c.name).favorite);
-    }
-
-    if (tagFilter) {
-      result = result.filter((c) => getClusterMeta(c.name).tags.includes(tagFilter));
-    }
-
-    return result;
-  }, [clusters, search, showFavoritesOnly, tagFilter, getClusterMeta]);
-
-  // Get all unique tags across clusters
-  const allTags = useMemo(() => {
-    const tags = new Set<string>();
-    clusters.forEach((c) => getClusterMeta(c.name).tags.forEach((t) => tags.add(t)));
-    return Array.from(tags).sort();
-  }, [clusters, getClusterMeta]);
-
-  // Group clusters
-  const grouped = useMemo(() => {
-    const favorites = filtered.filter((c) => getClusterMeta(c.name).favorite);
-    const groups = new Map<string, typeof filtered>();
-
-    for (const c of filtered) {
-      const meta = getClusterMeta(c.name);
-      const group = meta.group || 'Ungrouped';
-      if (!groups.has(group)) groups.set(group, []);
-      groups.get(group)!.push(c);
-    }
-
-    return { favorites, groups };
-  }, [filtered, getClusterMeta]);
-
   const toggleGroup = (group: string) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
@@ -165,8 +123,6 @@ export default function ClustersPage() {
       return next;
     });
   };
-
-  const hasGroups = Array.from(grouped.groups.keys()).some((g) => g !== 'Ungrouped');
 
   return (
     <div className="flex h-screen flex-col">

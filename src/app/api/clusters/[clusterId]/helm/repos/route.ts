@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runHelm, isHelmAvailable, isValidHelmName, isValidRepoUrl } from '@/lib/helm/helm-runner';
+import { runHelm, isValidHelmName, isValidRepoUrl } from '@/lib/helm/helm-runner';
+import { requireHelm, parseHelmJson } from '@/lib/helm/helpers';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  if (!isHelmAvailable()) {
-    return NextResponse.json(
-      { error: 'Helm CLI is not installed or not found in PATH.' },
-      { status: 503 }
-    );
-  }
+  const helmCheck = requireHelm();
+  if (helmCheck) return helmCheck;
 
   const result = await runHelm(['repo', 'list', '--output', 'json']);
 
@@ -25,24 +22,13 @@ export async function GET() {
     );
   }
 
-  try {
-    const repos = result.stdout.trim() ? JSON.parse(result.stdout) : [];
-    return NextResponse.json({ repos });
-  } catch {
-    return NextResponse.json(
-      { error: 'Failed to parse Helm output' },
-      { status: 500 }
-    );
-  }
+  const repos = parseHelmJson(result.stdout) ?? [];
+  return NextResponse.json({ repos });
 }
 
 export async function POST(req: NextRequest) {
-  if (!isHelmAvailable()) {
-    return NextResponse.json(
-      { error: 'Helm CLI is not installed or not found in PATH.' },
-      { status: 503 }
-    );
-  }
+  const helmCheck = requireHelm();
+  if (helmCheck) return helmCheck;
 
   let body: any;
   try {

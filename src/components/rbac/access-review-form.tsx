@@ -14,18 +14,11 @@ import {
 } from '@/components/ui/select';
 import { apiClient } from '@/lib/api-client';
 import { ShieldCheck, ShieldX, Loader2 } from 'lucide-react';
+import { COMMON_VERBS, AccessReviewResult } from '@/types/rbac';
 
 interface AccessReviewFormProps {
   clusterId: string;
 }
-
-interface AccessReviewResult {
-  allowed: boolean;
-  reason?: string;
-  evaluationError?: string;
-}
-
-const COMMON_VERBS = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete', 'deletecollection', '*'];
 
 export function AccessReviewForm({ clusterId }: AccessReviewFormProps) {
   const [user, setUser] = useState('');

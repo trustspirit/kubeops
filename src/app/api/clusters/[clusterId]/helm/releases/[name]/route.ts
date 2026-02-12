@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runHelm, isHelmAvailable } from '@/lib/helm/helm-runner';
+import { runHelm } from '@/lib/helm/helm-runner';
+import { requireHelm, requireNamespaceParam } from '@/lib/helm/helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,12 +9,8 @@ interface RouteParams {
 }
 
 export async function GET(req: NextRequest, { params }: RouteParams) {
-  if (!isHelmAvailable()) {
-    return NextResponse.json(
-      { error: 'Helm CLI is not installed or not found in PATH.' },
-      { status: 503 }
-    );
-  }
+  const helmCheck = requireHelm();
+  if (helmCheck) return helmCheck;
 
   const { clusterId, name } = await params;
   const contextName = decodeURIComponent(clusterId);
@@ -21,14 +18,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   const { searchParams } = new URL(req.url);
   const namespace = searchParams.get('namespace');
 
-  if (!namespace) {
-    return NextResponse.json(
-      { error: 'namespace query parameter is required' },
-      { status: 400 }
-    );
-  }
+  const nsCheck = requireNamespaceParam(namespace);
+  if (nsCheck) return nsCheck;
 
-  const args = ['status', releaseName, '-n', namespace, '--output', 'json'];
+  const args = ['status', releaseName, '-n', namespace!, '--output', 'json'];
   const result = await runHelm(args, contextName);
 
   if (result.code !== 0) {
@@ -51,12 +44,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 }
 
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
-  if (!isHelmAvailable()) {
-    return NextResponse.json(
-      { error: 'Helm CLI is not installed or not found in PATH.' },
-      { status: 503 }
-    );
-  }
+  const helmCheck = requireHelm();
+  if (helmCheck) return helmCheck;
 
   const { clusterId, name } = await params;
   const contextName = decodeURIComponent(clusterId);
@@ -64,14 +53,10 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const { searchParams } = new URL(req.url);
   const namespace = searchParams.get('namespace');
 
-  if (!namespace) {
-    return NextResponse.json(
-      { error: 'namespace query parameter is required' },
-      { status: 400 }
-    );
-  }
+  const nsCheck = requireNamespaceParam(namespace);
+  if (nsCheck) return nsCheck;
 
-  const args = ['uninstall', releaseName, '-n', namespace];
+  const args = ['uninstall', releaseName, '-n', namespace!];
   const result = await runHelm(args, contextName);
 
   if (result.code !== 0) {

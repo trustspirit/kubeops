@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runHelm, isHelmAvailable } from '@/lib/helm/helm-runner';
+import { runHelm } from '@/lib/helm/helm-runner';
+import { requireHelm, parseHelmJson } from '@/lib/helm/helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,12 +9,8 @@ interface RouteParams {
 }
 
 export async function GET(req: NextRequest, { params }: RouteParams) {
-  if (!isHelmAvailable()) {
-    return NextResponse.json(
-      { error: 'Helm CLI is not installed or not found in PATH. Please install Helm to manage releases.' },
-      { status: 503 }
-    );
-  }
+  const helmCheck = requireHelm();
+  if (helmCheck) return helmCheck;
 
   const { clusterId } = await params;
   const contextName = decodeURIComponent(clusterId);
@@ -37,14 +34,6 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     );
   }
 
-  try {
-    const releases = result.stdout.trim() ? JSON.parse(result.stdout) : [];
-    return NextResponse.json({ releases });
-  } catch (e) {
-    console.error(`[Helm] Failed to parse releases output: ${result.stdout}`);
-    return NextResponse.json(
-      { error: 'Failed to parse Helm output' },
-      { status: 500 }
-    );
-  }
+  const releases = parseHelmJson(result.stdout) ?? [];
+  return NextResponse.json({ releases });
 }

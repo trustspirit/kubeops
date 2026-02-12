@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runHelm, isHelmAvailable, sanitizeSearchKeyword } from '@/lib/helm/helm-runner';
+import { runHelm, sanitizeSearchKeyword } from '@/lib/helm/helm-runner';
+import { requireHelm, parseHelmJson } from '@/lib/helm/helpers';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  if (!isHelmAvailable()) {
-    return NextResponse.json(
-      { error: 'Helm CLI is not installed or not found in PATH.' },
-      { status: 503 }
-    );
-  }
+  const helmCheck = requireHelm();
+  if (helmCheck) return helmCheck;
 
   const { searchParams } = new URL(req.url);
   const rawKeyword = searchParams.get('keyword') || '';
@@ -39,13 +36,6 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  try {
-    const results = result.stdout.trim() ? JSON.parse(result.stdout) : [];
-    return NextResponse.json({ results });
-  } catch {
-    return NextResponse.json(
-      { error: 'Failed to parse Helm output' },
-      { status: 500 }
-    );
-  }
+  const results = parseHelmJson(result.stdout) ?? [];
+  return NextResponse.json({ results });
 }

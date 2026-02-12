@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runHelm, isHelmAvailable } from '@/lib/helm/helm-runner';
+import { runHelm } from '@/lib/helm/helm-runner';
+import { requireHelm } from '@/lib/helm/helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,12 +9,8 @@ interface RouteParams {
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams) {
-  if (!isHelmAvailable()) {
-    return NextResponse.json(
-      { error: 'Helm CLI is not installed or not found in PATH.' },
-      { status: 503 }
-    );
-  }
+  const helmCheck = requireHelm();
+  if (helmCheck) return helmCheck;
 
   const { clusterId, name } = await params;
   const contextName = decodeURIComponent(clusterId);

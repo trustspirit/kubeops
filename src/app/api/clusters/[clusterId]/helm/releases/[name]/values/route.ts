@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runHelm, isHelmAvailable } from '@/lib/helm/helm-runner';
+import { runHelm } from '@/lib/helm/helm-runner';
+import { requireHelm, requireNamespaceParam } from '@/lib/helm/helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,12 +9,8 @@ interface RouteParams {
 }
 
 export async function GET(req: NextRequest, { params }: RouteParams) {
-  if (!isHelmAvailable()) {
-    return NextResponse.json(
-      { error: 'Helm CLI is not installed or not found in PATH.' },
-      { status: 503 }
-    );
-  }
+  const helmCheck = requireHelm();
+  if (helmCheck) return helmCheck;
 
   const { clusterId, name } = await params;
   const contextName = decodeURIComponent(clusterId);
@@ -22,14 +19,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   const namespace = searchParams.get('namespace');
   const all = searchParams.get('all') === 'true';
 
-  if (!namespace) {
-    return NextResponse.json(
-      { error: 'namespace query parameter is required' },
-      { status: 400 }
-    );
-  }
+  const nsCheck = requireNamespaceParam(namespace);
+  if (nsCheck) return nsCheck;
 
-  const args = ['get', 'values', releaseName, '-n', namespace, '--output', 'json'];
+  const args = ['get', 'values', releaseName, '-n', namespace!, '--output', 'json'];
   if (all) {
     args.push('--all');
   }

@@ -50,16 +50,16 @@ There are many Kubernetes tools out there. Here's how KubeOps compares:
 
 | | KubeOps | Lens | k9s | K8s Dashboard |
 | --- | :---: | :---: | :---: | :---: |
-| Free & open source | **Yes** | Paid plans | Yes | Yes |
-| Visual resource topology | **Yes** | No | No | Limited |
-| Built-in terminal & logs | **Yes** | Yes | Yes | Logs only |
-| Real-time metrics & charts | **Yes** | Yes (paid) | Basic | Basic |
-| Helm chart management | **Yes** | Yes | Yes | No |
-| RBAC visualization | **Yes** | No | No | No |
+| Free & open source | **Yes** | Freemium | Yes | Yes (archived) |
+| Visual resource topology | **Yes** | Extension | No | Limited |
+| Built-in terminal & logs | **Yes** | Yes | Yes | Yes |
+| Real-time metrics & charts | **Yes** | Yes | Basic | Basic |
+| Helm chart management | **Yes** | Yes | View only | No |
+| RBAC visualization | **Yes** | No | Basic | No |
 | YAML diff view | **Yes** | No | No | No |
 | Desktop app (no server install) | **Yes** | Yes | Terminal | Needs deploy |
 | Zero config (reads kubeconfig) | **Yes** | Yes | Yes | Needs deploy |
-| CRD browser | **Yes** | Extension | Yes | Limited |
+| CRD browser | **Yes** | Yes | Yes | Limited |
 | Teleport auth | **Yes** | No | No | No |
 
 ### In short

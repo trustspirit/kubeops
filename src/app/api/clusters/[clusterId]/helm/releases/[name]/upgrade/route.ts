@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runHelm, isHelmAvailable } from '@/lib/helm/helm-runner';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import { runHelm } from '@/lib/helm/helm-runner';
+import { requireHelm, withTempValuesFile } from '@/lib/helm/helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,12 +9,8 @@ interface RouteParams {
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams) {
-  if (!isHelmAvailable()) {
-    return NextResponse.json(
-      { error: 'Helm CLI is not installed or not found in PATH.' },
-      { status: 503 }
-    );
-  }
+  const helmCheck = requireHelm();
+  if (helmCheck) return helmCheck;
 
   const { clusterId, name } = await params;
   const contextName = decodeURIComponent(clusterId);
@@ -38,18 +32,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'namespace is required' }, { status: 400 });
   }
 
-  let tmpFile: string | null = null;
-
-  try {
+  return withTempValuesFile(values, async (tmpFile) => {
     const args = ['upgrade', releaseName, chart, '-n', namespace, '--output', 'json'];
 
     if (reuseValues) {
       args.push('--reuse-values');
     }
 
-    if (values && typeof values === 'string' && values.trim()) {
-      tmpFile = path.join(os.tmpdir(), `kubeops-helm-upgrade-${Date.now()}-${Math.random().toString(36).slice(2)}.yaml`);
-      fs.writeFileSync(tmpFile, values, { encoding: 'utf-8', mode: 0o600 });
+    if (tmpFile) {
       args.push('-f', tmpFile);
     }
 
@@ -70,9 +60,5 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       // upgrade succeeded but output may not be JSON
       return NextResponse.json({ success: true, message: result.stdout.trim() });
     }
-  } finally {
-    if (tmpFile) {
-      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-    }
-  }
+  });
 }

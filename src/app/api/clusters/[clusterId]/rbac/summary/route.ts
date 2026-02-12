@@ -1,30 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRbacV1Api } from '@/lib/k8s/client-factory';
+import { extractK8sError } from '@/lib/k8s/error-handling';
+import { RBACEntry } from '@/types/rbac';
 
 export const dynamic = 'force-dynamic';
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractK8sError(error: any): { status: number; message: string } {
-  const raw = error?.statusCode || error?.response?.statusCode || error?.code;
-  const status = (typeof raw === 'number' && raw >= 200 && raw <= 599) ? raw : 500;
-
-  let body = error?.body;
-  if (typeof body === 'string') {
-    try { body = JSON.parse(body); } catch { /* keep as string */ }
-  }
-
-  const message = body?.message || error?.message || 'Request failed';
-  return { status, message };
-}
-
-interface RBACEntry {
-  subject: { kind: string; name: string; namespace?: string };
-  role: { kind: string; name: string };
-  namespace: string;
-  rules: Array<{ apiGroups: string[]; resources: string[]; verbs: string[] }>;
-  bindingName: string;
-  bindingKind: string;
-}
 
 export async function GET(
   _req: NextRequest,
