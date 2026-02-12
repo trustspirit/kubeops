@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/providers/theme-provider";
 import { SWRProvider } from "@/providers/swr-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ElectronClass } from "@/components/layout/electron-class";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -37,6 +38,7 @@ export default function RootLayout({
         <ThemeProvider>
           <SWRProvider>
             <TooltipProvider>
+              <ElectronClass />
               {children}
               <Toaster />
             </TooltipProvider>

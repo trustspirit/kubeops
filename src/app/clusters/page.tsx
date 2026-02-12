@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Server, ArrowRight, Search, Settings, RefreshCw, LogIn, Loader2, CircleCheck } from 'lucide-react';
+import { Server, ArrowRight, Search, Settings, RotateCw, LogIn, Loader2, CircleCheck } from 'lucide-react';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { UpdateIndicator } from '@/components/layout/header';
 import { SettingsDialog } from '@/components/settings/settings-dialog';
@@ -173,7 +173,7 @@ export default function ClustersPage() {
             disabled={refreshing}
             title="Refresh cluster list"
           >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <RotateCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
           <UpdateIndicator />
           <Button

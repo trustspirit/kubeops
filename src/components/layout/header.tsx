@@ -5,7 +5,7 @@ import { ThemeToggle } from './theme-toggle';
 import { ClusterSelector } from '@/components/clusters/cluster-selector';
 import { NamespaceSelector } from '@/components/namespaces/namespace-selector';
 import { Button } from '@/components/ui/button';
-import { Search, Settings, Download, RefreshCw, RotateCcw } from 'lucide-react';
+import { Search, Settings, Download, Sparkles, Loader2, RotateCcw } from 'lucide-react';
 import { SettingsDialog } from '@/components/settings/settings-dialog';
 import { useAutoUpdate, type UpdatePhase } from '@/hooks/use-auto-update';
 import { toast } from 'sonner';
@@ -62,7 +62,7 @@ export function UpdateIndicator() {
       <Tooltip>
         <TooltipTrigger asChild>
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={checkForUpdates}>
-            <RefreshCw className="h-4 w-4" />
+            <Sparkles className="h-4 w-4" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>Check for updates</TooltipContent>
@@ -75,7 +75,7 @@ export function UpdateIndicator() {
       <Tooltip>
         <TooltipTrigger asChild>
           <Button variant="ghost" size="icon" className="h-8 w-8" disabled>
-            <RefreshCw className="h-4 w-4 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>Checking for updates...</TooltipContent>
@@ -131,7 +131,7 @@ export function UpdateIndicator() {
       <Tooltip>
         <TooltipTrigger asChild>
           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={checkForUpdates}>
-            <RefreshCw className="h-4 w-4" />
+            <Sparkles className="h-4 w-4" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>Update failed. Click to retry.</TooltipContent>

@@ -157,10 +157,10 @@
 }
 
 /* Electron: push header content right to avoid traffic light overlap.
-   Uses !important because Tailwind v4 px-* utilities use padding-inline
-   (logical property) which conflicts with padding-left (physical property). */
+   Tailwind v4 px-* uses padding-inline (logical), so we override with
+   padding-inline-start (logical) to ensure it wins. */
 :root.electron .electron-header-inset {
-  padding-left: 80px !important;
+  padding-inline-start: 80px !important;
 }
 
 /* React Flow Controls - ensure icons are visible in both themes */
