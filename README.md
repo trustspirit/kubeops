@@ -33,18 +33,39 @@ Download the latest version for your platform from the **[Releases](https://gith
 
 > The app supports auto-update after installation.
 
+### Requirements
+
+- **kubectl** installed and available on your `PATH`
+- A valid `~/.kube/config` with at least one cluster context
+- *(Optional)* `metrics-server` in the cluster for CPU/memory charts
+- *(Optional)* Prometheus for network I/O and filesystem charts
+- *(Optional)* `tsh` CLI for Teleport-managed clusters
+
 ---
 
 ## Why KubeOps?
 
-- **Zero config** — Reads your `~/.kube/config` and auto-detects every cluster. No setup, no YAML to write.
-- **Visual topology** — See how Ingresses, Services, Deployments, and Pods connect in an interactive App Map.
-- **Built-in terminal & logs** — Open shell sessions and live log streams right inside the app. No more switching between terminal tabs.
-- **Port forwarding dashboard** — Start, monitor, and stop port forwards from a single page.
-- **Real-time metrics** — CPU, memory, network I/O, and filesystem charts per pod (with metrics-server / Prometheus).
-- **ArgoCD-style status** — Health badges on every resource so you can spot problems at a glance.
-- **Fast keyboard navigation** — Command palette (`Cmd+K`) to jump to any cluster, namespace, or resource type instantly.
-- **Cross-platform** — Runs natively on macOS, Windows, and Linux.
+There are many Kubernetes tools out there. Here's how KubeOps compares:
+
+| | KubeOps | Lens | k9s | K8s Dashboard |
+| --- | :---: | :---: | :---: | :---: |
+| Free & open source | **Yes** | Paid plans | Yes | Yes |
+| Visual resource topology | **Yes** | No | No | Limited |
+| Built-in terminal & logs | **Yes** | Yes | Yes | Logs only |
+| Real-time metrics & charts | **Yes** | Yes (paid) | Basic | Basic |
+| Desktop app (no server install) | **Yes** | Yes | Terminal | Needs deploy |
+| Zero config (reads kubeconfig) | **Yes** | Yes | Yes | Needs deploy |
+| CRD browser | **Yes** | Extension | Yes | Limited |
+| Teleport auth | **Yes** | No | No | No |
+
+### In short
+
+- **Free forever** — No subscriptions, no feature gates, no telemetry. MIT licensed.
+- **Visual-first** — Interactive App Map shows how Ingresses, Services, Deployments, and Pods connect. Not just resource lists.
+- **All-in-one desktop app** — Terminal, logs, port forwarding, metrics charts, YAML editor in a single window. No server to deploy, no browser extension to install.
+- **Modern & lightweight** — Fast startup, small footprint. No Electron bloat from bundled IDE features you don't need.
+- **30+ resource types** — Pods, Deployments, StatefulSets, DaemonSets, CronJobs, Services, Ingresses, ConfigMaps, Secrets, CRDs, and more.
+- **Cross-platform** — Runs natively on macOS, Windows, and Linux with auto-update.
 
 ---
 
@@ -118,33 +139,46 @@ Click the info icon on any App Map node to open a right-side drawer with Overvie
 
 ![KubeOps drawer](assets/drawer.png)
 
+### Deployment Scaling
+
+Scale Deployments and StatefulSets directly from the UI. A dedicated scale dialog lets you set the desired replica count and apply it instantly.
+
+### Custom Resource Definitions (CRDs)
+
+Browse cluster-installed CRDs and their instances. The sidebar lists discovered CRD groups, and each instance supports the same Table / YAML / Edit views as built-in resources.
+
+### Dark / Light Mode
+
+Toggle between dark and light themes from the header. Powered by `next-themes` with system preference detection. Your choice persists across sessions.
+
+### Teleport Authentication
+
+For clusters behind [Teleport](https://goteleport.com/), KubeOps detects Teleport contexts and provides a built-in login flow via `tsh kube login` — no manual terminal steps required.
+
 ### Pod Restart Watcher
 
 Enable Watch on any pod to monitor restart counts in the background. Polls every 10 seconds and sends desktop notifications when restarts increase. Watched pods persist across sessions.
 
+### Auto-Update
+
+An update indicator in the header shows the current state: checking → available → downloading → ready to install. Updates are downloaded in the background and applied on the next restart.
+
 ---
 
-## Getting Started
-
-### Prerequisites
-
-- **Node.js** v18+
-- A valid `~/.kube/config` with at least one context
+## Development
 
 ### Run from Source
 
 ```bash
 git clone https://github.com/trustspirit/kubeops.git
 cd kubeops
-npm install
+npm install          # Node.js v18+ required
 npm run electron:dev
 ```
 
 The app opens automatically once the dev server is ready (port 51230).
 
----
-
-## Build
+### Build
 
 Create a distributable package for your platform:
 
@@ -155,22 +189,6 @@ Create a distributable package for your platform:
 | Linux    | `npm run electron:build:linux` |
 
 Output is written to `dist-electron/`.
-
----
-
-## Architecture
-
-| Layer          | Technology                                       |
-| -------------- | ------------------------------------------------ |
-| Desktop shell  | Electron                                         |
-| Frontend       | Next.js 16 (App Router), React 19, Tailwind CSS  |
-| State          | Zustand (persisted to localStorage)              |
-| Data fetching  | SWR with auto-refresh                            |
-| K8s API        | `@kubernetes/client-node` via Next.js API routes |
-| Terminal       | xterm.js + node-pty over WebSocket               |
-| Charts         | Recharts                                         |
-| Resource graph | React Flow + Dagre                               |
-| YAML           | js-yaml                                          |
 
 ---
 
@@ -216,6 +234,22 @@ Logs rotate automatically at 5 MB (previous log kept as `error.log.old`).
 
 ---
 
+## Supported Resources
+
+KubeOps provides full browse / detail / YAML / edit support for 30+ Kubernetes resource types:
+
+| Category        | Resources                                                      |
+| --------------- | -------------------------------------------------------------- |
+| Workloads       | Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs |
+| Network         | Services, Ingresses, Endpoints, Network Policies               |
+| Config          | ConfigMaps, Secrets, Service Accounts                          |
+| Storage         | Persistent Volumes, Persistent Volume Claims                   |
+| Access Control  | Roles, Role Bindings, Cluster Roles, Cluster Role Bindings     |
+| Cluster         | Nodes, Namespaces, Events                                      |
+| Custom          | Any installed CRD and its instances                            |
+
+---
+
 ## Troubleshooting
 
 | Problem                   | Solution                                                                    |
@@ -226,6 +260,7 @@ Logs rotate automatically at 5 MB (previous log kept as `error.log.old`).
 | Metrics charts empty      | Ensure `metrics-server` is installed in the cluster                         |
 | Network/FS charts missing | Requires Prometheus with `container_network_*` and `container_fs_*` metrics |
 | Port forward fails        | Check that `kubectl` is on your PATH and the target pod is running          |
+| Teleport login fails      | Ensure `tsh` is installed and on your PATH                                  |
 | Diagnosing crashes        | Open **Help → Open Error Log** to see captured errors                       |
 
 ### macOS Gatekeeper
@@ -245,3 +280,9 @@ Because the app is not yet code-signed with an Apple Developer certificate, macO
 ```bash
 xattr -cr /Applications/KubeOps.app
 ```
+
+---
+
+## License
+
+[MIT](LICENSE)
