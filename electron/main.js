@@ -58,6 +58,11 @@ autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 autoUpdater.logger = null;
 
+// Skip code signing verification for unsigned builds
+if (process.platform === 'darwin') {
+  autoUpdater.forceCodeSigning = false;
+}
+
 function sendUpdateStatus(status) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('updater:status', status);
