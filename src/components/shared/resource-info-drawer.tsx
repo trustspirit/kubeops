@@ -50,7 +50,7 @@ export function ResourceInfoDrawer({ node, open, onOpenChange }: ResourceInfoDra
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[420px] sm:max-w-[420px] p-0 flex flex-col">
+      <SheetContent side="right" className="w-[440px] sm:max-w-[440px] p-0 flex flex-col">
         <SheetHeader className="px-4 pt-4 pb-2 border-b">
           <div className="flex items-center gap-2">
             <SheetTitle className="text-base truncate">{name}</SheetTitle>

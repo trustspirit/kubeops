@@ -13,8 +13,33 @@ import {
   Cpu,
   ExternalLink,
   Info,
+  Clock,
   type LucideIcon,
 } from 'lucide-react';
+
+function compactAge(timestamp: string | undefined): string {
+  if (!timestamp) return '';
+  const diff = Date.now() - new Date(timestamp).getTime();
+  if (diff < 0) return '0s';
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) {
+    const rm = m % 60;
+    return rm > 0 ? `${h}h${rm}m` : `${h}h`;
+  }
+  const d = Math.floor(h / 24);
+  if (d < 30) {
+    const rh = h % 24;
+    return rh > 0 ? `${d}d${rh}h` : `${d}d`;
+  }
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `${mo}mo`;
+  const y = Math.floor(d / 365);
+  return `${y}y`;
+}
 
 const KIND_ICONS: Record<string, LucideIcon> = {
   Deployment: Layers,
@@ -56,13 +81,16 @@ export interface ResourceNodeData {
   href?: string;
   namespace?: string;
   clusterId?: string;
+  createdAt?: string;
+  appLabel?: string;
   onInfoClick?: (data: ResourceNodeData) => void;
   [key: string]: unknown;
 }
 
 function ResourceNodeComponent({ data }: NodeProps) {
   const router = useRouter();
-  const { kind, name, health, status, info, href, onInfoClick } = data as unknown as ResourceNodeData;
+  const { kind, name, health, status, info, href, createdAt, onInfoClick } = data as unknown as ResourceNodeData;
+  const age = compactAge(createdAt as string | undefined);
   const Icon = KIND_ICONS[kind] || Box;
   const borderClass = HEALTH_BORDER[health] || HEALTH_BORDER.Unknown;
   const dotClass = HEALTH_DOT[health] || HEALTH_DOT.Unknown;
@@ -118,9 +146,16 @@ function ResourceNodeComponent({ data }: NodeProps) {
           <span className="text-xs font-semibold truncate" title={name}>
             {name}
           </span>
-          {info && (
-            <span className="text-[10px] text-muted-foreground truncate">{info}</span>
-          )}
+          <div className="flex items-center gap-1.5">
+            {info && (
+              <span className="text-[10px] text-muted-foreground truncate">{info}</span>
+            )}
+            {age && (
+              <span className="text-[10px] text-muted-foreground/70 flex items-center gap-0.5 shrink-0">
+                <Clock className="h-2.5 w-2.5" />{age}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Action buttons */}

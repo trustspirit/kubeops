@@ -1,10 +1,11 @@
 'use client';
 
-import { useMemo, useEffect, useState, useCallback } from 'react';
+import { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import {
   ReactFlow,
   Background,
   Controls,
+  MarkerType,
   type Node,
   type Edge,
   type NodeTypes,
@@ -30,11 +31,20 @@ const nodeTypes: NodeTypes = {
 const NODE_WIDTH = 220;
 const NODE_HEIGHT = 68;
 
+// Concrete colors for edges - CSS variables don't work inside SVG markers
+const EDGE_COLORS = {
+  light: { normal: '#6b7280', animated: '#3b82f6' },  // gray-500, blue-500
+  dark:  { normal: '#9ca3af', animated: '#60a5fa' },   // gray-400, blue-400
+} as const;
+
 function getLayoutedElements(
   treeNodes: TreeNode[],
   treeEdges: TreeEdge[],
-  direction: 'LR' | 'TB' = 'LR'
+  direction: 'LR' | 'TB' = 'LR',
+  isDark = false
 ) {
+  const colors = isDark ? EDGE_COLORS.dark : EDGE_COLORS.light;
+
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({
@@ -68,14 +78,27 @@ function getLayoutedElements(
     };
   });
 
-  const edges: Edge[] = treeEdges.map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    animated: edge.animated ?? false,
-    style: { stroke: 'hsl(var(--muted-foreground))', strokeWidth: 1.5, opacity: 0.5 },
-    type: 'smoothstep',
-  }));
+  const edges: Edge[] = treeEdges.map((edge) => {
+    const color = edge.animated ? colors.animated : colors.normal;
+    return {
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      animated: edge.animated ?? false,
+      style: {
+        stroke: color,
+        strokeWidth: edge.animated ? 2 : 1.5,
+        opacity: edge.animated ? 0.8 : 0.6,
+      },
+      type: 'smoothstep',
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        width: 14,
+        height: 14,
+        color,
+      },
+    };
+  });
 
   return { nodes, edges };
 }
@@ -117,30 +140,47 @@ function ResourceTreeViewInner({
     [treeNodes, onInfoClick]
   );
 
+  const isDark = resolvedTheme === 'dark';
   const { nodes: layoutedNodes, edges: layoutedEdges } = useMemo(
-    () => getLayoutedElements(nodesWithCallback, treeEdges, direction),
-    [nodesWithCallback, treeEdges, direction]
+    () => getLayoutedElements(nodesWithCallback, treeEdges, direction, isDark),
+    [nodesWithCallback, treeEdges, direction, isDark]
   );
 
-  const [nodes, , onNodesChange] = useNodesState(layoutedNodes);
-  const [edges, , onEdgesChange] = useEdgesState(layoutedEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(layoutedNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(layoutedEdges);
 
-  // Update when layouted elements change
-  const currentNodes = layoutedNodes.length !== nodes.length ? layoutedNodes : nodes;
-  const currentEdges = layoutedEdges.length !== edges.length ? layoutedEdges : edges;
+  // Track node IDs to detect real layout changes (not just data refreshes)
+  const prevNodeIdsRef = useRef('');
+
+  // Sync nodes/edges when layout changes and fitView on structural changes
+  useEffect(() => {
+    setNodes(layoutedNodes);
+    setEdges(layoutedEdges);
+
+    const nodeIds = layoutedNodes.map((n) => n.id).sort().join(',');
+    const changed = nodeIds !== prevNodeIdsRef.current;
+    prevNodeIdsRef.current = nodeIds;
+
+    if (changed && layoutedNodes.length > 0) {
+      // Delay to let ReactFlow render the new nodes first
+      const timer = setTimeout(() => {
+        fitView({ padding: 0.2, duration: 300 });
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [layoutedNodes, layoutedEdges, setNodes, setEdges, fitView]);
 
   const proOptions = useMemo(() => ({ hideAttribution: true }), []);
 
   // Focus on specific node when focusNodeId changes
   useEffect(() => {
-    if (focusNodeId && currentNodes.some((n) => n.id === focusNodeId)) {
-      // Small delay to let ReactFlow render first
+    if (focusNodeId && nodes.some((n) => n.id === focusNodeId)) {
       const timer = setTimeout(() => {
         fitView({ nodes: [{ id: focusNodeId }], padding: 0.5, duration: 300 });
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [focusNodeId, currentNodes, fitView]);
+  }, [focusNodeId, nodes, fitView]);
 
   if (isLoading) {
     return (
@@ -170,8 +210,8 @@ function ResourceTreeViewInner({
   return (
     <div className={`rounded-lg border overflow-hidden ${className || ''}`} style={{ height }}>
       <ReactFlow
-        nodes={currentNodes}
-        edges={currentEdges}
+        nodes={nodes}
+        edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}

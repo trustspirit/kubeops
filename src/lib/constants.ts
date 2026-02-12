@@ -22,6 +22,7 @@ import {
   CalendarClock,
   Plug,
   Workflow,
+  Puzzle,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -98,6 +99,12 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
       { label: 'Events', resourceType: 'events', icon: CalendarClock },
     ],
   },
+  {
+    title: 'Custom Resources',
+    items: [
+      { label: 'Custom Resources', resourceType: 'custom-resources', icon: Puzzle, clusterScoped: true },
+    ],
+  },
 ];
 
 export const RESOURCE_LABELS: Record<string, string> = {
@@ -123,4 +130,5 @@ export const RESOURCE_LABELS: Record<string, string> = {
   clusterroles: 'Cluster Roles',
   clusterrolebindings: 'Cluster Role Bindings',
   endpoints: 'Endpoints',
+  'custom-resources': 'Custom Resources',
 };
