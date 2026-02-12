@@ -28,6 +28,7 @@ export function useAutoUpdate() {
     apiRef.current?.getAppVersion().then(setAppVersion).catch(() => {});
   }, []);
 
+  // Event listener for push-based status updates (download progress, auto-check at startup)
   useEffect(() => {
     if (!apiRef.current) return;
 
@@ -62,17 +63,46 @@ export function useAutoUpdate() {
     return unsubscribe;
   }, []);
 
+  // checkForUpdates uses IPC return value as primary, event listener as fallback
   const checkForUpdates = useCallback(() => {
     if (!apiRef.current) return;
     setPhase('checking');
     setErrorMessage(null);
-    apiRef.current.checkForUpdates().catch(() => {});
+    apiRef.current.checkForUpdates()
+      .then((info: any) => {
+        if (!info) {
+          // No update info returned — treat as up-to-date
+          setPhase((prev) => {
+            if (prev === 'checking') {
+              setTimeout(() => setPhase('idle'), 3000);
+              return 'not-available';
+            }
+            return prev;
+          });
+          return;
+        }
+        // IPC returned updateInfo — update is available
+        setPhase((prev) => {
+          // Only update if event listener hasn't already handled it
+          if (prev === 'checking') return 'available';
+          return prev;
+        });
+        if (info.version) setVersion(info.version);
+      })
+      .catch((err: any) => {
+        setPhase('error');
+        setErrorMessage(err?.message || 'Update check failed');
+      });
   }, []);
 
   const downloadUpdate = useCallback(() => {
     if (!apiRef.current) return;
     setPercent(0);
-    apiRef.current.downloadUpdate().catch(() => {});
+    setPhase('downloading');
+    apiRef.current.downloadUpdate().catch((err: any) => {
+      setPhase('error');
+      setErrorMessage(err?.message || 'Download failed');
+    });
   }, []);
 
   const quitAndInstall = useCallback(() => {

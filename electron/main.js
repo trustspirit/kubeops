@@ -106,14 +106,43 @@ function setupAutoUpdater() {
   });
 }
 
-function setupUpdaterIPC() {
+function setupDevUpdaterIPC() {
   ipcMain.handle('updater:check', async () => {
-    const result = await autoUpdater.checkForUpdates();
-    return result?.updateInfo;
+    sendUpdateStatus({ status: 'not-available', version: app.getVersion() });
+    return null;
   });
 
   ipcMain.handle('updater:download', async () => {
-    await autoUpdater.downloadUpdate();
+    sendUpdateStatus({ status: 'error', message: 'Updates are not available in development mode' });
+  });
+
+  ipcMain.handle('updater:install', () => {});
+
+  ipcMain.handle('updater:get-version', () => {
+    return app.getVersion();
+  });
+}
+
+function setupUpdaterIPC() {
+  ipcMain.handle('updater:check', async () => {
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      return result?.updateInfo;
+    } catch (err) {
+      writeErrorLog('updater:check', err);
+      sendUpdateStatus({ status: 'error', message: err.message || 'Update check failed' });
+      throw err;
+    }
+  });
+
+  ipcMain.handle('updater:download', async () => {
+    try {
+      await autoUpdater.downloadUpdate();
+    } catch (err) {
+      writeErrorLog('updater:download', err);
+      sendUpdateStatus({ status: 'error', message: err.message || 'Download failed' });
+      throw err;
+    }
   });
 
   ipcMain.handle('updater:install', () => {
@@ -398,7 +427,7 @@ app.whenReady().then(async () => {
     }
     createWindow();
 
-    // Auto-update setup (production only)
+    // Auto-update setup
     if (!isDev) {
       setupAutoUpdater();
       setupUpdaterIPC();
@@ -407,6 +436,9 @@ app.whenReady().then(async () => {
           writeErrorLog('updater:auto-check', err);
         });
       }, 5000);
+    } else {
+      // Dev mode: register IPC handlers that respond with dev-friendly messages
+      setupDevUpdaterIPC();
     }
   } catch (err) {
     writeErrorLog('main:startup', err);
