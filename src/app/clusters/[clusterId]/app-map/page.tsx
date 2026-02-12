@@ -36,6 +36,7 @@ export default function AppMapPage() {
         isLoading={isLoading}
         height="calc(100vh - 220px)"
         direction="LR"
+        zoomOnScroll
       />
     </div>
   );

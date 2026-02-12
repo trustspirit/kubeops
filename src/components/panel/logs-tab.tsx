@@ -1,9 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pause, Play, Download, ArrowDown } from 'lucide-react';
+import AnsiToHtml from 'ansi-to-html';
 import type { PanelTab } from '@/stores/panel-store';
+import { usePanelStore } from '@/stores/panel-store';
+import { useResourceList } from '@/hooks/use-resource-list';
+
+const ansiConverter = new AnsiToHtml({ fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true });
 
 const MAX_LOG_SIZE = 512 * 1024; // 512KB
 
@@ -20,11 +26,42 @@ interface LogsTabProps {
 
 export function LogsTab({ tab }: LogsTabProps) {
   const { clusterId, namespace, podName, container } = tab;
+  const updateTab = usePanelStore((s) => s.updateTab);
   const [follow, setFollow] = useState(true);
   const [logs, setLogs] = useState('');
   const [connected, setConnected] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+
+  // Fetch all pods in namespace to find siblings
+  const { data: podsData } = useResourceList({
+    clusterId: clusterId ? decodeURIComponent(clusterId) : null,
+    namespace,
+    resourceType: 'pods',
+    refreshInterval: 10000,
+  });
+
+  // Find current pod object and derive sibling pods + container list
+  const currentPod = useMemo(() => {
+    const allPods: any[] = podsData?.items || [];
+    return allPods.find((p: any) => p.metadata?.name === podName);
+  }, [podsData, podName]);
+
+  const siblingPods = useMemo(() => {
+    const allPods: any[] = podsData?.items || [];
+    const ownerUid = currentPod?.metadata?.ownerReferences?.[0]?.uid;
+    if (!ownerUid) return [];
+    return allPods
+      .filter((p: any) => p.metadata?.ownerReferences?.[0]?.uid === ownerUid)
+      .map((p: any) => p.metadata?.name as string)
+      .sort();
+  }, [podsData, currentPod]);
+
+  const containers = useMemo(() => {
+    const regular: string[] = (currentPod?.spec?.containers || []).map((c: any) => c.name);
+    const init: string[] = (currentPod?.spec?.initContainers || []).map((c: any) => c.name);
+    return [...regular, ...init];
+  }, [currentPod]);
 
   useEffect(() => {
     if (!container) return;
@@ -78,6 +115,22 @@ export function LogsTab({ tab }: LogsTabProps) {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   };
 
+  const handlePodSwitch = (newPodName: string) => {
+    if (newPodName === podName) return;
+    updateTab(tab.id, {
+      podName: newPodName,
+      title: `logs: ${newPodName}/${container}`,
+    });
+  };
+
+  const handleContainerSwitch = (newContainer: string) => {
+    if (newContainer === container) return;
+    updateTab(tab.id, {
+      container: newContainer,
+      title: `logs: ${podName}/${newContainer}`,
+    });
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-card shrink-0">
@@ -93,6 +146,34 @@ export function LogsTab({ tab }: LogsTabProps) {
           <Download className="h-3 w-3 mr-1" />
           Download
         </Button>
+        {siblingPods.length >= 2 && (
+          <Select value={podName} onValueChange={handlePodSwitch}>
+            <SelectTrigger size="sm" className="h-6 text-xs max-w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {siblingPods.map((name) => (
+                <SelectItem key={name} value={name} className="text-xs">
+                  {name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {containers.length >= 2 && (
+          <Select value={container} onValueChange={handleContainerSwitch}>
+            <SelectTrigger size="sm" className="h-6 text-xs max-w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {containers.map((name) => (
+                <SelectItem key={name} value={name} className="text-xs">
+                  {name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <div className="ml-auto flex items-center gap-1.5">
           <div className={`h-2 w-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
           <span className="text-xs text-muted-foreground">{connected ? 'Streaming' : 'Disconnected'}</span>
@@ -101,9 +182,8 @@ export function LogsTab({ tab }: LogsTabProps) {
       <pre
         ref={logRef}
         className="flex-1 min-h-0 overflow-auto bg-[#1e1e2e] text-[#cdd6f4] p-3 font-mono text-xs leading-5 whitespace-pre"
-      >
-        {logs || 'Connecting...'}
-      </pre>
+        dangerouslySetInnerHTML={{ __html: logs ? ansiConverter.toHtml(logs) : 'Connecting...' }}
+      />
     </div>
   );
 }

@@ -383,6 +383,7 @@ export function NodeMetricsSummary({ clusterId }: NodeMetricsProps) {
   }));
 
   const barHeight = Math.max(120, nodes.length * 32 + 30);
+  const yAxisWidth = Math.min(150, Math.max(70, ...nodes.map((n: any) => n.name.length * 6 + 10)));
 
   return (
     <Card>
@@ -403,7 +404,7 @@ export function NodeMetricsSummary({ clusterId }: NodeMetricsProps) {
                   </linearGradient>
                 </defs>
                 <XAxis type="number" tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} tickFormatter={(v) => formatCpu(v)} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} width={70} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} width={yAxisWidth} />
                 <Tooltip content={<NodeMetricTooltip />} />
                 <Bar dataKey="cpu" fill="url(#nodeCpuGrad)" radius={[0, 6, 6, 0]} animationDuration={600} />
               </BarChart>
@@ -421,7 +422,7 @@ export function NodeMetricsSummary({ clusterId }: NodeMetricsProps) {
                   </linearGradient>
                 </defs>
                 <XAxis type="number" tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} tickFormatter={(v) => formatMemory(v)} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} width={70} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} width={yAxisWidth} />
                 <Tooltip content={<NodeMetricTooltip />} />
                 <Bar dataKey="memory" fill="url(#nodeMemGrad)" radius={[0, 6, 6, 0]} animationDuration={600} />
               </BarChart>

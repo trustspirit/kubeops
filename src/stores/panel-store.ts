@@ -20,6 +20,7 @@ interface PanelState {
   addTab: (tab: PanelTab) => void;
   removeTab: (id: string) => void;
   setActiveTab: (id: string) => void;
+  updateTab: (id: string, updates: Partial<Pick<PanelTab, 'podName' | 'container' | 'title'>>) => void;
   toggle: () => void;
 }
 
@@ -57,5 +58,11 @@ export const usePanelStore = create<PanelState>()((set, get) => ({
   },
 
   setActiveTab: (id) => set({ activeTabId: id }),
+
+  updateTab: (id, updates) => {
+    const { tabs } = get();
+    set({ tabs: tabs.map((t) => (t.id === id ? { ...t, ...updates } : t)) });
+  },
+
   toggle: () => set((s) => ({ open: !s.open })),
 }));

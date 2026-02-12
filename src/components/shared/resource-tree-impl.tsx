@@ -88,6 +88,7 @@ interface ResourceTreeViewInnerProps {
   direction?: 'LR' | 'TB';
   className?: string;
   focusNodeId?: string;
+  zoomOnScroll?: boolean;
   onInfoClick: (data: ResourceNodeData) => void;
 }
 
@@ -99,6 +100,7 @@ function ResourceTreeViewInner({
   direction = 'LR',
   className,
   focusNodeId,
+  zoomOnScroll = false,
   onInfoClick,
 }: ResourceTreeViewInnerProps) {
   const { fitView } = useReactFlow();
@@ -180,6 +182,8 @@ function ResourceTreeViewInner({
         minZoom={0.3}
         maxZoom={1.5}
         proOptions={proOptions}
+        zoomOnScroll={zoomOnScroll}
+        preventScrolling={zoomOnScroll}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}
@@ -199,6 +203,7 @@ interface ResourceTreeViewProps {
   direction?: 'LR' | 'TB';
   className?: string;
   focusNodeId?: string;
+  zoomOnScroll?: boolean;
 }
 
 export function ResourceTreeView(props: ResourceTreeViewProps) {
