@@ -4,6 +4,14 @@ import { parse } from 'url';
 import { execSync } from 'child_process';
 import * as pty from 'node-pty';
 
+// macOS GUI apps don't inherit shell PATH — ensure common tool directories are included
+const EXTRA_PATHS = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'];
+const currentPath = process.env.PATH || '';
+const missingPaths = EXTRA_PATHS.filter(p => !currentPath.split(':').includes(p));
+if (missingPaths.length) {
+  process.env.PATH = [...currentPath.split(':'), ...missingPaths].filter(Boolean).join(':');
+}
+
 // Resolve kubectl path at startup
 let kubectlPath = 'kubectl';
 try {

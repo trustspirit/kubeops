@@ -12,7 +12,6 @@ await esbuild.build({
   sourcemap: true,
   external: [
     'next',
-    '@kubernetes/client-node',
     'ws',
     'node-pty',
   ],

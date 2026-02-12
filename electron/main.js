@@ -152,6 +152,11 @@ function createWindow() {
     mainWindow.show();
   });
 
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
+    writeErrorLog('renderer:did-fail-load', `code=${code} ${desc}`);
+    mainWindow.show();
+  });
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
@@ -341,15 +346,16 @@ function waitForServer(port, maxRetries = 60) {
 }
 
 function startProductionServer() {
-  const { fork } = require('child_process');
+  const { spawn } = require('child_process');
   const appRoot = path.join(__dirname, '..');
 
-  serverProcess = fork(path.join(appRoot, 'dist', 'server.cjs'), [], {
+  serverProcess = spawn(process.execPath, [path.join(appRoot, 'dist', 'server.cjs')], {
     cwd: appRoot,
     env: {
       ...process.env,
       NODE_ENV: 'production',
       PORT: String(PORT),
+      ELECTRON_RUN_AS_NODE: '1',
     },
     stdio: 'pipe',
   });

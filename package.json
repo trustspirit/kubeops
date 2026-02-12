@@ -24,7 +24,7 @@
     "resources",
     "scripts",
     "server.ts",
-    "next.config.ts",
+    "next.config.mjs",
     "tsconfig.json",
     "postcss.config.mjs",
     "electron-builder.yml"
