@@ -6,7 +6,6 @@ import { useNamespaces } from '@/hooks/use-namespaces';
 import { useNamespaceStore } from '@/stores/namespace-store';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { FolderOpen, Check, ChevronsUpDown, Layers, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -25,9 +24,13 @@ export function NamespaceSelector() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
-  const activeNamespace = decodedClusterId ? getActiveNamespace(decodedClusterId) : ALL_NAMESPACES;
+  const activeNamespace = decodedClusterId
+    ? getActiveNamespace(decodedClusterId)
+    : ALL_NAMESPACES;
 
   const handleSelect = (value: string) => {
     if (!decodedClusterId) return;
@@ -55,33 +58,46 @@ export function NamespaceSelector() {
   const exactMatch = nsList.some((name: string) => name.toLowerCase() === trimmedQuery);
   const showUseCustom = trimmedQuery && !exactMatch;
 
-  const displayName = activeNamespace === ALL_NAMESPACES ? 'All Namespaces' : activeNamespace;
+  const displayName =
+    activeNamespace === ALL_NAMESPACES ? 'All Namespaces' : activeNamespace;
   const showAllOption = !trimmedQuery || 'all namespaces'.includes(trimmedQuery);
 
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-xs text-muted-foreground shrink-0">NS</span>
-      <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setQuery(''); }}>
+    <div className='flex items-center gap-1.5'>
+      <span className='text-xs text-muted-foreground shrink-0'>NS</span>
+      <Popover
+        open={open}
+        onOpenChange={(v) => {
+          setOpen(v);
+          if (!v) setQuery('');
+        }}
+      >
         <PopoverTrigger asChild>
           <Button
-            variant="outline"
-            size="sm"
-            className="w-[180px] h-8 justify-between overflow-hidden"
+            variant='outline'
+            size='sm'
+            className='w-[180px] h-8 justify-between overflow-hidden'
           >
-            <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-              <Layers className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate text-sm">
+            <div className='flex items-center gap-2 min-w-0 overflow-hidden'>
+              <Layers className='h-3.5 w-3.5 shrink-0' />
+              <span className='truncate text-sm'>
                 {!mounted || isLoading ? 'Loading...' : displayName}
               </span>
             </div>
-            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
+            <ChevronsUpDown className='h-3.5 w-3.5 shrink-0 opacity-50' />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[240px] p-0 overflow-hidden max-h-[320px] flex flex-col" align="start" side="bottom" avoidCollisions collisionPadding={8}>
-          <div className="flex items-center gap-2 border-b p-2">
-            <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <PopoverContent
+          className='w-[240px] p-0 overflow-hidden max-h-[320px] flex flex-col'
+          align='start'
+          side='bottom'
+          avoidCollisions
+          collisionPadding={8}
+        >
+          <div className='flex items-center gap-2 border-b p-2'>
+            <Search className='h-3.5 w-3.5 shrink-0 text-muted-foreground' />
             <input
-              placeholder="Search or enter namespace..."
+              placeholder='Search or enter namespace...'
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -94,31 +110,31 @@ export function NamespaceSelector() {
                   }
                 }
               }}
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              className='flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground'
               autoFocus
             />
           </div>
-          <ScrollArea className="flex-1 overflow-auto">
-            <div className="p-1">
+          <ScrollArea className='flex-1 overflow-auto'>
+            <div className='p-1'>
               {showAllOption && (
                 <>
                   <button
                     onClick={() => handleSelect(ALL_NAMESPACES)}
                     className={cn(
                       'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent font-medium',
-                      activeNamespace === ALL_NAMESPACES && 'bg-accent'
+                      activeNamespace === ALL_NAMESPACES && 'bg-accent',
                     )}
                   >
                     <Check
                       className={cn(
                         'h-3.5 w-3.5 shrink-0',
-                        activeNamespace === ALL_NAMESPACES ? 'opacity-100' : 'opacity-0'
+                        activeNamespace === ALL_NAMESPACES ? 'opacity-100' : 'opacity-0',
                       )}
                     />
-                    <Layers className="h-3.5 w-3.5 shrink-0" />
+                    <Layers className='h-3.5 w-3.5 shrink-0' />
                     <span>All Namespaces</span>
                   </button>
-                  <Separator className="my-1" />
+                  <Separator className='my-1' />
                 </>
               )}
               {filtered.map((name) => (
@@ -127,32 +143,32 @@ export function NamespaceSelector() {
                   onClick={() => handleSelect(name)}
                   className={cn(
                     'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent',
-                    activeNamespace === name && 'bg-accent'
+                    activeNamespace === name && 'bg-accent',
                   )}
                 >
                   <Check
                     className={cn(
                       'h-3.5 w-3.5 shrink-0',
-                      activeNamespace === name ? 'opacity-100' : 'opacity-0'
+                      activeNamespace === name ? 'opacity-100' : 'opacity-0',
                     )}
                   />
-                  <span className="truncate">{name}</span>
+                  <span className='truncate'>{name}</span>
                 </button>
               ))}
               {showUseCustom && (
                 <>
-                  <Separator className="my-1" />
+                  <Separator className='my-1' />
                   <button
                     onClick={() => handleSelect(trimmedQuery)}
-                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent text-muted-foreground"
+                    className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent text-muted-foreground'
                   >
-                    <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                    <FolderOpen className='h-3.5 w-3.5 shrink-0' />
                     <span>Use &quot;{trimmedQuery}&quot;</span>
                   </button>
                 </>
               )}
               {filtered.length === 0 && !showUseCustom && (
-                <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                <div className='px-2 py-4 text-center text-sm text-muted-foreground'>
                   No namespaces found
                 </div>
               )}

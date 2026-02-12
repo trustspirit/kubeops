@@ -55,3 +55,7 @@ export function getNetworkingV1Api(contextName: string) {
 export function getRbacV1Api(contextName: string) {
   return getApiClient<k8s.RbacAuthorizationV1Api>(contextName, k8s.RbacAuthorizationV1Api);
 }
+
+export function getAuthorizationV1Api(contextName: string) {
+  return getApiClient<k8s.AuthorizationV1Api>(contextName, k8s.AuthorizationV1Api);
+}

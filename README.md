@@ -37,6 +37,7 @@ Download the latest version for your platform from the **[Releases](https://gith
 
 - **kubectl** installed and available on your `PATH`
 - A valid `~/.kube/config` with at least one cluster context
+- *(Optional)* **helm** CLI for Helm chart management
 - *(Optional)* `metrics-server` in the cluster for CPU/memory charts
 - *(Optional)* Prometheus for network I/O and filesystem charts
 - *(Optional)* `tsh` CLI for Teleport-managed clusters
@@ -53,6 +54,9 @@ There are many Kubernetes tools out there. Here's how KubeOps compares:
 | Visual resource topology | **Yes** | No | No | Limited |
 | Built-in terminal & logs | **Yes** | Yes | Yes | Logs only |
 | Real-time metrics & charts | **Yes** | Yes (paid) | Basic | Basic |
+| Helm chart management | **Yes** | Yes | Yes | No |
+| RBAC visualization | **Yes** | No | No | No |
+| YAML diff view | **Yes** | No | No | No |
 | Desktop app (no server install) | **Yes** | Yes | Terminal | Needs deploy |
 | Zero config (reads kubeconfig) | **Yes** | Yes | Yes | Needs deploy |
 | CRD browser | **Yes** | Extension | Yes | Limited |
@@ -62,7 +66,9 @@ There are many Kubernetes tools out there. Here's how KubeOps compares:
 
 - **Free forever** — No subscriptions, no feature gates, no telemetry. MIT licensed.
 - **Visual-first** — Interactive App Map shows how Ingresses, Services, Deployments, and Pods connect. Not just resource lists.
-- **All-in-one desktop app** — Terminal, logs, port forwarding, metrics charts, YAML editor in a single window. No server to deploy, no browser extension to install.
+- **All-in-one desktop app** — Terminal, logs, port forwarding, metrics charts, YAML editor, Helm management in a single window. No server to deploy, no browser extension to install.
+- **Helm chart management** — Browse, install, upgrade, rollback, and uninstall Helm releases directly from the UI.
+- **RBAC visualization** — See who can do what with a permission matrix and interactive access review.
 - **Modern & lightweight** — Fast startup, small footprint. No Electron bloat from bundled IDE features you don't need.
 - **30+ resource types** — Pods, Deployments, StatefulSets, DaemonSets, CronJobs, Services, Ingresses, ConfigMaps, Secrets, CRDs, and more.
 - **Cross-platform** — Runs natively on macOS, Windows, and Linux with auto-update.
@@ -111,13 +117,26 @@ Start port forwards from pod container ports, service ports, or YAML editor fiel
 
 ![KubeOps forward](assets/port-forward.png)
 
-### YAML Editor (Table / YAML / Edit)
+### Helm Chart Management
 
-Three viewing modes for every resource manifest:
+Full Helm release lifecycle from the UI. Browse installed releases across all namespaces, view release details (status, chart info, revision history, values), install new charts from configured repositories, upgrade with modified values, rollback to previous revisions, and uninstall releases. Requires the `helm` CLI on your PATH.
+
+### RBAC Visualization
+
+A dedicated RBAC Summary page aggregates all Roles, ClusterRoles, RoleBindings, and ClusterRoleBindings into a permission matrix showing who (User / Group / ServiceAccount) can do what. Filter by subject type or search by name. The Access Review tab lets you check if a specific subject is allowed to perform an action on a resource.
+
+### Cluster Catalog
+
+Organize clusters with tags, groups, and favorites. Switch between list and card views. Group clusters by environment (Production / Staging / Development) or create custom groups. Tag clusters for quick filtering. Star your most-used clusters for fast access. All metadata persists across sessions.
+
+### YAML Editor (Table / YAML / Edit / Diff)
+
+Four viewing modes for every resource manifest:
 
 - **Table view** — Structured, collapsible sections with smart value rendering
 - **YAML view** — Read-only formatted output
 - **Edit mode** — Syntax-highlighted editor with validation, save with `Cmd+S`
+- **Review Changes** — Side-by-side diff showing additions (green) and deletions (red) before saving
 
 <!-- Screenshot: YAML Editor -->
 
@@ -244,8 +263,9 @@ KubeOps provides full browse / detail / YAML / edit support for 30+ Kubernetes r
 | Network         | Services, Ingresses, Endpoints, Network Policies               |
 | Config          | ConfigMaps, Secrets, Service Accounts                          |
 | Storage         | Persistent Volumes, Persistent Volume Claims                   |
-| Access Control  | Roles, Role Bindings, Cluster Roles, Cluster Role Bindings     |
+| Access Control  | Roles, Role Bindings, Cluster Roles, Cluster Role Bindings, RBAC Summary |
 | Cluster         | Nodes, Namespaces, Events                                      |
+| Helm            | Releases (install, upgrade, rollback, uninstall)               |
 | Custom          | Any installed CRD and its instances                            |
 
 ---

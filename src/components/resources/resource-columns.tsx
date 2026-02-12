@@ -294,6 +294,57 @@ export const endpointColumns: ColumnDef<any>[] = [
   { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
 ];
 
+function getHelmStatusLabel(status: string): string {
+  if (!status) return 'Unknown';
+  // Capitalize first letter
+  return status.charAt(0).toUpperCase() + status.slice(1).replace(/-/g, ' ');
+}
+
+export const helmReleaseColumns: ColumnDef<any>[] = [
+  {
+    accessorFn: (row) => row.name,
+    id: 'name',
+    header: 'Name',
+  },
+  {
+    id: 'namespace',
+    header: 'Namespace',
+    cell: ({ row }) => (
+      <Badge variant="outline" className="font-normal text-xs">
+        {row.original.namespace}
+      </Badge>
+    ),
+  },
+  {
+    id: 'chart',
+    header: 'Chart',
+    cell: ({ row }) => <span className="font-mono text-xs">{row.original.chart}</span>,
+  },
+  {
+    id: 'appVersion',
+    header: 'App Version',
+    cell: ({ row }) => row.original.app_version || '-',
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cell: ({ row }) => <StatusBadge status={getHelmStatusLabel(row.original.status)} />,
+  },
+  {
+    id: 'revision',
+    header: 'Revision',
+    cell: ({ row }) => row.original.revision,
+  },
+  {
+    id: 'updated',
+    header: 'Updated',
+    cell: ({ row }) => {
+      const d = row.original.updated;
+      return d ? new Date(d).toLocaleString() : '-';
+    },
+  },
+];
+
 export const COLUMN_MAP: Record<string, ColumnDef<any>[]> = {
   pods: podColumns,
   deployments: deploymentColumns,
@@ -317,4 +368,5 @@ export const COLUMN_MAP: Record<string, ColumnDef<any>[]> = {
   clusterroles: clusterroleColumns,
   clusterrolebindings: clusterrolebindingColumns,
   endpoints: endpointColumns,
+  helm: helmReleaseColumns,
 };

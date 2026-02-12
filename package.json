@@ -1,6 +1,6 @@
 {
   "name": "kubeops",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A modern desktop client for Kubernetes cluster management",
   "main": "electron/main.js",
   "repository": {
@@ -58,6 +58,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "dagre": "^0.8.5",
+    "diff": "^8.0.3",
     "electron-updater": "^6.7.3",
     "js-yaml": "^4.1.1",
     "lucide-react": "^0.563.0",
@@ -76,6 +77,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/diff": "^7.0.2",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20",
     "@types/react": "^19",

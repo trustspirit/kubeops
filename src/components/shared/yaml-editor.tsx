@@ -3,13 +3,14 @@
 import { useState, useMemo, useRef, useCallback, createContext, useContext } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Save, RotateCcw, Pencil, Table2, Code, ChevronRight, ChevronDown, Plug, ExternalLink, X } from 'lucide-react';
+import { Save, RotateCcw, Pencil, Table2, Code, ChevronRight, ChevronDown, Plug, ExternalLink, X, GitCompareArrows } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import * as yaml from 'js-yaml';
 import { mutate as globalMutate } from 'swr';
 import { usePortForwards } from '@/hooks/use-port-forwards';
+import { YamlDiffView } from '@/components/shared/yaml-diff-view';
 
 // === Types ===
 
@@ -294,9 +295,10 @@ function ActiveForwardsBanner() {
 // === Main Component ===
 
 export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEditorProps) {
-  const [mode, setMode] = useState<'table' | 'yaml' | 'edit'>('table');
+  const [mode, setMode] = useState<'table' | 'yaml' | 'edit' | 'review'>('table');
   const [saving, setSaving] = useState(false);
   const [editValue, setEditValue] = useState('');
+  const [originalYaml, setOriginalYaml] = useState('');
   const [yamlError, setYamlError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -308,7 +310,9 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
   const startEditing = useCallback(() => {
     const clean = { ...data };
     if (clean.metadata?.managedFields) delete clean.metadata.managedFields;
-    setEditValue(yaml.dump(clean, { lineWidth: -1 }));
+    const yamlStr = yaml.dump(clean, { lineWidth: -1 });
+    setEditValue(yamlStr);
+    setOriginalYaml(yamlStr);
     setYamlError(null);
     setMode('edit');
   }, [data]);
@@ -360,11 +364,30 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
                 <Save className="h-4 w-4 mr-1" />
                 {saving ? 'Saving...' : 'Apply'}
               </Button>
+              <Button variant="outline" size="sm" onClick={() => setMode('review')} disabled={saving}>
+                <GitCompareArrows className="h-4 w-4 mr-1" />
+                Review Changes
+              </Button>
               <Button variant="outline" size="sm" onClick={cancelEditing} disabled={saving}>
                 <RotateCcw className="h-4 w-4 mr-1" />
                 Cancel
               </Button>
               <span className="text-xs text-muted-foreground ml-2">Cmd+S to save</span>
+            </>
+          ) : mode === 'review' ? (
+            <>
+              <Button size="sm" onClick={handleSave} disabled={saving}>
+                <Save className="h-4 w-4 mr-1" />
+                {saving ? 'Saving...' : 'Apply Changes'}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setMode('edit')}>
+                <Pencil className="h-4 w-4 mr-1" />
+                Back to Edit
+              </Button>
+              <Button variant="outline" size="sm" onClick={cancelEditing}>
+                <RotateCcw className="h-4 w-4 mr-1" />
+                Cancel
+              </Button>
             </>
           ) : (
             <>
@@ -431,6 +454,10 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
               }
             }}
           />
+        )}
+
+        {mode === 'review' && (
+          <YamlDiffView original={originalYaml} modified={editValue} />
         )}
       </div>
     </PFContext.Provider>

@@ -23,6 +23,8 @@ import {
   Plug,
   Workflow,
   Puzzle,
+  ShieldQuestion,
+  Ship,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -89,6 +91,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
   {
     title: 'Access Control',
     items: [
+      { label: 'RBAC Summary', resourceType: 'rbac', icon: ShieldQuestion, clusterScoped: true },
       { label: 'Roles', resourceType: 'roles', icon: Shield },
       { label: 'Role Bindings', resourceType: 'rolebindings', icon: Link },
     ],
@@ -103,6 +106,12 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
     title: 'Custom Resources',
     items: [
       { label: 'Custom Resources', resourceType: 'custom-resources', icon: Puzzle, clusterScoped: true },
+    ],
+  },
+  {
+    title: 'Helm',
+    items: [
+      { label: 'Releases', resourceType: 'helm', icon: Ship, clusterScoped: true },
     ],
   },
 ];
@@ -131,4 +140,6 @@ export const RESOURCE_LABELS: Record<string, string> = {
   clusterrolebindings: 'Cluster Role Bindings',
   endpoints: 'Endpoints',
   'custom-resources': 'Custom Resources',
+  'rbac': 'RBAC Summary',
+  'helm': 'Helm Releases',
 };
