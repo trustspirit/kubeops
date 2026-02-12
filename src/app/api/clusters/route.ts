@@ -6,6 +6,11 @@ import { ClusterInfo } from '@/lib/k8s/types';
 
 export const dynamic = 'force-dynamic';
 
+function stripAnsi(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1B\[[0-9;]*m/g, '');
+}
+
 export async function GET() {
   try {
     const contexts = getContexts();
@@ -25,7 +30,7 @@ export async function GET() {
             status: 'connected',
           };
         } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : 'Connection failed';
+          const raw = error instanceof Error ? error.message : 'Connection failed';
           return {
             name: ctx.name,
             context: ctx.name,
@@ -34,7 +39,7 @@ export async function GET() {
             namespace: ctx.namespace || undefined,
             server: getClusterServer(ctx.name),
             status: 'error',
-            error: message,
+            error: stripAnsi(raw),
           };
         }
       })
