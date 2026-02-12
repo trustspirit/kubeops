@@ -2,13 +2,15 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import useSWR from 'swr';
 import { useClusters } from '@/hooks/use-clusters';
 import { useSettingsStore } from '@/stores/settings-store';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Server, ArrowRight, Search, Settings, RefreshCw, LogIn, Loader2 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Server, ArrowRight, Search, Settings, RefreshCw, LogIn, Loader2, CircleCheck } from 'lucide-react';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { SettingsDialog } from '@/components/settings/settings-dialog';
 import { toast } from 'sonner';
@@ -33,6 +35,8 @@ export default function ClustersPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [loggingIn, setLoggingIn] = useState(false);
   const [kubeLoggingIn, setKubeLoggingIn] = useState<string | null>(null);
+  const { data: tshStatus, isLoading: tshLoading, mutate: mutateTshStatus } = useSWR('/api/tsh/status', { refreshInterval: 60_000 });
+  const tshLoggedIn = tshStatus?.loggedIn === true;
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -66,14 +70,14 @@ export default function ClustersPage() {
         return;
       }
       toast.success('Teleport login successful');
-      await mutate();
+      await Promise.all([mutate(), mutateTshStatus()]);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       toast.error(`tsh login failed: ${message}`);
     } finally {
       setLoggingIn(false);
     }
-  }, [tshProxyUrl, tshAuthType, mutate]);
+  }, [tshProxyUrl, tshAuthType, mutate, mutateTshStatus]);
 
   const handleClusterClick = useCallback(async (contextName: string, clusterField: string, status: string) => {
     if (status === 'connected') {
@@ -128,21 +132,38 @@ export default function ClustersPage() {
           <h1 className="text-lg font-bold tracking-tight">KubeOps</h1>
         </div>
         <div className="flex items-center gap-2 no-drag-region">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5"
-            onClick={handleTshLogin}
-            disabled={loggingIn}
-            title={tshProxyUrl ? `tsh login --proxy=${tshProxyUrl}` : 'Configure Teleport in Settings first'}
-          >
-            {loggingIn ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <LogIn className="h-4 w-4" />
-            )}
-            <span className="text-xs">TSH Login</span>
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`h-8 gap-1.5 ${tshLoggedIn ? 'text-green-500' : ''}`}
+                onClick={handleTshLogin}
+                disabled={loggingIn || tshLoading}
+              >
+                {loggingIn || tshLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : tshLoggedIn ? (
+                  <CircleCheck className="h-4 w-4" />
+                ) : (
+                  <LogIn className="h-4 w-4" />
+                )}
+                <span className="text-xs">
+                  {tshLoading ? 'TSH' : tshLoggedIn ? tshStatus.username?.split('@')[0] : 'TSH Login'}
+                </span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {tshLoading
+                ? 'Checking Teleport status...'
+                : tshLoggedIn
+                  ? `Logged in as ${tshStatus.username} · ${tshStatus.cluster}`
+                  : tshProxyUrl
+                    ? `tsh login --proxy=${tshProxyUrl}`
+                    : 'Configure Teleport in Settings first'
+              }
+            </TooltipContent>
+          </Tooltip>
           <Button
             variant="ghost"
             size="icon"
