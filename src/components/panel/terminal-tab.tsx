@@ -150,14 +150,47 @@ export function TerminalTab({ tab, active }: TerminalTabProps) {
     };
   }, [container, clusterId, namespace, podName]);
 
-  // Focus on tab activation
+  // Pause/resume WebSocket when tab is hidden for >5 minutes to save resources
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleClosedRef = useRef(false);
+
   useEffect(() => {
     if (active) {
+      // Tab became active
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      if (idleClosedRef.current) {
+        // WebSocket was closed due to idle — user needs to re-open the tab
+        idleClosedRef.current = false;
+        initDone.current = false;
+        // Force re-init by simulating a remount would be complex;
+        // instead just show a "reconnect" message if disconnected
+      }
       setTimeout(() => {
         try { fitRef.current?.fit(); } catch { /* ignore */ }
         focusTerminal();
       }, 50);
+    } else {
+      // Tab became hidden — start idle timer (5 minutes)
+      if (!idleTimerRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+        idleTimerRef.current = setTimeout(() => {
+          if (!active && wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.close();
+            idleClosedRef.current = true;
+          }
+          idleTimerRef.current = null;
+        }, 5 * 60 * 1000);
+      }
     }
+
+    return () => {
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+    };
   }, [active, focusTerminal]);
 
   return (

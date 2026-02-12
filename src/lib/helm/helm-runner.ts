@@ -23,12 +23,18 @@ export async function runHelm(
     let stdout = '';
     let stderr = '';
     let finished = false;
+    let killTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      if (killTimer) clearTimeout(killTimer);
+    };
 
     const timeout = setTimeout(() => {
       if (!finished) {
         finished = true;
         proc.kill('SIGTERM');
-        setTimeout(() => { try { proc.kill('SIGKILL'); } catch { /* ignore */ } }, 5000);
+        killTimer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch { /* ignore */ } }, 5000);
         resolve({ stdout, stderr: 'Command timed out', code: 124 });
       }
     }, timeoutMs);
@@ -39,7 +45,7 @@ export async function runHelm(
     proc.on('close', (code) => {
       if (!finished) {
         finished = true;
-        clearTimeout(timeout);
+        cleanup();
         resolve({ stdout, stderr, code: code ?? 1 });
       }
     });
@@ -47,7 +53,7 @@ export async function runHelm(
     proc.on('error', (err) => {
       if (!finished) {
         finished = true;
-        clearTimeout(timeout);
+        cleanup();
         resolve({ stdout, stderr: err.message, code: 1 });
       }
     });

@@ -17,7 +17,15 @@ interface PortForward {
 }
 
 // Server-side state for active port forwards
-const activeForwards = new Map<string, { info: PortForward; proc: ChildProcess }>();
+export const activeForwards = new Map<string, { info: PortForward; proc: ChildProcess }>();
+
+/** Kill all active port forward processes. Called on server shutdown. */
+export function cleanupAllForwards() {
+  for (const [id, { proc }] of activeForwards) {
+    try { proc.kill(); } catch { /* ignore */ }
+  }
+  activeForwards.clear();
+}
 
 // Resolve kubectl path
 let kubectlPath = '/usr/local/bin/kubectl';

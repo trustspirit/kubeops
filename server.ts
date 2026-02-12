@@ -52,6 +52,25 @@ app.prepare().then(() => {
     }
   });
 
+  // Cleanup child processes on shutdown
+  const shutdown = () => {
+    console.log('> Shutting down — cleaning up child processes...');
+    try {
+      const { cleanupAllForwards } = require('./src/app/api/port-forward/route');
+      cleanupAllForwards();
+    } catch { /* module may not be loaded yet */ }
+
+    // Close all WebSocket connections
+    wssLogs.clients.forEach((ws) => ws.terminate());
+    wssExec.clients.forEach((ws) => ws.terminate());
+
+    server.close();
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+
   server.listen(port, () => {
     console.log(`> KubeOps running on http://${hostname}:${port}`);
   });

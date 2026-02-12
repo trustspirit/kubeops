@@ -31,7 +31,7 @@ export default function PortForwardingPage() {
   const { data, isLoading } = useSWR<{ forwards: PortForward[] }>(
     '/api/port-forward',
     fetcher,
-    { refreshInterval: 3000 }
+    { refreshInterval: 10000 }
   );
 
   const forwards = data?.forwards || [];

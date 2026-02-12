@@ -171,6 +171,37 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
 
   const isLoading = podsLoading || depsLoading || rsLoading || stsLoading || dsLoading || svcLoading || ingLoading;
 
+  // Create stable dependency keys based on resource UIDs to avoid recomputing
+  // the topology when SWR refreshes return identical data
+  const podUids = useMemo(
+    () => (podsData?.items || []).map((p: any) => p.metadata?.uid).sort().join(','),
+    [podsData]
+  );
+  const deploymentUids = useMemo(
+    () => (deploymentsData?.items || []).map((d: any) => d.metadata?.uid).sort().join(','),
+    [deploymentsData]
+  );
+  const rsUids = useMemo(
+    () => (rsData?.items || []).map((r: any) => r.metadata?.uid).sort().join(','),
+    [rsData]
+  );
+  const stsUids = useMemo(
+    () => (stsData?.items || []).map((s: any) => s.metadata?.uid).sort().join(','),
+    [stsData]
+  );
+  const dsUids = useMemo(
+    () => (dsData?.items || []).map((d: any) => d.metadata?.uid).sort().join(','),
+    [dsData]
+  );
+  const serviceUids = useMemo(
+    () => (servicesData?.items || []).map((s: any) => s.metadata?.uid).sort().join(','),
+    [servicesData]
+  );
+  const ingressUids = useMemo(
+    () => (ingressData?.items || []).map((i: any) => i.metadata?.uid).sort().join(','),
+    [ingressData]
+  );
+
   // Collect unique app labels for filtering UI
   const appLabels = useMemo(() => {
     const labels = new Set<string>();
@@ -185,7 +216,8 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
       if (app) labels.add(app);
     }
     return Array.from(labels).sort();
-  }, [deploymentsData, stsData, dsData, servicesData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deploymentUids, stsUids, dsUids, serviceUids]);
 
   const { nodes, edges } = useMemo(() => {
     const nodes: TreeNode[] = [];
@@ -526,7 +558,9 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
     }
 
     return { nodes, edges };
-  }, [podsData, deploymentsData, rsData, stsData, dsData, servicesData, ingressData, clusterId, namespace, rootKind, rootName, appFilter]);
+  // Use stable UID keys instead of raw data objects to prevent unnecessary recomputation
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [podUids, deploymentUids, rsUids, stsUids, dsUids, serviceUids, ingressUids, clusterId, namespace, rootKind, rootName, appFilter]);
 
   return { nodes, edges, isLoading, appLabels };
 }

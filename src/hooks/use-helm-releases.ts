@@ -9,5 +9,5 @@ interface HelmReleasesResponse {
 export function useHelmReleases({ clusterId, namespace }: { clusterId: string | null; namespace?: string }) {
   const params = namespace && namespace !== '_all' ? `?namespace=${encodeURIComponent(namespace)}` : '';
   const url = clusterId ? `/api/clusters/${encodeURIComponent(clusterId)}/helm/releases${params}` : null;
-  return useSWR<HelmReleasesResponse>(url, fetcher, { refreshInterval: 10000 });
+  return useSWR<HelmReleasesResponse>(url, fetcher, { refreshInterval: 30000 });
 }

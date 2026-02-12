@@ -12,7 +12,7 @@ export function useResourceList({
   clusterId,
   namespace,
   resourceType,
-  refreshInterval = 5000,
+  refreshInterval = 15000,
   enabled = true,
 }: UseResourceListOptions) {
   const key =

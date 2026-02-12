@@ -73,17 +73,21 @@ export default function ClusterOverviewPage() {
   const isAllNs = namespace === '_all';
   const nsLabel = isAllNs ? 'All Namespaces' : namespace;
 
+  // Core data (always fetch immediately)
   const { data: health, error: healthError } = useSWR(`/api/clusters/${clusterId}/health`);
   const { data: nodesData } = useSWR(`/api/clusters/${clusterId}/nodes`);
   const { data: podsData } = useSWR(`/api/clusters/${clusterId}/resources/${namespace}/pods`);
-  const { data: deploymentsData } = useSWR(`/api/clusters/${clusterId}/resources/${namespace}/deployments`);
-  const { data: statefulsetData } = useSWR(`/api/clusters/${clusterId}/resources/${namespace}/statefulsets`);
-  const { data: daemonsetData } = useSWR(`/api/clusters/${clusterId}/resources/${namespace}/daemonsets`);
-  const { data: servicesData } = useSWR(`/api/clusters/${clusterId}/resources/${namespace}/services`);
-  const { data: ingressData } = useSWR(`/api/clusters/${clusterId}/resources/${namespace}/ingresses`);
-  const { data: eventsData } = useSWR(`/api/clusters/${clusterId}/resources/${namespace}/events`);
-  const { data: configmapData } = useSWR(`/api/clusters/${clusterId}/resources/${namespace}/configmaps`);
-  const { data: secretData } = useSWR(`/api/clusters/${clusterId}/resources/${namespace}/secrets`);
+
+  // Secondary data (fetch after core data is loaded to reduce initial request burst)
+  const coreLoaded = !!health && !!nodesData && !!podsData;
+  const { data: deploymentsData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/deployments` : null);
+  const { data: statefulsetData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/statefulsets` : null);
+  const { data: daemonsetData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/daemonsets` : null);
+  const { data: servicesData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/services` : null);
+  const { data: ingressData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/ingresses` : null);
+  const { data: eventsData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/events` : null);
+  const { data: configmapData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/configmaps` : null);
+  const { data: secretData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/secrets` : null);
 
   if (healthError) return <ErrorDisplay error={healthError} />;
 
