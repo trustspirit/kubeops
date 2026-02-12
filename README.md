@@ -220,9 +220,28 @@ Logs rotate automatically at 5 MB (previous log kept as `error.log.old`).
 
 | Problem                   | Solution                                                                    |
 | ------------------------- | --------------------------------------------------------------------------- |
+| macOS Gatekeeper warning  | See [macOS Gatekeeper](#macos-gatekeeper) below                             |
 | "No clusters found"       | Verify `~/.kube/config` is valid — run `kubectl config get-contexts`        |
 | Connection refused        | Restart the app or check if port 51230 is in use                            |
 | Metrics charts empty      | Ensure `metrics-server` is installed in the cluster                         |
 | Network/FS charts missing | Requires Prometheus with `container_network_*` and `container_fs_*` metrics |
 | Port forward fails        | Check that `kubectl` is on your PATH and the target pod is running          |
 | Diagnosing crashes        | Open **Help → Open Error Log** to see captured errors                       |
+
+### macOS Gatekeeper
+
+Because the app is not yet code-signed with an Apple Developer certificate, macOS may show:
+
+> "KubeOps.app" cannot be opened because the developer cannot be verified.
+
+**Option A — System Settings (recommended)**
+
+1. Open **System Settings → Privacy & Security**
+2. Scroll down to find the blocked message for KubeOps
+3. Click **Open Anyway**
+
+**Option B — Terminal**
+
+```bash
+xattr -cr /Applications/KubeOps.app
+```
