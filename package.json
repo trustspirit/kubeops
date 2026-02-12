@@ -1,6 +1,6 @@
 {
   "name": "kubeops",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A modern desktop client for Kubernetes cluster management",
   "main": "electron/main.js",
   "repository": {

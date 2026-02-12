@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Server, ArrowRight, Search, Settings, RefreshCw, LogIn, Loader2, CircleCheck } from 'lucide-react';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
+import { UpdateIndicator } from '@/components/layout/header';
 import { SettingsDialog } from '@/components/settings/settings-dialog';
 import { toast } from 'sonner';
 
@@ -174,6 +175,7 @@ export default function ClustersPage() {
           >
             <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
+          <UpdateIndicator />
           <Button
             variant="ghost"
             size="icon"

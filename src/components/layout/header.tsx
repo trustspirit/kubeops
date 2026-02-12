@@ -15,7 +15,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-function UpdateIndicator() {
+export function UpdateIndicator() {
   const {
     phase, version, percent, errorMessage, isAvailable,
     checkForUpdates, downloadUpdate, quitAndInstall,
