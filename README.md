@@ -24,12 +24,12 @@
 
 Download the latest version for your platform from the **[Releases](https://github.com/trustspirit/kubeops/releases/latest)** page.
 
-| Platform | File |
-|----------|------|
+| Platform              | File                          |
+| --------------------- | ----------------------------- |
 | macOS (Apple Silicon) | `KubeOps-{version}-arm64.dmg` |
-| macOS (Intel) | `KubeOps-{version}-x64.dmg` |
-| Linux | `KubeOps-{version}.AppImage` |
-| Windows | `KubeOps-{version}.exe` |
+| macOS (Intel)         | `KubeOps-{version}-x64.dmg`   |
+| Linux                 | `KubeOps-{version}.AppImage`  |
+| Windows               | `KubeOps-{version}.exe`       |
 
 > The app supports auto-update after installation.
 
@@ -55,59 +55,68 @@ Download the latest version for your platform from the **[Releases](https://gith
 Auto-detects all clusters from kubeconfig. Select a cluster to see node/pod counts, pod status distribution, workload health, CPU usage per node, active services with port-forward buttons, ingress endpoints, and recent warning events.
 
 <!-- Screenshot: Cluster Overview -->
-> _Screenshot: Cluster overview dashboard showing node health, pod distribution chart, and workload status cards_
+
+![KubeOps Interface](assets/dashboard.png)
 
 ### App Map (Resource Topology)
 
 Interactive flowchart visualizing resource relationships: Ingress → Service → Deployment → ReplicaSet → Pod. Auto-layout with pan, zoom, and fit-to-view. Each node shows kind, name, health status, and summary info with Detail and Info action buttons.
 
 <!-- Screenshot: App Map -->
-> _Screenshot: App Map view showing connected resources in a visual topology graph_
+
+![KubeOps map](assets/app-map.png)
 
 ### Live Status Display
 
 Every resource list features searchable, sortable tables with health status badges and relative age display. Warnings and unhealthy states (CrashLoopBackOff, ImagePullBackOff, OOMKilled) are highlighted and surfaced first.
 
 <!-- Screenshot: Resource List -->
-> _Screenshot: Resource list with status badges, search, and sortable columns_
+
+![KubeOps list](assets/live-list.png)
 
 ### Pod Terminal & Logs
 
 A resizable bottom panel supports multiple concurrent sessions as tabs. Full PTY-based terminal via `kubectl exec` with keyboard input and resizing. Real-time log streaming with pause/follow toggle, jump-to-bottom, and download. Sessions persist across page navigation.
 
 <!-- Screenshot: Terminal & Logs -->
-> _Screenshot: Split view with terminal session and live log streaming in bottom panel tabs_
+
+![KubeOps log](assets/log.png)
 
 ### Port Forwarding
 
 Start port forwards from pod container ports, service ports, or YAML editor fields. Manage all active forwards from the Port Forwarding page — view status (starting / active / error), open in browser, or stop individually.
 
 <!-- Screenshot: Port Forwarding -->
-> _Screenshot: Port forwarding management page with active forwards and status indicators_
+
+![KubeOps forward](assets/port-forward.png)
 
 ### YAML Editor (Table / YAML / Edit)
 
 Three viewing modes for every resource manifest:
+
 - **Table view** — Structured, collapsible sections with smart value rendering
 - **YAML view** — Read-only formatted output
 - **Edit mode** — Syntax-highlighted editor with validation, save with `Cmd+S`
 
 <!-- Screenshot: YAML Editor -->
-> _Screenshot: YAML editor in edit mode with syntax highlighting and validation_
+
+![KubeOps table](assets/yaml-table.png)
 
 ### Command Palette
 
 Press `Cmd+K` (or `Ctrl+K`) to open a fuzzy-search palette. Quickly jump to clusters (with connection status), namespaces, or any resource type.
 
 <!-- Screenshot: Command Palette -->
-> _Screenshot: Command palette open with search results for clusters and resources_
+
+![KubeOps cmd](assets/cmd-k.png)
 
 ### Resource Info Drawer
 
 Click the info icon on any App Map node to open a right-side drawer with Overview (metadata, status, labels), Events (sorted by severity with warning highlights), and footer actions to navigate to detail pages or open logs.
 
 <!-- Screenshot: Resource Info Drawer -->
-> _Screenshot: Info drawer open over App Map showing resource overview and events tabs_
+
+![KubeOps drawer](assets/drawer.png)
 
 ### Pod Restart Watcher
 
@@ -139,11 +148,11 @@ The app opens automatically once the dev server is ready (port 51230).
 
 Create a distributable package for your platform:
 
-| Platform | Command |
-|----------|---------|
-| macOS | `npm run electron:build:mac` |
-| Windows | `npm run electron:build:win` |
-| Linux | `npm run electron:build:linux` |
+| Platform | Command                        |
+| -------- | ------------------------------ |
+| macOS    | `npm run electron:build:mac`   |
+| Windows  | `npm run electron:build:win`   |
+| Linux    | `npm run electron:build:linux` |
 
 Output is written to `dist-electron/`.
 
@@ -151,25 +160,25 @@ Output is written to `dist-electron/`.
 
 ## Architecture
 
-| Layer | Technology |
-|-------|------------|
-| Desktop shell | Electron |
-| Frontend | Next.js 16 (App Router), React 19, Tailwind CSS |
-| State | Zustand (persisted to localStorage) |
-| Data fetching | SWR with auto-refresh |
-| K8s API | `@kubernetes/client-node` via Next.js API routes |
-| Terminal | xterm.js + node-pty over WebSocket |
-| Charts | Recharts |
-| Resource graph | React Flow + Dagre |
-| YAML | js-yaml |
+| Layer          | Technology                                       |
+| -------------- | ------------------------------------------------ |
+| Desktop shell  | Electron                                         |
+| Frontend       | Next.js 16 (App Router), React 19, Tailwind CSS  |
+| State          | Zustand (persisted to localStorage)              |
+| Data fetching  | SWR with auto-refresh                            |
+| K8s API        | `@kubernetes/client-node` via Next.js API routes |
+| Terminal       | xterm.js + node-pty over WebSocket               |
+| Charts         | Recharts                                         |
+| Resource graph | React Flow + Dagre                               |
+| YAML           | js-yaml                                          |
 
 ---
 
 ## Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+K` / `Ctrl+K` | Open command palette |
+| Shortcut           | Action                 |
+| ------------------ | ---------------------- |
+| `Cmd+K` / `Ctrl+K` | Open command palette   |
 | `Cmd+S` / `Ctrl+S` | Save YAML in edit mode |
 
 ---
@@ -187,21 +196,21 @@ KubeOps automatically captures errors and writes them to a log file so you can d
 
 **Log location:**
 
-| Platform | Path |
-|----------|------|
-| macOS | `~/Library/Application Support/KubeOps/logs/error.log` |
-| Windows | `%APPDATA%\KubeOps\logs\error.log` |
-| Linux | `~/.config/KubeOps/logs/error.log` |
+| Platform | Path                                                   |
+| -------- | ------------------------------------------------------ |
+| macOS    | `~/Library/Application Support/KubeOps/logs/error.log` |
+| Windows  | `%APPDATA%\KubeOps\logs\error.log`                     |
+| Linux    | `~/.config/KubeOps/logs/error.log`                     |
 
 **Accessing logs from the app:**
 
 Use the **Help** menu:
 
-| Menu Item | Action |
-|-----------|--------|
-| Open Error Log | Opens the log file in your default text editor |
-| Show Log Folder | Opens the log directory in Finder / Explorer |
-| Export Error Log… | Save a copy to a location of your choice |
+| Menu Item         | Action                                         |
+| ----------------- | ---------------------------------------------- |
+| Open Error Log    | Opens the log file in your default text editor |
+| Show Log Folder   | Opens the log directory in Finder / Explorer   |
+| Export Error Log… | Save a copy to a location of your choice       |
 
 Logs rotate automatically at 5 MB (previous log kept as `error.log.old`).
 
@@ -209,11 +218,11 @@ Logs rotate automatically at 5 MB (previous log kept as `error.log.old`).
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| "No clusters found" | Verify `~/.kube/config` is valid — run `kubectl config get-contexts` |
-| Connection refused | Restart the app or check if port 51230 is in use |
-| Metrics charts empty | Ensure `metrics-server` is installed in the cluster |
+| Problem                   | Solution                                                                    |
+| ------------------------- | --------------------------------------------------------------------------- |
+| "No clusters found"       | Verify `~/.kube/config` is valid — run `kubectl config get-contexts`        |
+| Connection refused        | Restart the app or check if port 51230 is in use                            |
+| Metrics charts empty      | Ensure `metrics-server` is installed in the cluster                         |
 | Network/FS charts missing | Requires Prometheus with `container_network_*` and `container_fs_*` metrics |
-| Port forward fails | Check that `kubectl` is on your PATH and the target pod is running |
-| Diagnosing crashes | Open **Help → Open Error Log** to see captured errors |
+| Port forward fails        | Check that `kubectl` is on your PATH and the target pod is running          |
+| Diagnosing crashes        | Open **Help → Open Error Log** to see captured errors                       |

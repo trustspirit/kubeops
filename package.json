@@ -42,7 +42,8 @@
     "electron:publish": "npm run build && node scripts/build-server.mjs && electron-builder --publish always",
     "electron:publish:mac": "npm run build && node scripts/build-server.mjs && electron-builder --mac --publish always",
     "electron:publish:linux": "npm run build && node scripts/build-server.mjs && electron-builder --linux --publish always",
-    "electron:publish:win": "npm run build && node scripts/build-server.mjs && electron-builder --win --publish always"
+    "electron:publish:win": "npm run build && node scripts/build-server.mjs && electron-builder --win --publish always",
+    "postinstall": "chmod +x node_modules/**/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true"
   },
   "dependencies": {
     "@kubernetes/client-node": "^1.4.0",

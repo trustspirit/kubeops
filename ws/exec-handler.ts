@@ -5,7 +5,7 @@ import { execSync } from 'child_process';
 import * as pty from 'node-pty';
 
 // Resolve kubectl path at startup
-let kubectlPath = '/usr/local/bin/kubectl';
+let kubectlPath = 'kubectl';
 try {
   const paths = execSync('which -a kubectl', { encoding: 'utf-8' }).trim().split('\n');
   kubectlPath = paths.find(p => !p.includes(' ') && !p.includes('.rd/bin'))
@@ -14,6 +14,11 @@ try {
     || kubectlPath;
 } catch { /* use default */ }
 console.log(`[Exec] Using kubectl: ${kubectlPath}`);
+
+/** Shell-escape a single argument */
+function shellEscape(arg: string): string {
+  return "'" + arg.replace(/'/g, "'\\''") + "'";
+}
 
 export function handleExecConnection(ws: WebSocket, req: IncomingMessage) {
   const { pathname, query } = parse(req.url!, true);
@@ -27,15 +32,18 @@ export function handleExecConnection(ws: WebSocket, req: IncomingMessage) {
 
   let ptyProcess: pty.IPty;
   try {
-    // OpenLens-style: kubectl exec -it with shell fallback chain
-    ptyProcess = pty.spawn(kubectlPath, [
+    // Spawn via /bin/sh to avoid posix_spawnp issues in Electron
+    const cmd = [
+      shellEscape(kubectlPath),
       'exec', '-i', '-t',
-      '--context', clusterId,
-      '-n', namespace,
-      '-c', container,
-      podName,
-      '--', 'sh', '-c', 'clear; (bash || ash || sh)',
-    ], {
+      '--context', shellEscape(clusterId),
+      '-n', shellEscape(namespace),
+      '-c', shellEscape(container),
+      shellEscape(podName),
+      '--', 'sh', '-c', "'clear; (bash || ash || sh)'",
+    ].join(' ');
+
+    ptyProcess = pty.spawn('/bin/sh', ['-c', cmd], {
       name: 'xterm-256color',
       cols: 80,
       rows: 24,
