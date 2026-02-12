@@ -14,6 +14,7 @@ await esbuild.build({
     'next',
     '@kubernetes/client-node',
     'ws',
+    'node-pty',
   ],
 });
 
