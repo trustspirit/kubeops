@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pause, Play, Download, ArrowDown } from 'lucide-react';
@@ -8,8 +8,6 @@ import AnsiToHtml from 'ansi-to-html';
 import type { PanelTab } from '@/stores/panel-store';
 import { usePanelStore } from '@/stores/panel-store';
 import { useResourceList } from '@/hooks/use-resource-list';
-
-const ansiConverter = new AnsiToHtml({ fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true });
 
 const MAX_LOG_SIZE = 512 * 1024; // 512KB
 
@@ -32,6 +30,13 @@ export function LogsTab({ tab }: LogsTabProps) {
   const [connected, setConnected] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+
+  // Batching: buffer incoming chunks between animation frames
+  const bufferRef = useRef('');
+  const rafRef = useRef<number>(0);
+
+  // Per-instance converter (fresh state per pod/container switch)
+  const converterRef = useRef(new AnsiToHtml({ fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true }));
 
   // Fetch all pods in namespace to find siblings
   const { data: podsData } = useResourceList({
@@ -63,8 +68,18 @@ export function LogsTab({ tab }: LogsTabProps) {
     return [...regular, ...init];
   }, [currentPod]);
 
+  const flushBuffer = useCallback(() => {
+    const chunk = bufferRef.current;
+    if (!chunk) return;
+    bufferRef.current = '';
+    setLogs((prev) => trimLogs(prev + chunk));
+  }, []);
+
   useEffect(() => {
     if (!container) return;
+
+    // Reset converter state for new stream
+    converterRef.current = new AnsiToHtml({ fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true });
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const decodedCluster = decodeURIComponent(clusterId);
@@ -79,11 +94,18 @@ export function LogsTab({ tab }: LogsTabProps) {
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'error') {
-            setLogs((prev) => trimLogs(prev + `\n[ERROR] ${msg.message}\n`));
+            bufferRef.current += `\n[ERROR] ${msg.message}\n`;
+            if (!rafRef.current) rafRef.current = requestAnimationFrame(flushBuffer);
             return;
           }
         } catch { /* not JSON */ }
-        setLogs((prev) => trimLogs(prev + event.data));
+        bufferRef.current += event.data;
+        if (!rafRef.current) {
+          rafRef.current = requestAnimationFrame(() => {
+            rafRef.current = 0;
+            flushBuffer();
+          });
+        }
       }
     };
     ws.onclose = () => setConnected(false);
@@ -91,15 +113,24 @@ export function LogsTab({ tab }: LogsTabProps) {
 
     return () => {
       ws.close();
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+      bufferRef.current = '';
       setLogs('');
     };
-  }, [container, clusterId, namespace, podName, follow]);
+  }, [container, clusterId, namespace, podName, follow, flushBuffer]);
+
+  // Memoize ANSI conversion — only re-runs when logs change
+  const logsHtml = useMemo(() => {
+    if (!logs) return 'Connecting...';
+    return converterRef.current.toHtml(logs);
+  }, [logs]);
 
   useEffect(() => {
     if (follow && logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
     }
-  }, [logs, follow]);
+  }, [logsHtml, follow]);
 
   const handleDownload = () => {
     const blob = new Blob([logs], { type: 'text/plain' });
@@ -182,7 +213,7 @@ export function LogsTab({ tab }: LogsTabProps) {
       <pre
         ref={logRef}
         className="flex-1 min-h-0 overflow-auto bg-[#1e1e2e] text-[#cdd6f4] p-3 font-mono text-xs leading-5 whitespace-pre"
-        dangerouslySetInnerHTML={{ __html: logs ? ansiConverter.toHtml(logs) : 'Connecting...' }}
+        dangerouslySetInnerHTML={{ __html: logsHtml }}
       />
     </div>
   );

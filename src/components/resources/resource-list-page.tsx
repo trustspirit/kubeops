@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useResourceList } from '@/hooks/use-resource-list';
 import { DataTable } from '@/components/shared/data-table';
-import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
+import { ListSkeleton } from '@/components/shared/loading-skeleton';
 import { ErrorDisplay } from '@/components/shared/error-display';
 import { COLUMN_MAP } from './resource-columns';
 import { RESOURCE_LABELS } from '@/lib/constants';
@@ -36,7 +36,7 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
     resourceType === 'pods' ? data?.items : undefined
   );
 
-  if (isLoading) return <LoadingSkeleton />;
+  if (isLoading) return <ListSkeleton />;
   if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
 
   const items = data?.items || [];
