@@ -1,6 +1,5 @@
 'use client';
 /* eslint-disable react-hooks/set-state-in-effect */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useMemo } from 'react';
@@ -112,8 +111,8 @@ export default function PodLogsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {containers.map((c: any) => (
-                  <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>
+                {containers.map((c: Record<string, unknown>) => (
+                  <SelectItem key={c.name as string} value={c.name as string}>{c.name as string}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

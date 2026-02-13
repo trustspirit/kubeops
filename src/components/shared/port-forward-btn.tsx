@@ -1,5 +1,4 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState } from 'react';
 import { mutate as globalMutate } from 'swr';
@@ -20,7 +19,7 @@ interface PortForwardBtnProps {
 export function PortForwardBtn({ clusterId, namespace, resourceType, resourceName, port }: PortForwardBtnProps) {
   const { forwards } = usePortForwards();
   const [starting, setStarting] = useState(false);
-  const active = forwards.find((f: any) => f.containerPort === port && f.id.includes(resourceName));
+  const active = forwards.find((f) => f.containerPort === port && f.id.includes(resourceName));
 
   const start = async () => {
     setStarting(true);

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { runHelm, isValidHelmName } from '@/lib/helm/helm-runner';
 import { requireHelm, withTempValuesFile } from '@/lib/helm/helpers';
@@ -16,7 +15,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const { clusterId } = await params;
   const contextName = decodeURIComponent(clusterId);
 
-  let body: any;
+  let body: { releaseName?: string; chart?: string; namespace?: string; values?: string; createNamespace?: boolean };
   try {
     body = await req.json();
   } catch {

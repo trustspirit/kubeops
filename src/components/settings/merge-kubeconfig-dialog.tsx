@@ -1,5 +1,4 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState } from 'react';
 import {
@@ -61,7 +60,7 @@ export function MergeKubeconfigDialog({
 
     try {
       // Validate YAML
-      const parsed = jsYaml.load(yamlInput) as any;
+      const parsed = jsYaml.load(yamlInput) as Record<string, unknown>;
       if (!parsed || typeof parsed !== 'object') {
         throw new Error('Invalid YAML');
       }
@@ -69,11 +68,11 @@ export function MergeKubeconfigDialog({
       // Detect potential conflicts by checking existing contexts
       const response = await fetch('/api/kubeconfig/contexts');
       const data = await response.json();
-      const existingNames = new Set((data.contexts || []).map((c: any) => c.name));
+      const existingNames = new Set((data.contexts || []).map((c: Record<string, string>) => c.name));
 
-      const incomingContexts = (parsed.contexts || []).map((c: any) => c.name).filter(Boolean);
-      const incomingClusters = (parsed.clusters || []).map((c: any) => c.name).filter(Boolean);
-      const incomingUsers = (parsed.users || []).map((u: any) => u.name).filter(Boolean);
+      const incomingContexts = ((parsed.contexts || []) as Array<Record<string, string>>).map((c) => c.name).filter(Boolean);
+      const incomingClusters = ((parsed.clusters || []) as Array<Record<string, string>>).map((c) => c.name).filter(Boolean);
+      const incomingUsers = ((parsed.users || []) as Array<Record<string, string>>).map((u) => u.name).filter(Boolean);
 
       setConflicts({
         contexts: incomingContexts.filter((n: string) => existingNames.has(n)),
@@ -161,7 +160,7 @@ export function MergeKubeconfigDialog({
 
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">Conflict Strategy</label>
-              <Select value={strategy} onValueChange={(v) => setStrategy(v as any)}>
+              <Select value={strategy} onValueChange={(v) => setStrategy(v as 'skip' | 'overwrite')}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>

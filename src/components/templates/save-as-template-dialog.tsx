@@ -1,8 +1,8 @@
 'use client';
 /* eslint-disable react-hooks/set-state-in-effect */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState, useMemo, useEffect } from 'react';
+import type { KubeResource } from '@/types/resource';
 import {
   Dialog,
   DialogContent,
@@ -31,7 +31,7 @@ interface SaveAsTemplateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   yaml: string;
-  resource?: any;
+  resource?: KubeResource;
   existingTemplate?: ResourceTemplate;
   mode: 'create' | 'edit';
 }

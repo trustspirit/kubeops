@@ -1,7 +1,7 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState, useMemo, useRef, useCallback, useEffect, createContext, useContext } from 'react';
+import type { KubeResource } from '@/types/resource';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Save, RotateCcw, Pencil, Table2, Code, ChevronRight, ChevronDown, Plug, ExternalLink, X, GitCompareArrows, Globe } from 'lucide-react';
@@ -24,7 +24,7 @@ interface PortForwardContext {
 }
 
 interface YamlEditorProps {
-  data: any;
+  data: KubeResource;
   apiUrl: string;
   onSaved?: () => void;
   portForwardContext?: PortForwardContext;
@@ -109,7 +109,7 @@ function PortForwardButton({ containerPort }: { containerPort: number }) {
 
 // === Table View Components ===
 
-function ValueDisplay({ value, fieldKey }: { value: any; fieldKey?: string }) {
+function ValueDisplay({ value, fieldKey }: { value: unknown; fieldKey?: string }) {
   if (value === null || value === undefined) return <span className="text-muted-foreground italic">null</span>;
   if (typeof value === 'boolean') return <Badge variant={value ? 'default' : 'secondary'} className="text-xs font-mono">{String(value)}</Badge>;
   if (typeof value === 'number') {
@@ -128,7 +128,7 @@ function ValueDisplay({ value, fieldKey }: { value: any; fieldKey?: string }) {
   return <span className="font-mono text-xs text-muted-foreground">{JSON.stringify(value)}</span>;
 }
 
-function ObjectTable({ data, depth = 0 }: { data: any; depth?: number }) {
+function ObjectTable({ data, depth = 0 }: { data: unknown; depth?: number }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   if (!data || typeof data !== 'object') return <ValueDisplay value={data} />;
@@ -191,7 +191,7 @@ function ObjectTable({ data, depth = 0 }: { data: any; depth?: number }) {
                   {isObject ? (
                     isCollapsed
                       ? <span className="text-muted-foreground text-xs italic">
-                          {Array.isArray(value) ? `[${value.length} items]` : `{${Object.keys(value as any).length} fields}`}
+                          {Array.isArray(value) ? `[${value.length} items]` : `{${Object.keys(value as Record<string, unknown>).length} fields}`}
                         </span>
                       : <ObjectTable data={value} depth={depth + 1} />
                   ) : (
@@ -207,10 +207,10 @@ function ObjectTable({ data, depth = 0 }: { data: any; depth?: number }) {
   );
 }
 
-function ResourceTableView({ data }: { data: any }) {
+function ResourceTableView({ data }: { data: KubeResource }) {
   if (!data) return null;
 
-  const sections: { title: string; data: any; defaultOpen: boolean }[] = [];
+  const sections: { title: string; data: unknown; defaultOpen: boolean }[] = [];
 
   if (data.metadata) {
     const { managedFields: _mf, ...cleanMeta } = data.metadata;
@@ -338,9 +338,9 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
   }, [editValue]);
 
   const handleSave = async () => {
-    let parsed: any;
+    let parsed: Record<string, unknown> | undefined;
     try {
-      parsed = yaml.load(editValue);
+      parsed = yaml.load(editValue) as Record<string, unknown>;
     } catch (e: unknown) {
       setYamlError(`Invalid YAML: ${e instanceof Error ? e.message : 'Unknown error'}`);
       setMode('edit');
@@ -355,7 +355,8 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
     setYamlError(null);
     try {
       await apiClient.put(apiUrl, parsed);
-      toast.success(`${parsed.metadata?.name || 'Resource'} updated`);
+      const meta = parsed?.metadata as Record<string, unknown> | undefined;
+      toast.success(`${meta?.name || 'Resource'} updated`);
       setMode('table');
       setEditValue('');
       onSaved?.();

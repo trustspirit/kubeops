@@ -1,5 +1,4 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState } from 'react';
 import useSWR from 'swr';
@@ -79,30 +78,31 @@ function ConfigMapValueInline({ clusterId, namespace, configMapName, configMapKe
 
 // Single env var value cell
 export function EnvValueCell({ env, clusterId, namespace }: {
-  env: any; clusterId: string; namespace: string;
+  env: Record<string, unknown>; clusterId: string; namespace: string;
 }) {
+  const valueFrom = env.valueFrom as Record<string, Record<string, string>> | undefined;
   if (env.value !== undefined) {
-    if (isSensitiveKey(env.name) && env.value) return <MaskedValue value={env.value} />;
-    return <span>{env.value || <span className="text-muted-foreground italic">empty</span>}</span>;
+    if (isSensitiveKey(env.name as string) && env.value) return <MaskedValue value={env.value as string} />;
+    return <span>{(env.value as string) || <span className="text-muted-foreground italic">empty</span>}</span>;
   }
-  if (env.valueFrom?.secretKeyRef) {
-    return <SecretValueInline clusterId={clusterId} namespace={namespace} secretName={env.valueFrom.secretKeyRef.name} secretKey={env.valueFrom.secretKeyRef.key} />;
+  if (valueFrom?.secretKeyRef) {
+    return <SecretValueInline clusterId={clusterId} namespace={namespace} secretName={valueFrom.secretKeyRef.name} secretKey={valueFrom.secretKeyRef.key} />;
   }
-  if (env.valueFrom?.configMapKeyRef) {
-    return <ConfigMapValueInline clusterId={clusterId} namespace={namespace} configMapName={env.valueFrom.configMapKeyRef.name} configMapKey={env.valueFrom.configMapKeyRef.key} />;
+  if (valueFrom?.configMapKeyRef) {
+    return <ConfigMapValueInline clusterId={clusterId} namespace={namespace} configMapName={valueFrom.configMapKeyRef.name} configMapKey={valueFrom.configMapKeyRef.key} />;
   }
-  if (env.valueFrom?.fieldRef) return <span className="text-purple-600 dark:text-purple-400">field:{env.valueFrom.fieldRef.fieldPath}</span>;
-  if (env.valueFrom?.resourceFieldRef) return <span className="text-purple-600 dark:text-purple-400">resource:{env.valueFrom.resourceFieldRef.resource}</span>;
+  if (valueFrom?.fieldRef) return <span className="text-purple-600 dark:text-purple-400">field:{valueFrom.fieldRef.fieldPath}</span>;
+  if (valueFrom?.resourceFieldRef) return <span className="text-purple-600 dark:text-purple-400">resource:{valueFrom.resourceFieldRef.resource}</span>;
   return <span className="text-muted-foreground">-</span>;
 }
 
 // Resolve envFrom references into individual env var rows
 export function EnvFromRows({ envFrom, clusterId, namespace }: {
-  envFrom: any[]; clusterId: string; namespace: string;
+  envFrom: Record<string, unknown>[]; clusterId: string; namespace: string;
 }) {
   return (
     <>
-      {envFrom.map((ef: any, efi: number) => (
+      {envFrom.map((ef, efi: number) => (
         <EnvFromBlock key={efi} entry={ef} clusterId={clusterId} namespace={namespace} />
       ))}
     </>
@@ -111,7 +111,7 @@ export function EnvFromRows({ envFrom, clusterId, namespace }: {
 
 // Resolve mounted Secret/ConfigMap volumes into env-like rows
 export function MountedSecretRows({ volumes, volumeMounts, clusterId, namespace }: {
-  volumes: any[]; volumeMounts: any[]; clusterId: string; namespace: string;
+  volumes: Record<string, unknown>[]; volumeMounts: Record<string, unknown>[]; clusterId: string; namespace: string;
 }) {
   // Find volume mounts that reference secrets or configmaps
   const mountedSecrets: { volumeName: string; secretName: string; mountPath: string }[] = [];
@@ -119,24 +119,27 @@ export function MountedSecretRows({ volumes, volumeMounts, clusterId, namespace 
   const seen = new Set<string>();
 
   for (const vm of volumeMounts || []) {
-    const vol = (volumes || []).find((v: any) => v.name === vm.name);
+    const vol = (volumes || []).find((v) => v.name === vm.name);
     if (!vol) continue;
-    if (vol.secret && !seen.has(`secret:${vol.secret.secretName}`)) {
-      seen.add(`secret:${vol.secret.secretName}`);
-      mountedSecrets.push({ volumeName: vm.name, secretName: vol.secret.secretName, mountPath: vm.mountPath });
-    } else if (vol.configMap && !seen.has(`cm:${vol.configMap.name}`)) {
-      seen.add(`cm:${vol.configMap.name}`);
-      mountedConfigMaps.push({ volumeName: vm.name, configMapName: vol.configMap.name, mountPath: vm.mountPath });
-    } else if (vol.projected) {
+    const volSecret = vol.secret as Record<string, string> | undefined;
+    const volConfigMap = vol.configMap as Record<string, string> | undefined;
+    const volProjected = vol.projected as Record<string, unknown> | undefined;
+    if (volSecret && !seen.has(`secret:${volSecret.secretName}`)) {
+      seen.add(`secret:${volSecret.secretName}`);
+      mountedSecrets.push({ volumeName: vm.name as string, secretName: volSecret.secretName, mountPath: vm.mountPath as string });
+    } else if (volConfigMap && !seen.has(`cm:${volConfigMap.name}`)) {
+      seen.add(`cm:${volConfigMap.name}`);
+      mountedConfigMaps.push({ volumeName: vm.name as string, configMapName: volConfigMap.name, mountPath: vm.mountPath as string });
+    } else if (volProjected) {
       // Handle projected volumes (can contain multiple secrets/configmaps)
-      for (const source of vol.projected.sources || []) {
+      for (const source of (volProjected.sources || []) as Array<Record<string, Record<string, string>>>) {
         if (source.secret && !seen.has(`secret:${source.secret.name}`)) {
           seen.add(`secret:${source.secret.name}`);
-          mountedSecrets.push({ volumeName: vm.name, secretName: source.secret.name, mountPath: vm.mountPath });
+          mountedSecrets.push({ volumeName: vm.name as string, secretName: source.secret.name, mountPath: vm.mountPath as string });
         }
         if (source.configMap && !seen.has(`cm:${source.configMap.name}`)) {
           seen.add(`cm:${source.configMap.name}`);
-          mountedConfigMaps.push({ volumeName: vm.name, configMapName: source.configMap.name, mountPath: vm.mountPath });
+          mountedConfigMaps.push({ volumeName: vm.name as string, configMapName: source.configMap.name, mountPath: vm.mountPath as string });
         }
       }
     }
@@ -274,16 +277,17 @@ function MountedResourceBlock({ clusterId, namespace, resourceType, resourceName
 
 // Pod-level: extract ALL secret/configmap names from entire pod spec and show all keys
 export function PodLinkedSecrets({ podSpec, clusterId, namespace }: {
-  podSpec: any; clusterId: string; namespace: string;
+  podSpec: Record<string, unknown>; clusterId: string; namespace: string;
 }) {
   // Gather every unique secret & configmap referenced in the entire pod spec
   const secretNames = new Set<string>();
   const configMapNames = new Set<string>();
 
-  const allContainers = [
-    ...(podSpec.containers || []),
-    ...(podSpec.initContainers || []),
-    ...(podSpec.ephemeralContainers || []),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allContainers: any[] = [
+    ...((podSpec.containers || []) as Array<Record<string, unknown>>),
+    ...((podSpec.initContainers || []) as Array<Record<string, unknown>>),
+    ...((podSpec.ephemeralContainers || []) as Array<Record<string, unknown>>),
   ];
 
   for (const ctr of allContainers) {
@@ -300,7 +304,8 @@ export function PodLinkedSecrets({ podSpec, clusterId, namespace }: {
   }
 
   // volumes
-  for (const vol of podSpec.volumes || []) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const vol of ((podSpec.volumes || []) as any[]) ) {
     if (vol.secret?.secretName) secretNames.add(vol.secret.secretName);
     if (vol.configMap?.name) configMapNames.add(vol.configMap.name);
     if (vol.projected) {
@@ -315,7 +320,7 @@ export function PodLinkedSecrets({ podSpec, clusterId, namespace }: {
   }
 
   // imagePullSecrets
-  for (const ips of podSpec.imagePullSecrets || []) {
+  for (const ips of ((podSpec.imagePullSecrets || []) as Array<Record<string, string>>)) {
     if (ips.name) secretNames.add(ips.name);
   }
 
@@ -479,11 +484,13 @@ function LinkedResourceBlock({ clusterId, namespace, resourceType, resourceName,
 }
 
 function EnvFromBlock({ entry, clusterId, namespace }: {
-  entry: any; clusterId: string; namespace: string;
+  entry: Record<string, unknown>; clusterId: string; namespace: string;
 }) {
-  const isSecret = !!entry.secretRef;
-  const resourceName = entry.secretRef?.name || entry.configMapRef?.name;
-  const prefix = entry.prefix || '';
+  const secretRef = entry.secretRef as Record<string, string> | undefined;
+  const configMapRef = entry.configMapRef as Record<string, string> | undefined;
+  const isSecret = !!secretRef;
+  const resourceName = secretRef?.name || configMapRef?.name;
+  const prefix = (entry.prefix as string) || '';
   const resourceType = isSecret ? 'secrets' : 'configmaps';
 
   const { data, error, isLoading } = useSWR(

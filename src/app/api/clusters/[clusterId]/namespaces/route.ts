@@ -1,17 +1,17 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCoreV1Api } from '@/lib/k8s/client-factory';
 import { getContextNamespace } from '@/lib/k8s/kubeconfig-manager';
 
 export const dynamic = 'force-dynamic';
 
-function extractK8sError(error: any): { status: number; message: string } {
-  const status = error?.code || error?.statusCode || 500;
-  let body = error?.body;
+function extractK8sError(error: unknown): { status: number; message: string } {
+  const err = error as Record<string, unknown>;
+  const status = (err?.code || err?.statusCode || 500) as number;
+  let body = err?.body as Record<string, unknown> | string | undefined;
   if (typeof body === 'string') {
-    try { body = JSON.parse(body); } catch { /* keep as string */ }
+    try { body = JSON.parse(body) as Record<string, unknown>; } catch { /* keep as string */ }
   }
-  return { status, message: body?.message || error?.message || 'Request failed' };
+  return { status, message: String((typeof body === 'object' ? (body as Record<string, unknown>)?.message : body) || err?.message || 'Request failed') };
 }
 
 export async function GET(
@@ -24,12 +24,17 @@ export async function GET(
   try {
     const api = getCoreV1Api(contextName);
     const res = await api.listNamespace();
-    const namespaces = (res as any).items.map((ns: any) => ({
-      name: ns.metadata?.name,
-      status: ns.status?.phase,
-      labels: ns.metadata?.labels,
-      creationTimestamp: ns.metadata?.creationTimestamp,
-    }));
+    const resList = res as { items: Array<Record<string, unknown>> };
+    const namespaces = resList.items.map((ns) => {
+      const meta = ns.metadata as Record<string, unknown> | undefined;
+      const status = ns.status as Record<string, unknown> | undefined;
+      return {
+        name: meta?.name,
+        status: status?.phase,
+        labels: meta?.labels,
+        creationTimestamp: meta?.creationTimestamp,
+      };
+    });
     return NextResponse.json({ namespaces });
   } catch (error: unknown) {
     const { status, message } = extractK8sError(error);

@@ -1,16 +1,16 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCoreV1Api } from '@/lib/k8s/client-factory';
 
 export const dynamic = 'force-dynamic';
 
-function extractK8sError(error: any): { status: number; message: string } {
-  const status = error?.code || error?.statusCode || 500;
-  let body = error?.body;
+function extractK8sError(error: unknown): { status: number; message: string } {
+  const err = error as Record<string, unknown>;
+  const status = (err?.code || err?.statusCode || 500) as number;
+  let body = err?.body as Record<string, unknown> | string | undefined;
   if (typeof body === 'string') {
-    try { body = JSON.parse(body); } catch { /* keep as string */ }
+    try { body = JSON.parse(body) as Record<string, unknown>; } catch { /* keep as string */ }
   }
-  return { status, message: body?.message || error?.message || 'Request failed' };
+  return { status, message: String((typeof body === 'object' ? (body as Record<string, unknown>)?.message : body) || err?.message || 'Request failed') };
 }
 
 export async function GET(

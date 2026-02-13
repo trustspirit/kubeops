@@ -1,5 +1,4 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState, useEffect } from 'react';
 import {
@@ -210,7 +209,7 @@ export function ContextDialog({
 
               <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">Auth Method</label>
-                <Select value={authMethod} onValueChange={(v) => setAuthMethod(v as any)}>
+                <Select value={authMethod} onValueChange={(v) => setAuthMethod(v as 'token' | 'cert' | 'exec')}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>

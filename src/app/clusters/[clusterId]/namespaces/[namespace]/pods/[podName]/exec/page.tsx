@@ -1,5 +1,4 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useMemo } from 'react';
@@ -29,6 +28,7 @@ export default function PodExecPage() {
   const [connected, setConnected] = useState(false);
   const terminalRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const termRef = useRef<any>(null);
 
   useEffect(() => {
@@ -40,7 +40,9 @@ export default function PodExecPage() {
   useEffect(() => {
     if (!container || !terminalRef.current) return;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let term: any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let fitAddon: any;
 
     async function init() {
@@ -149,8 +151,8 @@ export default function PodExecPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {containers.map((c: any) => (
-                  <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>
+                {containers.map((c: Record<string, unknown>) => (
+                  <SelectItem key={c.name as string} value={c.name as string}>{c.name as string}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
