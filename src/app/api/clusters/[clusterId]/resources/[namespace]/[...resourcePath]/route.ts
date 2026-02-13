@@ -1,7 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import * as k8s from '@kubernetes/client-node';
 import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
-import { NAMESPACED_RESOURCES, CLUSTER_SCOPED_RESOURCES, getResourceConfig } from '@/lib/k8s/resource-api';
+import { getResourceConfig } from '@/lib/k8s/resource-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,13 +20,13 @@ function extractK8sError(error: any): { status: number; message: string } {
   return { status, message };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const API_CLASS_MAP: Record<string, any> = {
   CoreV1Api: k8s.CoreV1Api,
   AppsV1Api: k8s.AppsV1Api,
   BatchV1Api: k8s.BatchV1Api,
   NetworkingV1Api: k8s.NetworkingV1Api,
   RbacAuthorizationV1Api: k8s.RbacAuthorizationV1Api,
+  AutoscalingV2Api: k8s.AutoscalingV2Api,
 };
 
 function getClient(contextName: string, apiClassName: string) {
@@ -74,7 +75,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       const result = await client[config.listFn](args);
       return NextResponse.json(result);
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[K8s API] GET ${resourceType}${resourceName ? `/${resourceName}` : ''} in ${namespace}: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });
@@ -100,7 +101,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
     if (config.namespaced) args.namespace = namespace;
     const result = await client[config.replaceFn](args);
     return NextResponse.json(result);
-  } catch (error: any) {
+  } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[K8s API] PUT ${resourceType}/${resourceName} in ${namespace}: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });
@@ -132,12 +133,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       config.apiClass === 'AppsV1Api' ? '/apis/apps/v1' :
       config.apiClass === 'BatchV1Api' ? '/apis/batch/v1' :
       config.apiClass === 'NetworkingV1Api' ? '/apis/networking.k8s.io/v1' :
-      config.apiClass === 'RbacAuthorizationV1Api' ? '/apis/rbac.authorization.k8s.io/v1' : '/api/v1';
+      config.apiClass === 'RbacAuthorizationV1Api' ? '/apis/rbac.authorization.k8s.io/v1' :
+      config.apiClass === 'AutoscalingV2Api' ? '/apis/autoscaling/v2' : '/api/v1';
 
     const patchPath = config.namespaced
       ? `${apiPrefix}/namespaces/${namespace}/${resourceType}/${resourceName}`
       : `${apiPrefix}/${resourceType}/${resourceName}`;
 
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const https = require('https');
     const urlObj = new URL(`${cluster.server}${patchPath}`);
     const result = await new Promise<any>((resolve, reject) => {
@@ -171,7 +174,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     });
 
     return NextResponse.json(result);
-  } catch (error: any) {
+  } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[K8s API] PATCH ${resourceType}/${resourceName} in ${namespace}: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });
@@ -196,7 +199,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     if (config.namespaced) args.namespace = namespace;
     const result = await client[config.deleteFn](args);
     return NextResponse.json(result);
-  } catch (error: any) {
+  } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[K8s API] DELETE ${resourceType}/${resourceName} in ${namespace}: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });

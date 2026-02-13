@@ -179,6 +179,36 @@ export const NAMESPACED_RESOURCES: Record<string, ResourceConfig> = {
     kind: 'Endpoints',
     namespaced: true,
   },
+  horizontalpodautoscalers: {
+    apiClass: 'AutoscalingV2Api',
+    listFn: 'listNamespacedHorizontalPodAutoscaler',
+    listAllFn: 'listHorizontalPodAutoscalerForAllNamespaces',
+    getFn: 'readNamespacedHorizontalPodAutoscaler',
+    replaceFn: 'replaceNamespacedHorizontalPodAutoscaler',
+    deleteFn: 'deleteNamespacedHorizontalPodAutoscaler',
+    kind: 'HorizontalPodAutoscaler',
+    namespaced: true,
+  },
+  resourcequotas: {
+    apiClass: 'CoreV1Api',
+    listFn: 'listNamespacedResourceQuota',
+    listAllFn: 'listResourceQuotaForAllNamespaces',
+    getFn: 'readNamespacedResourceQuota',
+    replaceFn: 'replaceNamespacedResourceQuota',
+    deleteFn: 'deleteNamespacedResourceQuota',
+    kind: 'ResourceQuota',
+    namespaced: true,
+  },
+  limitranges: {
+    apiClass: 'CoreV1Api',
+    listFn: 'listNamespacedLimitRange',
+    listAllFn: 'listLimitRangeForAllNamespaces',
+    getFn: 'readNamespacedLimitRange',
+    replaceFn: 'replaceNamespacedLimitRange',
+    deleteFn: 'deleteNamespacedLimitRange',
+    kind: 'LimitRange',
+    namespaced: true,
+  },
 };
 
 export const CLUSTER_SCOPED_RESOURCES: Record<string, ResourceConfig> = {

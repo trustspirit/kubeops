@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { ColumnDef } from '@tanstack/react-table';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -345,6 +346,39 @@ export const helmReleaseColumns: ColumnDef<any>[] = [
   },
 ];
 
+export const hpaColumns: ColumnDef<any>[] = [
+  { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
+  { id: 'reference', header: 'Reference', cell: ({ row }) => {
+    const ref = row.original.spec?.scaleTargetRef;
+    return ref ? `${ref.kind}/${ref.name}` : '-';
+  }},
+  { id: 'minReplicas', header: 'Min', cell: ({ row }) => row.original.spec?.minReplicas ?? 1 },
+  { id: 'maxReplicas', header: 'Max', cell: ({ row }) => row.original.spec?.maxReplicas ?? '-' },
+  { id: 'replicas', header: 'Replicas', cell: ({ row }) => `${row.original.status?.currentReplicas || 0}/${row.original.status?.desiredReplicas || 0}` },
+  { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
+];
+
+export const resourcequotaColumns: ColumnDef<any>[] = [
+  { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
+  { id: 'resources', header: 'Resources', cell: ({ row }) => {
+    const hard = row.original.status?.hard || row.original.spec?.hard || {};
+    return Object.keys(hard).length;
+  }},
+  { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
+];
+
+export const limitrangeColumns: ColumnDef<any>[] = [
+  { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
+  nsCol,
+  { id: 'limits', header: 'Limits', cell: ({ row }) => {
+    const limits = row.original.spec?.limits || [];
+    return limits.map((l: any) => l.type).join(', ') || '-';
+  }},
+  { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
+];
+
 export const COLUMN_MAP: Record<string, ColumnDef<any>[]> = {
   pods: podColumns,
   deployments: deploymentColumns,
@@ -369,4 +403,7 @@ export const COLUMN_MAP: Record<string, ColumnDef<any>[]> = {
   clusterrolebindings: clusterrolebindingColumns,
   endpoints: endpointColumns,
   helm: helmReleaseColumns,
+  horizontalpodautoscalers: hpaColumns,
+  resourcequotas: resourcequotaColumns,
+  limitranges: limitrangeColumns,
 };
