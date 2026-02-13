@@ -9,9 +9,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { MoreHorizontal, RotateCcw, Scaling, Trash2, ScrollText, Terminal, GitCompare } from 'lucide-react';
+import { MoreHorizontal, RotateCcw, Scaling, Trash2, ScrollText, Terminal, GitCompare, Bug } from 'lucide-react';
 import { ScaleDialog } from '@/components/resources/scale-dialog';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { CascadeDeleteDialog } from '@/components/shared/cascade-delete-dialog';
+import { NodeDebugDialog } from '@/components/nodes/node-debug-dialog';
+import { PodDebugDialog } from '@/components/pods/pod-debug-dialog';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { usePanelStore } from '@/stores/panel-store';
@@ -40,12 +43,16 @@ export function ResourceActions({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [nodeDebugOpen, setNodeDebugOpen] = useState(false);
+  const [podDebugOpen, setPodDebugOpen] = useState(false);
   const addTab = usePanelStore((s) => s.addTab);
 
   const encodedClusterId = encodeURIComponent(clusterId);
   const canRestart = ['deployments', 'statefulsets', 'daemonsets'].includes(resourceType);
   const canScale = ['deployments', 'statefulsets'].includes(resourceType);
   const isPod = resourceType === 'pods';
+  const isNode = resourceType === 'nodes';
+  const hasDependents = ['deployments', 'statefulsets', 'daemonsets', 'replicasets', 'jobs', 'cronjobs'].includes(resourceType);
 
   const handleRestart = useCallback(async () => {
     if (restarting) return;
@@ -149,6 +156,19 @@ export function ResourceActions({
                 <Terminal className="h-4 w-4 mr-2" />
                 Exec
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setPodDebugOpen(true)}>
+                <Bug className="h-4 w-4 mr-2" />
+                Debug
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
+          {isNode && (
+            <>
+              <DropdownMenuItem onClick={() => setNodeDebugOpen(true)}>
+                <Bug className="h-4 w-4 mr-2" />
+                Debug Shell
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
             </>
           )}
@@ -195,7 +215,20 @@ export function ResourceActions({
         />
       )}
 
-      {deleteOpen && (
+      {deleteOpen && hasDependents && (
+        <CascadeDeleteDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          clusterId={clusterId}
+          namespace={namespace}
+          resourceType={resourceType}
+          name={name}
+          onConfirm={() => handleDelete()}
+          loading={deleting}
+        />
+      )}
+
+      {deleteOpen && !hasDependents && (
         <ConfirmDialog
           open={deleteOpen}
           onOpenChange={setDeleteOpen}
@@ -205,6 +238,26 @@ export function ResourceActions({
           variant="destructive"
           onConfirm={handleDelete}
           loading={deleting}
+        />
+      )}
+
+      {isNode && nodeDebugOpen && (
+        <NodeDebugDialog
+          open={nodeDebugOpen}
+          onOpenChange={setNodeDebugOpen}
+          clusterId={clusterId}
+          nodeName={name}
+        />
+      )}
+
+      {isPod && podDebugOpen && (
+        <PodDebugDialog
+          open={podDebugOpen}
+          onOpenChange={setPodDebugOpen}
+          clusterId={clusterId}
+          namespace={namespace}
+          podName={name}
+          containers={(resource?.spec?.containers as { name: string }[] || []).map(c => c.name)}
         />
       )}
     </>

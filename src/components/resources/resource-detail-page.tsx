@@ -7,15 +7,18 @@ import { ErrorDisplay } from '@/components/shared/error-display';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Trash2, GitCompare } from 'lucide-react';
+import { ArrowLeft, Trash2, GitCompare, Globe } from 'lucide-react';
 import { RESOURCE_LABELS } from '@/lib/constants';
 import { AgeDisplay } from '@/components/shared/age-display';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { CascadeDeleteDialog } from '@/components/shared/cascade-delete-dialog';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import * as yaml from 'js-yaml';
 import { YamlEditor } from '@/components/shared/yaml-editor';
 import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
+import { MultiClusterApplyDialog } from '@/components/multi-cluster/multi-cluster-apply-dialog';
 
 interface ResourceDetailPageProps {
   resourceType: string;
@@ -32,6 +35,7 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [multiApplyOpen, setMultiApplyOpen] = useState(false);
 
   const { data, error, isLoading, mutate } = useResourceDetail({
     clusterId: clusterId ? decodeURIComponent(clusterId) : null,
@@ -43,6 +47,16 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
   const yamlApiUrl = clusterScoped
     ? `/api/clusters/${clusterId}/resources/_/${resourceType}/${name}`
     : `/api/clusters/${clusterId}/resources/${namespace}/${resourceType}/${name}`;
+
+  const resourceYaml = useMemo(() => {
+    if (!data) return '';
+    const clean = { ...data };
+    if (clean.metadata?.managedFields) delete clean.metadata.managedFields;
+    if (clean.metadata?.resourceVersion) delete clean.metadata.resourceVersion;
+    if (clean.metadata?.uid) delete clean.metadata.uid;
+    if (clean.metadata?.creationTimestamp) delete clean.metadata.creationTimestamp;
+    return yaml.dump(clean, { lineWidth: -1 });
+  }, [data]);
 
   if (isLoading) return <LoadingSkeleton />;
   if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
@@ -62,8 +76,8 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
       await apiClient.delete(url);
       toast.success(`${name} deleted`);
       router.back();
-    } catch (err: any) {
-      toast.error(`Delete failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Delete failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setDeleting(false);
       setDeleteOpen(false);
@@ -83,6 +97,12 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
             {metadata.namespace && ` in ${metadata.namespace}`}
           </p>
         </div>
+        {!clusterScoped && (
+          <Button variant="outline" size="sm" onClick={() => setMultiApplyOpen(true)}>
+            <Globe className="h-4 w-4 mr-1" />
+            Multi-cluster Apply
+          </Button>
+        )}
         {!clusterScoped && (
           <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)}>
             <GitCompare className="h-4 w-4 mr-1" />
@@ -184,16 +204,29 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
         </TabsContent>
       </Tabs>
 
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title={`Delete ${metadata.name}?`}
-        description={`This will permanently delete the ${resourceType.slice(0, -1)} "${metadata.name}". This action cannot be undone.`}
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={handleDelete}
-        loading={deleting}
-      />
+      {['deployments', 'statefulsets', 'daemonsets', 'replicasets', 'jobs', 'cronjobs'].includes(resourceType) && !clusterScoped ? (
+        <CascadeDeleteDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          clusterId={decodeURIComponent(clusterId)}
+          namespace={namespace}
+          resourceType={resourceType}
+          name={name}
+          onConfirm={() => handleDelete()}
+          loading={deleting}
+        />
+      ) : (
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title={`Delete ${metadata.name}?`}
+          description={`This will permanently delete the ${resourceType.slice(0, -1)} "${metadata.name}". This action cannot be undone.`}
+          confirmLabel="Delete"
+          variant="destructive"
+          onConfirm={handleDelete}
+          loading={deleting}
+        />
+      )}
 
       {!clusterScoped && (
         <ResourceDiffDialog
@@ -204,6 +237,14 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
           resourceType={resourceType}
           resourceName={name}
           sourceResource={resource}
+        />
+      )}
+
+      {!clusterScoped && (
+        <MultiClusterApplyDialog
+          open={multiApplyOpen}
+          onOpenChange={setMultiApplyOpen}
+          initialYaml={resourceYaml}
         />
       )}
     </div>
