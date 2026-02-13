@@ -26,7 +26,7 @@ export interface HelmReleaseDetail {
       description: string;
     };
   };
-  config: Record<string, any>;
+  config: Record<string, unknown>;
   version: number;
   namespace: string;
 }

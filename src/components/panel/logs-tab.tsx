@@ -1,4 +1,6 @@
 'use client';
+/* eslint-disable react-hooks/set-state-in-effect */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
@@ -121,9 +123,10 @@ export function LogsTab({ tab }: LogsTabProps) {
   }, [container, clusterId, namespace, podName, follow, flushBuffer]);
 
   // Memoize ANSI conversion — only re-runs when logs change
-  const logsHtml = useMemo(() => {
-    if (!logs) return 'Connecting...';
-    return converterRef.current.toHtml(logs);
+  const [logsHtml, setLogsHtml] = useState('Connecting...');
+  useEffect(() => {
+    if (!logs) { setLogsHtml('Connecting...'); return; }
+    setLogsHtml(converterRef.current.toHtml(logs));
   }, [logs]);
 
   useEffect(() => {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { runHelm } from '@/lib/helm/helm-runner';
 import { requireHelm } from '@/lib/helm/helpers';

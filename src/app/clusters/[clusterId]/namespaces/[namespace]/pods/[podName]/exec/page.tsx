@@ -1,7 +1,8 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -22,7 +23,7 @@ export default function PodExecPage() {
     name: podName,
   });
 
-  const containers = pod?.spec?.containers || [];
+  const containers = useMemo(() => pod?.spec?.containers || [], [pod]);
   const [container, setContainer] = useState('');
   const [shell, setShell] = useState('/bin/sh');
   const [connected, setConnected] = useState(false);

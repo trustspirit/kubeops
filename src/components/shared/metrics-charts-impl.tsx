@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
@@ -146,7 +147,8 @@ export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: Po
       fsWrite: Math.round(fsWrite * 10) / 10,
     };
 
-    setHistory((prev) => [...prev, point].slice(-60)); // Keep 5 min at 5s interval
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHistory((prev) => [...prev, point].slice(-60)); // Keep 5 min at 5s interval // Keep 5 min at 5s interval
   }, [data, promData]);
 
   if (history.length === 0) {

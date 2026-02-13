@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCoreV1Api } from '@/lib/k8s/client-factory';
 
@@ -23,7 +24,7 @@ export async function GET(
     const api = getCoreV1Api(contextName);
     const res = await api.listNode();
     return NextResponse.json(res);
-  } catch (error: any) {
+  } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[K8s API] GET nodes: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });

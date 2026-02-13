@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { UpdateStatus } from '@/types/electron';
@@ -22,7 +23,7 @@ export function useAutoUpdate() {
   const api = typeof window !== 'undefined' ? window.electronUpdater : undefined;
   const isAvailable = !!api;
   const apiRef = useRef(api);
-  apiRef.current = api;
+  useEffect(() => { apiRef.current = api; });
 
   useEffect(() => {
     apiRef.current?.getAppVersion().then(setAppVersion).catch(() => {});

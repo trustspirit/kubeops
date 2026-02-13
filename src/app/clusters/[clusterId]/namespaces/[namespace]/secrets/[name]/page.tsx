@@ -64,8 +64,8 @@ export default function SecretDetailPage() {
       await apiClient.delete(`/api/clusters/${clusterId}/resources/${namespace}/secrets/${name}`);
       toast.success(`${name} deleted`);
       router.back();
-    } catch (err: any) {
-      toast.error(`Delete failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Delete failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setDeleting(false);
       setDeleteOpen(false);

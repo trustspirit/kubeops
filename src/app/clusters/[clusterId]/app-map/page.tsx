@@ -6,7 +6,6 @@ import { useNamespaceStore } from '@/stores/namespace-store';
 import { useResourceTree } from '@/hooks/use-resource-tree';
 import { ResourceTreeView } from '@/components/shared/resource-tree';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
-import { Badge } from '@/components/ui/badge';
 import { Tag, X } from 'lucide-react';
 
 export default function AppMapPage() {

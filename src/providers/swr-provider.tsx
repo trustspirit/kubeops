@@ -9,7 +9,7 @@ function createLRUCache() {
   const MAX_SIZE = 500;
   return {
     get: (key: string) => map.get(key),
-    set: (key: string, value: any) => {
+    set: (key: string, value: unknown) => {
       if (map.size >= MAX_SIZE) {
         const firstKey = map.keys().next().value;
         map.delete(firstKey);

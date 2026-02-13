@@ -1,5 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
-import * as k8s from '@kubernetes/client-node';
 import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
 
 export const dynamic = 'force-dynamic';
@@ -45,6 +45,7 @@ async function makeK8sRequest(
   const opts: any = {};
   await kc.applyToHTTPSOptions(opts);
 
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
   const https = require('https');
   const urlObj = new URL(`${cluster.server}${apiPath}`);
 
@@ -115,7 +116,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       { error: data?.message || 'Request failed' },
       { status }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[K8s API] GET CR ${group}/${version}/${plural}${name ? `/${name}` : ''}: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });
@@ -145,7 +146,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
       { error: data?.message || 'Update failed' },
       { status }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[K8s API] PUT CR ${group}/${version}/${plural}/${name}: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });
@@ -174,7 +175,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
       { error: data?.message || 'Delete failed' },
       { status }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[K8s API] DELETE CR ${group}/${version}/${plural}/${name}: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });

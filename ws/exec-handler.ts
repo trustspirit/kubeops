@@ -57,10 +57,11 @@ export function handleExecConnection(ws: WebSocket, req: IncomingMessage) {
       rows: 24,
       env: { ...process.env, TERM: 'xterm-256color' },
     });
-  } catch (err: any) {
-    console.error(`[Exec] Failed to spawn PTY:`, err.message);
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[Exec] Failed to spawn PTY:`, errMsg);
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'error', message: `Failed to start: ${err.message}` }));
+      ws.send(JSON.stringify({ type: 'error', message: `Failed to start: ${errMsg}` }));
       ws.close();
     }
     return;

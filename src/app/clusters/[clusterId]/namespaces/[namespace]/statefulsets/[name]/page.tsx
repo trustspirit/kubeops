@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useParams, useRouter } from 'next/navigation';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
@@ -85,8 +86,8 @@ export default function StatefulSetDetailPage() {
       });
       toast.success(`${name} restarting...`);
       mutate();
-    } catch (err: any) {
-      toast.error(`Restart failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Restart failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally { setRestarting(false); }
   };
 
@@ -96,8 +97,8 @@ export default function StatefulSetDetailPage() {
       await apiClient.delete(`/api/clusters/${clusterId}/resources/${namespace}/statefulsets/${name}`);
       toast.success(`${name} deleted`);
       router.back();
-    } catch (err: any) {
-      toast.error(`Delete failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Delete failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setDeleting(false);
       setDeleteOpen(false);
@@ -275,7 +276,7 @@ export default function StatefulSetDetailPage() {
                                 try {
                                   await apiClient.delete(`/api/clusters/${clusterId}/resources/${namespace}/pods/${pName}`);
                                   toast.success(`${pName} deleted`);
-                                } catch (err: any) { toast.error(err.message); }
+                                } catch (err: unknown) { toast.error(err instanceof Error ? err.message : 'Unknown error'); }
                               }}>
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>

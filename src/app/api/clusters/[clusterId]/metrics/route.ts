@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
 
@@ -15,6 +16,7 @@ function extractK8sError(error: any): { status: number; message: string } {
 // Helper: make HTTPS request through K8s API
 function k8sRequest(server: string, path: string, opts: any, skipTLS?: boolean, accept = 'application/json'): Promise<string> {
   return new Promise((resolve, reject) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const https = require('https');
     const urlObj = new URL(`${server}${path}`);
     const reqOpts: any = {
@@ -188,7 +190,7 @@ export async function GET(
 
     const raw = await k8sRequest(cluster.server, metricsPath, opts, cluster.skipTLSVerify);
     return NextResponse.json(JSON.parse(raw));
-  } catch (error: any) {
+  } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[Metrics] ${type}: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });

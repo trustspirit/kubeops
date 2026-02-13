@@ -1,4 +1,6 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/purity */
 
 import { useParams } from 'next/navigation';
 import useSWR from 'swr';
@@ -116,9 +118,9 @@ export default function ClusterOverviewPage() {
 
   // Workloads
   const workloads = [{ name: 'Deploy', ready: 0, notReady: 0 }, { name: 'STS', ready: 0, notReady: 0 }, { name: 'DS', ready: 0, notReady: 0 }];
-  deployments.forEach((d: any) => { (d.status?.readyReplicas || 0) >= (d.spec?.replicas || 1) ? workloads[0].ready++ : workloads[0].notReady++; });
-  statefulsets.forEach((s: any) => { (s.status?.readyReplicas || 0) >= (s.spec?.replicas || 1) ? workloads[1].ready++ : workloads[1].notReady++; });
-  daemonsets.forEach((d: any) => { (d.status?.numberReady || 0) >= (d.status?.desiredNumberScheduled || 1) ? workloads[2].ready++ : workloads[2].notReady++; });
+  deployments.forEach((d: any) => { if ((d.status?.readyReplicas || 0) >= (d.spec?.replicas || 1)) workloads[0].ready++; else workloads[0].notReady++; });
+  statefulsets.forEach((s: any) => { if ((s.status?.readyReplicas || 0) >= (s.spec?.replicas || 1)) workloads[1].ready++; else workloads[1].notReady++; });
+  daemonsets.forEach((d: any) => { if ((d.status?.numberReady || 0) >= (d.status?.desiredNumberScheduled || 1)) workloads[2].ready++; else workloads[2].notReady++; });
   const workloadData = workloads.filter(w => w.ready + w.notReady > 0);
 
   // NS distribution

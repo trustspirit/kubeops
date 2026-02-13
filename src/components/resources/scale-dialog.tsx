@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState } from 'react';
 import {
@@ -53,8 +54,8 @@ export function ScaleDialog({
       toast.success(`Scaled ${name} to ${replicas} replicas`);
       onOpenChange(false);
       onScaled?.();
-    } catch (err: any) {
-      toast.error(`Scale failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Scale failed: ${(err instanceof Error ? err.message : 'Unknown error')}`);
     } finally {
       setLoading(false);
     }

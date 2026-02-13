@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCoreV1Api } from '@/lib/k8s/client-factory';
 import { getContextNamespace } from '@/lib/k8s/kubeconfig-manager';
@@ -30,7 +31,7 @@ export async function GET(
       creationTimestamp: ns.metadata?.creationTimestamp,
     }));
     return NextResponse.json({ namespaces });
-  } catch (error: any) {
+  } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[K8s API] GET namespaces: ${status} ${message}`);
 

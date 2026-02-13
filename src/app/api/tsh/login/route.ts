@@ -46,8 +46,7 @@ export async function POST(request: NextRequest) {
     const e = err as { stderr?: Buffer; message?: string };
     const raw = e.stderr?.toString() || e.message || 'tsh command failed';
     // Strip ANSI escape codes (e.g. [31m, [0m)
-    // eslint-disable-next-line no-control-regex
-    const message = raw.replace(/\x1B\[[0-9;]*m/g, '');
+      const message = raw.replace(/\x1B\[[0-9;]*m/g, '');
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

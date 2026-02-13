@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react';
 const INTERVAL_MS = 30_000;
 
 let tick = 0;
-let listeners = new Set<() => void>();
+const listeners = new Set<() => void>();
 let timer: ReturnType<typeof setInterval> | null = null;
 
 function startTimer() {

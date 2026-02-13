@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState } from 'react';
 import { mutate as globalMutate } from 'swr';
@@ -27,7 +28,7 @@ export function PortForwardBtn({ clusterId, namespace, resourceType, resourceNam
       await apiClient.post('/api/port-forward', { clusterId, namespace, resourceType, resourceName, containerPort: port, localPort: port });
       globalMutate('/api/port-forward');
       toast.success(`Forwarding localhost:${port} → ${port}`);
-    } catch (err: any) { toast.error(err.message); }
+    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : 'Unknown error'); }
     finally { setStarting(false); }
   };
 

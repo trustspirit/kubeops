@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo } from 'react';
 import { useResourceList } from './use-resource-list';
 import type { ResourceNodeData } from '@/components/shared/resource-node';

@@ -21,7 +21,7 @@ export const activeForwards = new Map<string, { info: PortForward; proc: ChildPr
 
 /** Kill all active port forward processes. Called on server shutdown. */
 export function cleanupAllForwards() {
-  for (const [id, { proc }] of activeForwards) {
+  for (const [, { proc }] of activeForwards) {
     try { proc.kill(); } catch { /* ignore */ }
   }
   activeForwards.clear();

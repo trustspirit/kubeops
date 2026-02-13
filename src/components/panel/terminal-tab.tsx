@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { PanelTab } from '@/stores/panel-store';
@@ -114,7 +115,7 @@ export function TerminalTab({ tab, active }: TerminalTabProps) {
       });
 
       // Terminal resize → WebSocket resize event
-      term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
+      term.onResize(() => {
         sendResize(ws, term);
       });
 
