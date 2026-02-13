@@ -1,6 +1,7 @@
 import useSWR from 'swr';
 import { ClusterInfo } from '@/types/cluster';
 import { apiClient } from '@/lib/api-client';
+import type { KubeList, KubePod, KubeEvent, ContainerStatus } from '@/types/resource';
 
 export interface ClusterHealthData {
   name: string;
@@ -19,26 +20,27 @@ async function fetchMultiClusterData(clusters: ClusterInfo[]): Promise<ClusterHe
     connected.map(async (cluster) => {
       const encodedName = encodeURIComponent(cluster.name);
       const [podsRes, eventsRes] = await Promise.allSettled([
-        apiClient.get<any>(`/api/clusters/${encodedName}/resources/_all/pods`),
-        apiClient.get<any>(`/api/clusters/${encodedName}/resources/_all/events`),
+        apiClient.get<KubeList<KubePod>>(`/api/clusters/${encodedName}/resources/_all/pods`),
+        apiClient.get<KubeList<KubeEvent>>(`/api/clusters/${encodedName}/resources/_all/events`),
       ]);
 
-      const pods = podsRes.status === 'fulfilled' ? podsRes.value?.items || [] : [];
-      const events = eventsRes.status === 'fulfilled' ? eventsRes.value?.items || [] : [];
+      const pods: KubePod[] = podsRes.status === 'fulfilled' ? podsRes.value?.items || [] : [];
+      const events: KubeEvent[] = eventsRes.status === 'fulfilled' ? eventsRes.value?.items || [] : [];
 
+      const FAILING_REASONS = ['CrashLoopBackOff', 'Error', 'ImagePullBackOff', 'ErrImagePull'];
       const oneHourAgo = Date.now() - 3600_000;
-      const runningPods = pods.filter((p: any) => p.status?.phase === 'Running').length;
-      const failingPods = pods.filter((p: any) => {
-        const statuses = p.status?.containerStatuses || [];
-        return statuses.some((cs: any) => {
+      const runningPods = pods.filter((p) => p.status?.phase === 'Running').length;
+      const failingPods = pods.filter((p) => {
+        const statuses: ContainerStatus[] = p.status?.containerStatuses || [];
+        return statuses.some((cs) => {
           const reason = cs.state?.waiting?.reason;
-          return ['CrashLoopBackOff', 'Error', 'ImagePullBackOff', 'ErrImagePull'].includes(reason);
+          return reason != null && FAILING_REASONS.includes(reason);
         });
       }).length;
       const warningEvents = events.filter(
-        (e: any) =>
+        (e) =>
           e.type === 'Warning' &&
-          new Date(e.lastTimestamp || e.metadata?.creationTimestamp).getTime() > oneHourAgo
+          new Date(e.lastTimestamp || e.metadata?.creationTimestamp || '').getTime() > oneHourAgo
       ).length;
 
       return {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useParams, useRouter, usePathname } from 'next/navigation';
 import { useNamespaces } from '@/hooks/use-namespaces';
 import { useNamespaceStore } from '@/stores/namespace-store';
@@ -30,27 +30,59 @@ export function NamespaceSelector() {
   } = useNamespaceStore();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [mounted, setMounted] = useState(false);
-  const [multiMode, setMultiMode] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // Track mount state without setState in effect
+  const mounted = useSyncExternalStore(
+    (cb) => { cb(); return () => {}; },
+    () => true,
+    () => false,
+  );
 
-  // Initialize multi mode from store
-  useEffect(() => {
-    if (decodedClusterId) {
-      const selected = getSelectedNamespaces(decodedClusterId);
-      if (selected.length > 1) setMultiMode(true);
-    }
-  }, [decodedClusterId, getSelectedNamespaces]);
+  // Initialize multiMode from store
+  const storedSelected = decodedClusterId ? getSelectedNamespaces(decodedClusterId) : [];
+  const [multiMode, setMultiMode] = useState(() => storedSelected.length > 1);
+
+  // Sync multiMode when cluster changes
+  const prevClusterRef = useRef(decodedClusterId);
+  if (prevClusterRef.current !== decodedClusterId) {
+    prevClusterRef.current = decodedClusterId;
+    const sel = decodedClusterId ? getSelectedNamespaces(decodedClusterId) : [];
+    if (sel.length > 1 && !multiMode) setMultiMode(true);
+    if (sel.length <= 1 && multiMode) setMultiMode(false);
+  }
 
   const activeNamespace = decodedClusterId
     ? getActiveNamespace(decodedClusterId)
     : ALL_NAMESPACES;
 
-  const selectedNamespaces = decodedClusterId
-    ? getSelectedNamespaces(decodedClusterId)
-    : [];
+  const selectedNamespaces = useMemo(
+    () => (decodedClusterId ? getSelectedNamespaces(decodedClusterId) : []),
+    [decodedClusterId, getSelectedNamespaces],
+  );
+
+  // useMemo BEFORE any early return to satisfy rules-of-hooks
+  const selectedSet = useMemo(() => new Set(selectedNamespaces), [selectedNamespaces]);
+
+  if (!clusterId) return null;
+
+  const nsNames = new Set<string>(namespaces.map((ns: { name: string }) => ns.name));
+  if (activeNamespace && activeNamespace !== ALL_NAMESPACES) nsNames.add(activeNamespace);
+  const nsList: string[] = Array.from(nsNames).sort();
+
+  const trimmedQuery = query.trim().toLowerCase();
+  const filtered = trimmedQuery
+    ? nsList.filter((name: string) => name.toLowerCase().includes(trimmedQuery))
+    : nsList;
+
+  const exactMatch = nsList.some((name: string) => name.toLowerCase() === trimmedQuery);
+  const showUseCustom = trimmedQuery && !exactMatch && !multiMode;
+
+  const isMulti = multiMode || (decodedClusterId ? isMultiNamespace(decodedClusterId) : false);
+  const displayName = isMulti && selectedNamespaces.length > 1
+    ? `${selectedNamespaces.length} namespaces`
+    : activeNamespace === ALL_NAMESPACES
+      ? 'All Namespaces'
+      : activeNamespace;
+  const showAllOption = !trimmedQuery || 'all namespaces'.includes(trimmedQuery);
 
   const handleSelect = (value: string) => {
     if (!decodedClusterId) return;
@@ -75,17 +107,14 @@ export function NamespaceSelector() {
     const newSelected = Array.from(current);
     setSelectedNamespaces(decodedClusterId, newSelected);
 
-    // Navigate to _all for multi mode (client-side filtering handles the rest)
     if (newSelected.length > 1) {
       const nsMatch = pathname.match(/\/namespaces\/[^/]+\/([^/]+)/);
       if (nsMatch && clusterId) {
         router.push(`/clusters/${clusterId}/namespaces/_all/${nsMatch[1]}`);
       }
     } else if (newSelected.length === 1) {
-      // Single selection → treat as single mode
       handleSelect(newSelected[0]);
     }
-    // length === 0: stay in multi mode, show "All Namespaces" behavior (_all)
   };
 
   const handleToggleAll = () => {
@@ -96,32 +125,6 @@ export function NamespaceSelector() {
       setSelectedNamespaces(decodedClusterId, [...nsList]);
     }
   };
-
-  if (!clusterId) return null;
-
-  const nsNames = new Set<string>(namespaces.map((ns: { name: string }) => ns.name));
-  if (activeNamespace && activeNamespace !== ALL_NAMESPACES) nsNames.add(activeNamespace);
-  const nsList: string[] = Array.from(nsNames).sort();
-
-  const trimmedQuery = query.trim().toLowerCase();
-  const filtered = trimmedQuery
-    ? nsList.filter((name: string) => name.toLowerCase().includes(trimmedQuery))
-    : nsList;
-
-  // Show option to use the typed value directly if it's not in the list
-  const exactMatch = nsList.some((name: string) => name.toLowerCase() === trimmedQuery);
-  const showUseCustom = trimmedQuery && !exactMatch && !multiMode;
-
-  // Use Set for O(1) lookup instead of array .includes() O(n) per item
-  const selectedSet = useMemo(() => new Set(selectedNamespaces), [selectedNamespaces]);
-
-  const isMulti = multiMode || (decodedClusterId ? isMultiNamespace(decodedClusterId) : false);
-  const displayName = isMulti && selectedNamespaces.length > 1
-    ? `${selectedNamespaces.length} namespaces`
-    : activeNamespace === ALL_NAMESPACES
-      ? 'All Namespaces'
-      : activeNamespace;
-  const showAllOption = !trimmedQuery || 'all namespaces'.includes(trimmedQuery);
 
   return (
     <div className='flex items-center gap-1.5'>
@@ -163,7 +166,6 @@ export function NamespaceSelector() {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && trimmedQuery && !multiMode) {
-                  // Select first filtered result, or use as custom namespace
                   if (filtered.length > 0) {
                     handleSelect(filtered[0]);
                   } else {
@@ -180,12 +182,10 @@ export function NamespaceSelector() {
                   onClick={() => {
                     setMultiMode(!multiMode);
                     if (!multiMode && decodedClusterId) {
-                      // Enter multi mode: initialize with current selection
                       if (activeNamespace !== ALL_NAMESPACES) {
                         setSelectedNamespaces(decodedClusterId, [activeNamespace]);
                       }
                     } else if (multiMode && decodedClusterId) {
-                      // Exit multi mode: clear multi selections
                       setSelectedNamespaces(decodedClusterId, []);
                     }
                   }}
@@ -206,7 +206,6 @@ export function NamespaceSelector() {
             <div className='p-1'>
               {multiMode ? (
                 <>
-                  {/* Toggle all */}
                   <button
                     onClick={handleToggleAll}
                     className='flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent font-medium'

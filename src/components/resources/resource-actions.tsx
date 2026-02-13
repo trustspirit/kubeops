@@ -15,13 +15,14 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { usePanelStore } from '@/stores/panel-store';
+import type { KubeResource } from '@/types/resource';
 
 interface ResourceActionsProps {
   resourceType: string;
   name: string;
   namespace: string;
   clusterId: string;
-  resource: any;
+  resource: KubeResource;
   onMutate?: () => void;
   onCompare?: () => void;
 }
@@ -66,8 +67,8 @@ export function ResourceActions({
       );
       toast.success(`${name} restarting...`);
       onMutate?.();
-    } catch (err: any) {
-      toast.error(`Restart failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Restart failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setRestarting(false);
     }
@@ -82,8 +83,8 @@ export function ResourceActions({
       );
       toast.success(`${name} deleted`);
       onMutate?.();
-    } catch (err: any) {
-      toast.error(`Delete failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Delete failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setDeleting(false);
       setDeleteOpen(false);
@@ -91,7 +92,8 @@ export function ResourceActions({
   }, [deleting, encodedClusterId, namespace, resourceType, name, onMutate]);
 
   const handleLogs = useCallback(() => {
-    const container = resource?.spec?.containers?.[0]?.name;
+    const containers = resource?.spec?.containers as { name: string }[] | undefined;
+    const container = containers?.[0]?.name;
     if (!container) return;
     addTab({
       id: `logs-${name}-${container}`,
@@ -105,7 +107,8 @@ export function ResourceActions({
   }, [resource, name, encodedClusterId, namespace, addTab]);
 
   const handleExec = useCallback(() => {
-    const container = resource?.spec?.containers?.[0]?.name;
+    const containers = resource?.spec?.containers as { name: string }[] | undefined;
+    const container = containers?.[0]?.name;
     if (!container) return;
     addTab({
       id: `exec-${name}-${container}`,
@@ -118,7 +121,9 @@ export function ResourceActions({
     });
   }, [resource, name, encodedClusterId, namespace, addTab]);
 
-  const currentReplicas = resource?.spec?.replicas ?? resource?.status?.replicas ?? 0;
+  const spec = resource?.spec as Record<string, unknown> | undefined;
+  const status = resource?.status as Record<string, unknown> | undefined;
+  const currentReplicas = (spec?.replicas as number) ?? (status?.replicas as number) ?? 0;
 
   return (
     <>

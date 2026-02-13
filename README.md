@@ -152,8 +152,8 @@ Four viewing modes for every resource manifest:
 
 - **Table view** — Structured, collapsible sections with smart value rendering
 - **YAML view** — Read-only formatted output
-- **Edit mode** — Syntax-highlighted editor with validation, save with `Cmd+S`
-- **Review Changes** — Side-by-side diff showing additions (green) and deletions (red) before saving
+- **Edit mode** — Syntax-highlighted editor with validation, `Cmd+S` to proceed to review
+- **Review Changes (mandatory)** — Side-by-side diff showing additions (green) and deletions (red). You must review before applying — direct save from edit mode is disabled
 
 <!-- Screenshot: YAML Editor -->
 
@@ -244,6 +244,14 @@ npm run electron:dev
 
 The app opens automatically once the dev server is ready (port 51230).
 
+#### Mock Mode
+
+Run without a real cluster using built-in mock data (3 clusters, various pod states, warning events):
+
+```bash
+npm run dev:mock     # http://localhost:51230
+```
+
 ### Build
 
 Create a distributable package for your platform:
@@ -260,10 +268,11 @@ Output is written to `dist-electron/`.
 
 ## Keyboard Shortcuts
 
-| Shortcut           | Action                 |
-| ------------------ | ---------------------- |
-| `Cmd+K` / `Ctrl+K` | Open command palette   |
-| `Cmd+S` / `Ctrl+S` | Save YAML in edit mode |
+| Shortcut           | Action                              |
+| ------------------ | ----------------------------------- |
+| `Cmd+K` / `Ctrl+K` | Open command palette                |
+| `Cmd+S` / `Ctrl+S` | Review changes (edit mode)          |
+| `Cmd+S` / `Ctrl+S` | Apply changes (review mode)         |
 
 ---
 

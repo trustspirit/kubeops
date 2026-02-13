@@ -9,10 +9,11 @@ import { ListSkeleton } from '@/components/shared/loading-skeleton';
 import { ErrorDisplay } from '@/components/shared/error-display';
 import { COLUMN_MAP } from './resource-columns';
 import { RESOURCE_LABELS } from '@/lib/constants';
-import { ColumnDef } from '@tanstack/react-table';
+import { ColumnDef, CellContext } from '@tanstack/react-table';
 import { usePodRestartWatcher } from '@/hooks/use-pod-watcher';
 import { ResourceActions } from '@/components/resources/resource-actions';
 import { useNamespaceStore } from '@/stores/namespace-store';
+import type { KubeResource } from '@/types/resource';
 
 interface ResourceListPageProps {
   resourceType: string;
@@ -35,7 +36,10 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
     resourceType,
   });
 
-  const baseColumns = COLUMN_MAP[resourceType] || [];
+  const baseColumns = useMemo(
+    () => (COLUMN_MAP[resourceType] || []) as ColumnDef<KubeResource>[],
+    [resourceType],
+  );
   const label = RESOURCE_LABELS[resourceType] || resourceType;
 
   // Watch for pod restarts when viewing pods list
@@ -49,11 +53,11 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
 
   // Memoize columns to prevent TanStack Table from re-initializing on each render
   const allColumns = useMemo(() => {
-    const clickableColumns: ColumnDef<any>[] = baseColumns.map((col: any) => {
+    const clickableColumns: ColumnDef<KubeResource>[] = baseColumns.map((col: ColumnDef<KubeResource>) => {
       if (col.id === 'name') {
         return {
           ...col,
-          cell: ({ row }: any) => {
+          cell: ({ row }: CellContext<KubeResource, unknown>) => {
             const name = row.original.metadata?.name;
             const itemNs = row.original.metadata?.namespace || namespace;
             const basePath = clusterScoped
@@ -70,11 +74,11 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
       return col;
     });
 
-    const actionsColumn: ColumnDef<any> = {
+    const actionsColumn: ColumnDef<KubeResource> = {
       id: 'actions',
       enableSorting: false,
       header: '',
-      cell: ({ row }: any) => {
+      cell: ({ row }: CellContext<KubeResource, unknown>) => {
         const itemName = row.original.metadata?.name;
         const itemNs = row.original.metadata?.namespace || namespace;
         return (
@@ -101,7 +105,7 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
   // Client-side namespace filtering for multi-namespace mode
   if (multiNs && selectedNs.length > 0) {
     const nsSet = new Set(selectedNs);
-    items = items.filter((item: any) => nsSet.has(item.metadata?.namespace));
+    items = items.filter((item: KubeResource) => item.metadata?.namespace != null && nsSet.has(item.metadata.namespace));
   }
 
   return (
