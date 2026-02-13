@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useHelmReleaseDetail } from '@/hooks/use-helm-release-detail';
@@ -21,7 +22,6 @@ import {
   ArrowUpCircle,
   RotateCcw,
   Ship,
-  Loader2,
   Clock,
   FileText,
 } from 'lucide-react';
@@ -102,8 +102,8 @@ export default function HelmReleaseDetailPage() {
       );
       toast.success(`Release "${decodedReleaseName}" uninstalled`);
       router.push(`/clusters/${clusterId}/helm`);
-    } catch (err: any) {
-      toast.error(`Uninstall failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Uninstall failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setDeleting(false);
       setDeleteOpen(false);

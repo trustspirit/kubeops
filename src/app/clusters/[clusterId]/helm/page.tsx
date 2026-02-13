@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
