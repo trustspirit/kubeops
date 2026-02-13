@@ -1,9 +1,10 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState, useMemo, useRef, useCallback, useEffect, createContext, useContext } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Save, RotateCcw, Pencil, Table2, Code, ChevronRight, ChevronDown, Plug, ExternalLink, X, GitCompareArrows } from 'lucide-react';
+import { Save, RotateCcw, Pencil, Table2, Code, ChevronRight, ChevronDown, Plug, ExternalLink, X, GitCompareArrows, Globe } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -11,6 +12,7 @@ import * as yaml from 'js-yaml';
 import { mutate as globalMutate } from 'swr';
 import { usePortForwards } from '@/hooks/use-port-forwards';
 import { YamlDiffView } from '@/components/shared/yaml-diff-view';
+import { MultiClusterApplyDialog } from '@/components/multi-cluster/multi-cluster-apply-dialog';
 
 // === Types ===
 
@@ -28,12 +30,6 @@ interface YamlEditorProps {
   portForwardContext?: PortForwardContext;
 }
 
-interface PortForward {
-  id: string;
-  localPort: number;
-  containerPort: number;
-  status: string;
-}
 
 // Context for port forward info
 const PFContext = createContext<PortForwardContext | null>(null);
@@ -63,8 +59,8 @@ function PortForwardButton({ containerPort }: { containerPort: number }) {
       });
       globalMutate('/api/port-forward');
       toast.success(`Forwarding localhost:${containerPort} → ${containerPort}`);
-    } catch (err: any) {
-      toast.error(`Port forward failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Port forward failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setStarting(false);
     }
@@ -217,7 +213,8 @@ function ResourceTableView({ data }: { data: any }) {
   const sections: { title: string; data: any; defaultOpen: boolean }[] = [];
 
   if (data.metadata) {
-    const { managedFields, ...cleanMeta } = data.metadata;
+    const { managedFields: _mf, ...cleanMeta } = data.metadata;
+    void _mf; // Destructured to exclude from output
     sections.push({ title: 'Metadata', data: cleanMeta, defaultOpen: true });
   }
   if (data.spec) sections.push({ title: 'Spec', data: data.spec, defaultOpen: true });
@@ -300,6 +297,7 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
   const [editValue, setEditValue] = useState('');
   const [originalYaml, setOriginalYaml] = useState('');
   const [yamlError, setYamlError] = useState<string | null>(null);
+  const [multiApplyOpen, setMultiApplyOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const yamlStr = useMemo(
@@ -331,8 +329,8 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
         setYamlError('YAML must be a valid Kubernetes resource object');
         return;
       }
-    } catch (e: any) {
-      setYamlError(`Invalid YAML: ${e.message}`);
+    } catch (e: unknown) {
+      setYamlError(`Invalid YAML: ${e instanceof Error ? e.message : 'Unknown error'}`);
       return;
     }
     setYamlError(null);
@@ -343,8 +341,8 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
     let parsed: any;
     try {
       parsed = yaml.load(editValue);
-    } catch (e: any) {
-      setYamlError(`Invalid YAML: ${e.message}`);
+    } catch (e: unknown) {
+      setYamlError(`Invalid YAML: ${e instanceof Error ? e.message : 'Unknown error'}`);
       setMode('edit');
       return;
     }
@@ -361,8 +359,8 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
       setMode('table');
       setEditValue('');
       onSaved?.();
-    } catch (err: any) {
-      setYamlError(`Save failed: ${err.message}`);
+    } catch (err: unknown) {
+      setYamlError(`Save failed: ${(err instanceof Error ? err.message : 'Unknown error')}`);
     } finally {
       setSaving(false);
     }
@@ -379,6 +377,7 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, editValue, apiUrl]);
 
   return (
@@ -437,6 +436,10 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
                 <Pencil className="h-4 w-4 mr-1" />
                 Edit
               </Button>
+              <Button variant="outline" size="sm" onClick={() => setMultiApplyOpen(true)}>
+                <Globe className="h-4 w-4 mr-1" />
+                Multi-cluster
+              </Button>
             </>
           )}
         </div>
@@ -487,6 +490,19 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
         {mode === 'review' && (
           <YamlDiffView original={originalYaml} modified={editValue} />
         )}
+
+        <MultiClusterApplyDialog
+          open={multiApplyOpen}
+          onOpenChange={setMultiApplyOpen}
+          initialYaml={(() => {
+            const clean = { ...data };
+            if (clean.metadata?.managedFields) delete clean.metadata.managedFields;
+            if (clean.metadata?.resourceVersion) delete clean.metadata.resourceVersion;
+            if (clean.metadata?.uid) delete clean.metadata.uid;
+            if (clean.metadata?.creationTimestamp) delete clean.metadata.creationTimestamp;
+            return yaml.dump(clean, { lineWidth: -1 });
+          })()}
+        />
       </div>
     </PFContext.Provider>
   );
