@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useRef, useCallback, createContext, useContext } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect, createContext, useContext } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Save, RotateCcw, Pencil, Table2, Code, ChevronRight, ChevronDown, Plug, ExternalLink, X, GitCompareArrows } from 'lucide-react';
@@ -323,16 +323,34 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
     setYamlError(null);
   }, []);
 
+  const goToReview = useCallback(() => {
+    // Validate YAML before entering review
+    try {
+      const parsed = yaml.load(editValue);
+      if (!parsed || typeof parsed !== 'object') {
+        setYamlError('YAML must be a valid Kubernetes resource object');
+        return;
+      }
+    } catch (e: any) {
+      setYamlError(`Invalid YAML: ${e.message}`);
+      return;
+    }
+    setYamlError(null);
+    setMode('review');
+  }, [editValue]);
+
   const handleSave = async () => {
     let parsed: any;
     try {
       parsed = yaml.load(editValue);
     } catch (e: any) {
       setYamlError(`Invalid YAML: ${e.message}`);
+      setMode('edit');
       return;
     }
     if (!parsed || typeof parsed !== 'object') {
       setYamlError('YAML must be a valid Kubernetes resource object');
+      setMode('edit');
       return;
     }
     setSaving(true);
@@ -350,6 +368,19 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
     }
   };
 
+  // Cmd+S in review mode → apply changes
+  useEffect(() => {
+    if (mode !== 'review') return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 's' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [mode, editValue, apiUrl]);
+
   return (
     <PFContext.Provider value={portForwardContext || null}>
       <div className="space-y-3">
@@ -360,19 +391,15 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
         <div className="flex items-center gap-2">
           {mode === 'edit' ? (
             <>
-              <Button size="sm" onClick={handleSave} disabled={saving}>
-                <Save className="h-4 w-4 mr-1" />
-                {saving ? 'Saving...' : 'Apply'}
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setMode('review')} disabled={saving}>
+              <Button size="sm" onClick={goToReview}>
                 <GitCompareArrows className="h-4 w-4 mr-1" />
                 Review Changes
               </Button>
-              <Button variant="outline" size="sm" onClick={cancelEditing} disabled={saving}>
+              <Button variant="outline" size="sm" onClick={cancelEditing}>
                 <RotateCcw className="h-4 w-4 mr-1" />
                 Cancel
               </Button>
-              <span className="text-xs text-muted-foreground ml-2">Cmd+S to save</span>
+              <span className="text-xs text-muted-foreground ml-2">Cmd+S to review</span>
             </>
           ) : mode === 'review' ? (
             <>
@@ -388,6 +415,7 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
                 <RotateCcw className="h-4 w-4 mr-1" />
                 Cancel
               </Button>
+              <span className="text-xs text-muted-foreground ml-2">Cmd+S to apply</span>
             </>
           ) : (
             <>
@@ -450,7 +478,7 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
               }
               if (e.key === 's' && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
-                handleSave();
+                goToReview();
               }
             }}
           />
