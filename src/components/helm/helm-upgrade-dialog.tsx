@@ -1,5 +1,4 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState, useEffect } from 'react';
 import {
@@ -53,7 +52,7 @@ export function HelmUpgradeDialog({
   const loadCurrentValues = async () => {
     setLoadingValues(true);
     try {
-      const data = await apiClient.get<{ values: Record<string, any> }>(
+      const data = await apiClient.get<{ values: Record<string, unknown> }>(
         `/api/clusters/${encodeURIComponent(clusterId)}/helm/releases/${encodeURIComponent(releaseName)}/values?namespace=${encodeURIComponent(namespace)}`
       );
       if (data.values && Object.keys(data.values).length > 0) {

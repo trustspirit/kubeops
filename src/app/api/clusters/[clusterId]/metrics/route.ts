@@ -1,25 +1,25 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
 
 export const dynamic = 'force-dynamic';
 
-function extractK8sError(error: any): { status: number; message: string } {
-  const status = error?.code || error?.statusCode || 500;
-  let body = error?.body;
+function extractK8sError(error: unknown): { status: number; message: string } {
+  const err = error as Record<string, unknown>;
+  const status = (err?.code || err?.statusCode || 500) as number;
+  let body = err?.body as Record<string, unknown> | string | undefined;
   if (typeof body === 'string') {
-    try { body = JSON.parse(body); } catch { /* keep as string */ }
+    try { body = JSON.parse(body) as Record<string, unknown>; } catch { /* keep as string */ }
   }
-  return { status, message: body?.message || error?.message || 'Request failed' };
+  return { status, message: String((typeof body === 'object' ? (body as Record<string, unknown>)?.message : body) || err?.message || 'Request failed') };
 }
 
 // Helper: make HTTPS request through K8s API
-function k8sRequest(server: string, path: string, opts: any, skipTLS?: boolean, accept = 'application/json'): Promise<string> {
+function k8sRequest(server: string, path: string, opts: Record<string, unknown>, skipTLS?: boolean, accept = 'application/json'): Promise<string> {
   return new Promise((resolve, reject) => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const https = require('https');
     const urlObj = new URL(`${server}${path}`);
-    const reqOpts: any = {
+    const reqOpts = {
       hostname: urlObj.hostname,
       port: urlObj.port || 443,
       path: urlObj.pathname + urlObj.search,
@@ -28,9 +28,9 @@ function k8sRequest(server: string, path: string, opts: any, skipTLS?: boolean, 
       ca: opts.ca, cert: opts.cert, key: opts.key,
       rejectUnauthorized: !skipTLS,
     };
-    const request = https.request(reqOpts, (res: any) => {
+    const request = https.request(reqOpts, (res: { statusCode: number; on: (event: string, cb: (data?: string) => void) => void }) => {
       let body = '';
-      res.on('data', (chunk: string) => { body += chunk; });
+      res.on('data', (chunk?: string) => { body += chunk ?? ''; });
       res.on('end', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(body);
@@ -47,7 +47,7 @@ function k8sRequest(server: string, path: string, opts: any, skipTLS?: boolean, 
 // Prometheus service discovery cache
 let promCache: { svc: string | null; ns: string; checkedAt: number } | null = null;
 
-async function findPrometheusService(server: string, opts: any, skipTLS?: boolean): Promise<{ ns: string; svc: string } | null> {
+async function findPrometheusService(server: string, opts: Record<string, unknown>, skipTLS?: boolean): Promise<{ ns: string; svc: string } | null> {
   // Cache for 2 minutes (null result) or 10 minutes (found)
   const cacheTTL = promCache?.svc ? 600_000 : 120_000;
   if (promCache && Date.now() - promCache.checkedAt < cacheTTL) {
@@ -71,7 +71,7 @@ async function findPrometheusService(server: string, opts: any, skipTLS?: boolea
       try {
         const raw = await k8sRequest(server, `/api/v1/namespaces/${ns}/services/${svcName}`, opts, skipTLS);
         const svc = JSON.parse(raw);
-        const port = svc.spec?.ports?.find((p: any) => p.port === 9090 || p.port === 8429 || p.port === 8428 || p.port === 80 || p.name === 'http' || p.name === 'web');
+        const port = svc.spec?.ports?.find((p: Record<string, unknown>) => p.port === 9090 || p.port === 8429 || p.port === 8428 || p.port === 80 || p.name === 'http' || p.name === 'web');
         if (port) {
           promCache = { svc: `${svcName}:${port.port}`, ns, checkedAt: Date.now() };
           console.log(`[Metrics] Found Prometheus: ${ns}/${svcName}:${port.port}`);
@@ -85,7 +85,7 @@ async function findPrometheusService(server: string, opts: any, skipTLS?: boolea
   return null;
 }
 
-async function queryPrometheus(server: string, opts: any, skipTLS: boolean | undefined, prom: { ns: string; svc: string }, query: string): Promise<number> {
+async function queryPrometheus(server: string, opts: Record<string, unknown>, skipTLS: boolean | undefined, prom: { ns: string; svc: string }, query: string): Promise<number> {
   const path = `/api/v1/namespaces/${prom.ns}/services/${prom.svc}/proxy/api/v1/query?query=${encodeURIComponent(query)}`;
   const raw = await k8sRequest(server, path, opts, skipTLS);
   const data = JSON.parse(raw);
@@ -112,7 +112,7 @@ export async function GET(
   }
 
   try {
-    const opts: any = {};
+    const opts: Record<string, unknown> = {};
     await kc.applyToHTTPSOptions(opts);
 
     // Prometheus-based metrics for network & filesystem I/O
@@ -149,9 +149,10 @@ export async function GET(
           const statsPath = `/api/v1/nodes/${nodeName}/proxy/stats/summary`;
           const statsRaw = await k8sRequest(cluster.server, statsPath, opts, cluster.skipTLSVerify);
           const statsData = JSON.parse(statsRaw);
-          const pod = (statsData.pods || []).find((p: any) =>
-            p.podRef?.name === podName && p.podRef?.namespace === namespace
-          );
+          const pod = (statsData.pods || []).find((p: Record<string, unknown>) => {
+            const podRef = p.podRef as Record<string, string> | undefined;
+            return podRef?.name === podName && podRef?.namespace === namespace;
+          });
           if (pod) {
             results.netRxBytes = pod.network?.rxBytes || 0;
             results.netTxBytes = pod.network?.txBytes || 0;

@@ -1,5 +1,4 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useParams, useRouter } from 'next/navigation';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
@@ -25,6 +24,7 @@ import { PortForwardBtn } from '@/components/shared/port-forward-btn';
 import { ResourceTreeView } from '@/components/shared/resource-tree';
 import { useResourceTree } from '@/hooks/use-resource-tree';
 import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
+import type { KubeResource, ContainerSpec, ContainerStatus } from '@/types/resource';
 
 export default function StatefulSetDetailPage() {
   const params = useParams();
@@ -73,8 +73,8 @@ export default function StatefulSetDetailPage() {
   const labels = metadata.labels || {};
 
   // Filter pods by statefulset ownership
-  const stsPods = (podsData?.items || []).filter((p: any) =>
-    p.metadata?.ownerReferences?.some((ref: any) => ref.kind === 'StatefulSet' && ref.name === name)
+  const stsPods = (podsData?.items || []).filter((p: KubeResource) =>
+    p.metadata?.ownerReferences?.some((ref) => ref.kind === 'StatefulSet' && ref.name === name)
     || p.metadata?.name?.startsWith(`${name}-`)
   );
 
@@ -195,7 +195,7 @@ export default function StatefulSetDetailPage() {
           {(spec.template?.spec?.containers || []).length > 0 && (
             <div className="space-y-3">
               <h3 className="text-sm font-semibold">Containers</h3>
-              {(spec.template?.spec?.containers || []).map((ctr: any, idx: number) => (
+              {(spec.template?.spec?.containers || []).map((ctr: ContainerSpec, idx: number) => (
                 <div key={idx} className="rounded-md border p-3 space-y-2 text-sm">
                   <div className="flex justify-between items-center">
                     <span className="font-semibold">{ctr.name}</span>
@@ -203,7 +203,7 @@ export default function StatefulSetDetailPage() {
                   </div>
                   {ctr.ports && ctr.ports.length > 0 && (
                     <div className="flex flex-wrap gap-2 pt-1">
-                      {ctr.ports.map((p: any, pi: number) => (
+                      {ctr.ports.map((p, pi: number) => (
                         <div key={pi} className="inline-flex items-center gap-1.5">
                           <Badge variant="outline" className="font-mono text-[11px] font-normal">
                             {p.containerPort}/{p.protocol || 'TCP'}
@@ -246,11 +246,13 @@ export default function StatefulSetDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {stsPods.map((pod: any) => {
+                    {stsPods.map((pod: KubeResource) => {
                       const pName = pod.metadata?.name;
-                      const pPhase = pod.metadata?.deletionTimestamp ? 'Terminating' : (pod.status?.phase || 'Unknown');
-                      const restarts = (pod.status?.containerStatuses || []).reduce((s: number, c: any) => s + (c.restartCount || 0), 0);
-                      const firstContainer = pod.spec?.containers?.[0]?.name;
+                      const podStatus = pod.status as { phase?: string; containerStatuses?: ContainerStatus[] } | undefined;
+                      const podSpec = pod.spec as { containers?: ContainerSpec[]; nodeName?: string } | undefined;
+                      const pPhase = pod.metadata?.deletionTimestamp ? 'Terminating' : (podStatus?.phase || 'Unknown');
+                      const restarts = (podStatus?.containerStatuses || []).reduce((s: number, c: ContainerStatus) => s + (c.restartCount || 0), 0);
+                      const firstContainer = podSpec?.containers?.[0]?.name;
 
                       return (
                         <tr key={pName} className="border-t hover:bg-muted/30">
@@ -261,7 +263,7 @@ export default function StatefulSetDetailPage() {
                           </td>
                           <td className="px-3 py-2"><StatusBadge status={pPhase} /></td>
                           <td className="px-3 py-2">{restarts > 0 ? <span className="text-red-500 font-medium">{restarts}</span> : 0}</td>
-                          <td className="px-3 py-2 font-mono text-muted-foreground text-xs">{pod.spec?.nodeName?.split('.')[0] || '-'}</td>
+                          <td className="px-3 py-2 font-mono text-muted-foreground text-xs">{podSpec?.nodeName?.split('.')[0] || '-'}</td>
                           <td className="px-3 py-2"><AgeDisplay timestamp={pod.metadata?.creationTimestamp} /></td>
                           <td className="px-3 py-2">
                             <div className="flex gap-1">

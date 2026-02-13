@@ -1,5 +1,4 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useParams, useRouter } from 'next/navigation';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
@@ -26,6 +25,7 @@ import { PortForwardBtn } from '@/components/shared/port-forward-btn';
 import { ResourceTreeView } from '@/components/shared/resource-tree';
 import { useResourceTree } from '@/hooks/use-resource-tree';
 import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
+import type { KubeResource, ContainerSpec, ContainerStatus, KubeEvent } from '@/types/resource';
 
 export default function DeploymentDetailPage() {
   const params = useParams();
@@ -96,42 +96,43 @@ export default function DeploymentDetailPage() {
 
   // Filter ReplicaSets owned by this deployment
   const replicaSets = (rsData?.items || [])
-    .filter((rs: any) => rs.metadata?.ownerReferences?.some((ref: any) => ref.uid === uid))
-    .sort((a: any, b: any) => {
+    .filter((rs: KubeResource) => rs.metadata?.ownerReferences?.some((ref) => ref.uid === uid))
+    .sort((a: KubeResource, b: KubeResource) => {
       const revA = parseInt(a.metadata?.annotations?.['deployment.kubernetes.io/revision'] || '0');
       const revB = parseInt(b.metadata?.annotations?.['deployment.kubernetes.io/revision'] || '0');
       return revB - revA;
     });
 
   // Filter Pods owned by this deployment's replicasets
-  const rsUids = new Set(replicaSets.map((rs: any) => rs.metadata?.uid));
+  const rsUids = new Set(replicaSets.map((rs: KubeResource) => rs.metadata?.uid));
   const depPods = (podsData?.items || [])
-    .filter((p: any) => p.metadata?.ownerReferences?.some((ref: any) => rsUids.has(ref.uid)));
+    .filter((p: KubeResource) => p.metadata?.ownerReferences?.some((ref) => rsUids.has(ref.uid)));
 
   // Filter events for this deployment and its pods
   const depEvents = (eventsData?.items || [])
-    .filter((e: any) => {
+    .filter((e: KubeEvent) => {
       const obj = e.involvedObject;
       if (obj?.kind === 'Deployment' && obj?.name === name) return true;
-      if (obj?.kind === 'ReplicaSet' && replicaSets.some((rs: any) => rs.metadata?.name === obj?.name)) return true;
-      if (obj?.kind === 'Pod' && depPods.some((p: any) => p.metadata?.name === obj?.name)) return true;
+      if (obj?.kind === 'ReplicaSet' && replicaSets.some((rs: KubeResource) => rs.metadata?.name === obj?.name)) return true;
+      if (obj?.kind === 'Pod' && depPods.some((p: KubeResource) => p.metadata?.name === obj?.name)) return true;
       return false;
     })
-    .sort((a: any, b: any) => new Date(b.lastTimestamp || b.metadata?.creationTimestamp).getTime() - new Date(a.lastTimestamp || a.metadata?.creationTimestamp).getTime())
+    .sort((a: KubeEvent, b: KubeEvent) => new Date(b.lastTimestamp || b.metadata?.creationTimestamp || '').getTime() - new Date(a.lastTimestamp || a.metadata?.creationTimestamp || '').getTime())
     .slice(0, 50);
 
   // Pod metrics lookup
+  interface PodMetric { metadata?: { name?: string }; containers?: { usage?: { cpu?: string; memory?: string } }[] }
   const metricsMap: Record<string, { cpu: string; memory: string }> = {};
-  (metricsData?.items || []).forEach((pm: any) => {
+  ((metricsData as { items?: PodMetric[] })?.items || []).forEach((pm: PodMetric) => {
     const podName = pm.metadata?.name;
     let cpu = 0, mem = 0;
-    (pm.containers || []).forEach((c: any) => {
+    (pm.containers || []).forEach((c) => {
       const cpuStr = c.usage?.cpu || '0';
       const memStr = c.usage?.memory || '0';
       cpu += cpuStr.endsWith('n') ? parseInt(cpuStr) / 1e6 : cpuStr.endsWith('u') ? parseInt(cpuStr) / 1e3 : cpuStr.endsWith('m') ? parseInt(cpuStr) : parseFloat(cpuStr) * 1000;
       mem += memStr.endsWith('Ki') ? parseInt(memStr) / 1024 : memStr.endsWith('Mi') ? parseInt(memStr) : memStr.endsWith('Gi') ? parseInt(memStr) * 1024 : parseInt(memStr) / (1024 * 1024);
     });
-    metricsMap[podName] = { cpu: `${Math.round(cpu)}m`, memory: `${Math.round(mem)}Mi` };
+    if (podName) metricsMap[podName] = { cpu: `${Math.round(cpu)}m`, memory: `${Math.round(mem)}Mi` };
   });
 
   const handleRestart = async () => {
@@ -229,12 +230,12 @@ export default function DeploymentDetailPage() {
                   <td className="px-3 py-1.5 text-muted-foreground font-medium">Image</td>
                   <td className="px-3 py-1.5 font-mono break-all" colSpan={5}>{spec.template?.spec?.containers?.[0]?.image || '-'}</td>
                 </tr>
-                {(spec.template?.spec?.containers || []).some((c: any) => c.ports?.length > 0) && (
+                {(spec.template?.spec?.containers || []).some((c: ContainerSpec) => (c.ports?.length || 0) > 0) && (
                   <tr className="border-b">
                     <td className="px-3 py-1.5 text-muted-foreground font-medium align-top">Ports</td>
                     <td className="px-3 py-1.5" colSpan={5}>
                       <div className="flex flex-wrap gap-2">
-                        {(spec.template?.spec?.containers || []).flatMap((ctr: any) => (ctr.ports || []).map((p: any, pi: number) => (
+                        {(spec.template?.spec?.containers || []).flatMap((ctr: ContainerSpec) => (ctr.ports || []).map((p, pi: number) => (
                           <div key={`${ctr.name}-${pi}`} className="inline-flex items-center gap-1.5">
                             <Badge variant="outline" className="font-mono text-[10px] font-normal py-0 h-5">
                               {p.containerPort}/{p.protocol || 'TCP'}
@@ -278,7 +279,7 @@ export default function DeploymentDetailPage() {
                     <td className="px-3 py-1.5 text-muted-foreground font-medium align-top">Status</td>
                     <td className="px-3 py-1.5" colSpan={5}>
                       <div className="flex flex-wrap gap-1.5">
-                        {(status.conditions || []).map((c: any, i: number) => (
+                        {(status.conditions || []).map((c: { type: string; status: string; reason?: string }, i: number) => (
                           <Badge key={i} variant={c.status === 'True' ? 'default' : 'outline'} className="text-[10px] font-normal py-0 h-5 gap-1">
                             {c.type}
                             {c.status !== 'True' && <span className="text-muted-foreground">({c.reason || c.status})</span>}
@@ -324,15 +325,17 @@ export default function DeploymentDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {depPods.map((pod: any) => {
+                    {depPods.map((pod: KubeResource) => {
                       const pName = pod.metadata?.name;
-                      const pPhase = pod.metadata?.deletionTimestamp ? 'Terminating' : (pod.status?.phase || 'Unknown');
-                      const statuses = pod.status?.containerStatuses || [];
-                      const readyCt = statuses.filter((c: any) => c.ready).length;
-                      const totalCt = statuses.length || pod.spec?.containers?.length || 0;
-                      const restarts = statuses.reduce((s: number, c: any) => s + (c.restartCount || 0), 0);
-                      const metrics = metricsMap[pName];
-                      const firstContainer = pod.spec?.containers?.[0]?.name;
+                      const podStatus = pod.status as { phase?: string; containerStatuses?: ContainerStatus[] } | undefined;
+                      const pPhase = pod.metadata?.deletionTimestamp ? 'Terminating' : (podStatus?.phase || 'Unknown');
+                      const statuses = podStatus?.containerStatuses || [];
+                      const readyCt = statuses.filter((c: ContainerStatus) => c.ready).length;
+                      const podSpec = pod.spec as { containers?: ContainerSpec[]; nodeName?: string } | undefined;
+                      const totalCt = statuses.length || podSpec?.containers?.length || 0;
+                      const restarts = statuses.reduce((s: number, c: ContainerStatus) => s + (c.restartCount || 0), 0);
+                      const metrics = metricsMap[pName || ''];
+                      const firstContainer = podSpec?.containers?.[0]?.name;
 
                       return (
                         <tr key={pName} className="border-t hover:bg-muted/30">
@@ -344,7 +347,7 @@ export default function DeploymentDetailPage() {
                           <td className="px-3 py-2"><StatusBadge status={pPhase} /></td>
                           <td className="px-3 py-2">{readyCt}/{totalCt}</td>
                           <td className="px-3 py-2">{restarts > 0 ? <span className="text-red-500 font-medium">{restarts}</span> : 0}</td>
-                          <td className="px-3 py-2 font-mono text-muted-foreground text-xs">{pod.spec?.nodeName?.split('.')[0] || '-'}</td>
+                          <td className="px-3 py-2 font-mono text-muted-foreground text-xs">{podSpec?.nodeName?.split('.')[0] || '-'}</td>
                           <td className="px-3 py-2 font-mono text-xs">{metrics?.cpu || '-'}</td>
                           <td className="px-3 py-2 font-mono text-xs">{metrics?.memory || '-'}</td>
                           <td className="px-3 py-2"><AgeDisplay timestamp={pod.metadata?.creationTimestamp} /></td>
@@ -383,11 +386,14 @@ export default function DeploymentDetailPage() {
             <p className="text-sm text-muted-foreground p-4">No revisions found.</p>
           ) : (
             <div className="space-y-3">
-              {replicaSets.map((rs: any) => {
+              {replicaSets.map((rs: KubeResource) => {
                 const rev = rs.metadata?.annotations?.['deployment.kubernetes.io/revision'] || '?';
-                const rsReplicas = rs.spec?.replicas || 0;
-                const rsReady = rs.status?.readyReplicas || 0;
-                const rsImage = rs.spec?.template?.spec?.containers?.[0]?.image || '-';
+                const rsSpec = rs.spec as Record<string, unknown> | undefined;
+                const rsStatus = rs.status as Record<string, unknown> | undefined;
+                const rsReplicas = (rsSpec?.replicas as number) || 0;
+                const rsReady = (rsStatus?.readyReplicas as number) || 0;
+                const rsTemplate = rsSpec?.template as { spec?: { containers?: { image?: string }[] } } | undefined;
+                const rsImage = rsTemplate?.spec?.containers?.[0]?.image || '-';
                 const isCurrent = rsReplicas > 0;
                 const changeReason = rs.metadata?.annotations?.['kubernetes.io/change-cause'];
 
@@ -430,7 +436,7 @@ export default function DeploymentDetailPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {depEvents.map((e: any, i: number) => (
+                  {depEvents.map((e: KubeEvent, i: number) => (
                     <tr key={i} className="border-t hover:bg-muted/30">
                       <td className="px-3 py-2"><StatusBadge status={e.type || 'Normal'} /></td>
                       <td className="px-3 py-2 font-medium">{e.reason || '-'}</td>

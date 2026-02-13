@@ -1,5 +1,4 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/purity */
 
 import { useParams } from 'next/navigation';
@@ -19,6 +18,27 @@ import {
 } from 'recharts';
 import { NodeMetricsSummary } from '@/components/shared/metrics-charts';
 import { WorkloadHealthSummary } from '@/components/dashboard/workload-health-summary';
+import type { KubeResource, KubeEvent, ContainerSpec } from '@/types/resource';
+
+interface RechartsPayloadEntry {
+  color?: string;
+  payload?: { fill?: string; name?: string };
+  name?: string;
+  value: number;
+}
+
+interface IngressHost {
+  host: string;
+  paths: string;
+  ingressName: string;
+  ns: string;
+}
+
+interface RestartPodEntry {
+  name: string;
+  ns: string;
+  restarts: number;
+}
 
 const POD_COLORS: Record<string, string> = {
   Running: '#22c55e', Succeeded: '#3b82f6', Pending: '#eab308',
@@ -33,11 +53,11 @@ const AGE_BUCKETS = [
   { label: '30d+', max: Infinity, color: '#ef4444' },
 ];
 
-function ChartTooltip({ active, payload }: any) {
+function ChartTooltip({ active, payload }: { active?: boolean; payload?: RechartsPayloadEntry[] }) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-lg border bg-popover/95 backdrop-blur-sm px-3 py-2 text-xs shadow-xl">
-      {payload.map((p: any, i: number) => (
+      {payload.map((p: RechartsPayloadEntry, i: number) => (
         <div key={i} className="flex items-center gap-2">
           <div className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color || p.payload?.fill }} />
           <span className="text-muted-foreground">{p.payload?.name || p.name}:</span>
@@ -105,34 +125,34 @@ export default function ClusterOverviewPage() {
   const configmaps = configmapData?.items || [];
   const secrets = secretData?.items || [];
 
-  const readyNodes = nodes.filter((n: any) => n.status?.conditions?.some((c: any) => c.type === 'Ready' && c.status === 'True'));
-  const runningPods = pods.filter((p: any) => p.status?.phase === 'Running');
+  const readyNodes = nodes.filter((n: KubeResource) => (n.status?.conditions as { type: string; status: string }[] | undefined)?.some((c) => c.type === 'Ready' && c.status === 'True'));
+  const runningPods = pods.filter((p: KubeResource) => (p.status as { phase?: string } | undefined)?.phase === 'Running');
 
   // Pod status
   const podStatusMap: Record<string, number> = {};
-  pods.forEach((p: any) => {
-    const s = p.metadata?.deletionTimestamp ? 'Terminating' : (p.status?.phase || 'Unknown');
+  pods.forEach((p: KubeResource) => {
+    const s = p.metadata?.deletionTimestamp ? 'Terminating' : ((p.status as { phase?: string } | undefined)?.phase || 'Unknown');
     podStatusMap[s] = (podStatusMap[s] || 0) + 1;
   });
   const podStatusData = Object.entries(podStatusMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
 
   // Workloads
   const workloads = [{ name: 'Deploy', ready: 0, notReady: 0 }, { name: 'STS', ready: 0, notReady: 0 }, { name: 'DS', ready: 0, notReady: 0 }];
-  deployments.forEach((d: any) => { if ((d.status?.readyReplicas || 0) >= (d.spec?.replicas || 1)) workloads[0].ready++; else workloads[0].notReady++; });
-  statefulsets.forEach((s: any) => { if ((s.status?.readyReplicas || 0) >= (s.spec?.replicas || 1)) workloads[1].ready++; else workloads[1].notReady++; });
-  daemonsets.forEach((d: any) => { if ((d.status?.numberReady || 0) >= (d.status?.desiredNumberScheduled || 1)) workloads[2].ready++; else workloads[2].notReady++; });
+  deployments.forEach((d: KubeResource) => { if (((d.status as Record<string, unknown>)?.readyReplicas as number || 0) >= ((d.spec as Record<string, unknown>)?.replicas as number || 1)) workloads[0].ready++; else workloads[0].notReady++; });
+  statefulsets.forEach((s: KubeResource) => { if (((s.status as Record<string, unknown>)?.readyReplicas as number || 0) >= ((s.spec as Record<string, unknown>)?.replicas as number || 1)) workloads[1].ready++; else workloads[1].notReady++; });
+  daemonsets.forEach((d: KubeResource) => { if (((d.status as Record<string, unknown>)?.numberReady as number || 0) >= ((d.status as Record<string, unknown>)?.desiredNumberScheduled as number || 1)) workloads[2].ready++; else workloads[2].notReady++; });
   const workloadData = workloads.filter(w => w.ready + w.notReady > 0);
 
   // NS distribution
   const nsDistMap: Record<string, number> = {};
-  if (isAllNs) pods.forEach((p: any) => { const ns = p.metadata?.namespace || '?'; nsDistMap[ns] = (nsDistMap[ns] || 0) + 1; });
+  if (isAllNs) pods.forEach((p: KubeResource) => { const ns = p.metadata?.namespace || '?'; nsDistMap[ns] = (nsDistMap[ns] || 0) + 1; });
   const nsDistData = Object.entries(nsDistMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 10);
 
   // Warning events (1h)
   const oneHourAgo = Date.now() - 3600_000;
-  const warningEvents = events.filter((e: any) => e.type === 'Warning' && new Date(e.lastTimestamp || e.metadata?.creationTimestamp).getTime() > oneHourAgo);
+  const warningEvents = events.filter((e: KubeEvent) => e.type === 'Warning' && new Date(e.lastTimestamp || e.metadata?.creationTimestamp || '').getTime() > oneHourAgo);
   const eventReasonMap: Record<string, number> = {};
-  warningEvents.forEach((e: any) => { eventReasonMap[e.reason || 'Unknown'] = (eventReasonMap[e.reason || 'Unknown'] || 0) + 1; });
+  warningEvents.forEach((e: KubeEvent) => { eventReasonMap[e.reason || 'Unknown'] = (eventReasonMap[e.reason || 'Unknown'] || 0) + 1; });
   const eventData = Object.entries(eventReasonMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 6);
 
   // Warning event trend (5-min buckets over last hour)
@@ -140,8 +160,8 @@ export default function ClusterOverviewPage() {
   for (let i = 11; i >= 0; i--) {
     const bucketStart = oneHourAgo + (11 - i) * 300_000;
     const bucketEnd = bucketStart + 300_000;
-    const count = warningEvents.filter((e: any) => {
-      const t = new Date(e.lastTimestamp || e.metadata?.creationTimestamp).getTime();
+    const count = warningEvents.filter((e: KubeEvent) => {
+      const t = new Date(e.lastTimestamp || e.metadata?.creationTimestamp || '').getTime();
       return t >= bucketStart && t < bucketEnd;
     }).length;
     const mins = Math.round((Date.now() - bucketStart) / 60_000);
@@ -151,8 +171,8 @@ export default function ClusterOverviewPage() {
   // Pod age distribution
   const now = Date.now();
   const ageBucketCounts = AGE_BUCKETS.map(b => ({ name: b.label, value: 0, fill: b.color }));
-  pods.forEach((p: any) => {
-    const created = new Date(p.metadata?.creationTimestamp).getTime();
+  pods.forEach((p: KubeResource) => {
+    const created = new Date(p.metadata?.creationTimestamp || '').getTime();
     const age = now - created;
     let prev = 0;
     for (let i = 0; i < AGE_BUCKETS.length; i++) {
@@ -165,14 +185,16 @@ export default function ClusterOverviewPage() {
   // Resource allocation (CPU & Memory requests/limits vs allocatable)
   let totalAllocatableCpu = 0;
   let totalAllocatableMemory = 0;
-  nodes.forEach((n: any) => {
-    totalAllocatableCpu += parseCpuForOverview(n.status?.allocatable?.cpu || '0');
-    totalAllocatableMemory += parseMemoryForOverview(n.status?.allocatable?.memory || '0');
+  nodes.forEach((n: KubeResource) => {
+    const allocatable = (n.status as Record<string, unknown>)?.allocatable as Record<string, string> | undefined;
+    totalAllocatableCpu += parseCpuForOverview(allocatable?.cpu || '0');
+    totalAllocatableMemory += parseMemoryForOverview(allocatable?.memory || '0');
   });
   let totalRequestsCpu = 0, totalLimitsCpu = 0;
   let totalRequestsMemory = 0, totalLimitsMemory = 0;
-  pods.forEach((p: any) => {
-    (p.spec?.containers || []).forEach((c: any) => {
+  pods.forEach((p: KubeResource) => {
+    const podContainers = ((p.spec as Record<string, unknown>)?.containers || []) as ContainerSpec[];
+    podContainers.forEach((c: ContainerSpec) => {
       totalRequestsCpu += parseCpuForOverview(c.resources?.requests?.cpu || '0');
       totalLimitsCpu += parseCpuForOverview(c.resources?.limits?.cpu || '0');
       totalRequestsMemory += parseMemoryForOverview(c.resources?.requests?.memory || '0');
@@ -181,23 +203,25 @@ export default function ClusterOverviewPage() {
   });
 
   // Restarts
-  const restartPods = pods.map((p: any) => ({
+  const restartPodsAll: RestartPodEntry[] = pods.map((p: KubeResource) => ({
     name: p.metadata?.name || '', ns: p.metadata?.namespace || '',
-    restarts: (p.status?.containerStatuses || []).reduce((s: number, c: any) => s + (c.restartCount || 0), 0),
-  })).filter((p: any) => p.restarts > 0).sort((a: any, b: any) => b.restarts - a.restarts).slice(0, 5);
+    restarts: ((p.status as Record<string, unknown>)?.containerStatuses as { restartCount?: number }[] || []).reduce((s: number, c) => s + (c.restartCount || 0), 0),
+  }));
+  const restartPods = restartPodsAll.filter((p: RestartPodEntry) => p.restarts > 0).sort((a: RestartPodEntry, b: RestartPodEntry) => b.restarts - a.restarts).slice(0, 5);
 
   // Services with ports
-  const svcWithPorts = services.filter((s: any) => s.spec?.ports?.length > 0).slice(0, 12);
+  const svcWithPorts = services.filter((s: KubeResource) => ((s.spec as Record<string, unknown>)?.ports as unknown[] | undefined)?.length).slice(0, 12);
 
   // Ingresses
-  const ingressHosts = ingresses.flatMap((ing: any) =>
-    (ing.spec?.rules || []).map((r: any) => ({
+  const ingressHosts: IngressHost[] = ingresses.flatMap((ing: KubeResource) => {
+    const rules = ((ing.spec as Record<string, unknown>)?.rules || []) as { host?: string; http?: { paths?: { path?: string }[] } }[];
+    return rules.map((r) => ({
       host: r.host || '*',
-      paths: (r.http?.paths || []).map((p: any) => p.path || '/').join(', '),
-      ingressName: ing.metadata?.name,
-      ns: ing.metadata?.namespace,
-    }))
-  ).slice(0, 8);
+      paths: (r.http?.paths || []).map((p) => p.path || '/').join(', '),
+      ingressName: ing.metadata?.name || '',
+      ns: ing.metadata?.namespace || '',
+    }));
+  }).slice(0, 8);
 
   const stats = [
     { label: 'Nodes', value: `${readyNodes.length}/${nodes.length}`, sub: 'Ready', icon: Server, href: `/clusters/${clusterId}/nodes`, color: 'text-blue-500', bg: 'bg-blue-500/10' },
@@ -516,11 +540,12 @@ export default function ClusterOverviewPage() {
             </CardHeader>
             <CardContent className="pt-3">
               <div className="space-y-2 max-h-[220px] overflow-auto">
-                {svcWithPorts.map((svc: any) => {
+                {svcWithPorts.map((svc: KubeResource) => {
                   const svcName = svc.metadata?.name;
                   const svcNs = svc.metadata?.namespace || namespace;
-                  const svcType = svc.spec?.type || 'ClusterIP';
-                  const ports = svc.spec?.ports || [];
+                  const svcSpec = svc.spec as Record<string, unknown> | undefined;
+                  const svcType = (svcSpec?.type as string) || 'ClusterIP';
+                  const ports = (svcSpec?.ports || []) as { port: number; protocol?: string }[];
                   return (
                     <div key={svc.metadata?.uid || svcName} className="flex items-start justify-between gap-2 text-xs border-b last:border-0 pb-2 last:pb-0">
                       <div className="min-w-0">
@@ -536,7 +561,7 @@ export default function ClusterOverviewPage() {
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
-                        {ports.map((p: any) => (
+                        {ports.map((p) => (
                           <div key={p.port} className="flex items-center gap-1.5">
                             <span className="font-mono text-muted-foreground">{p.port}/{p.protocol || 'TCP'}</span>
                             <PortForwardBtn
@@ -568,7 +593,7 @@ export default function ClusterOverviewPage() {
             </CardHeader>
             <CardContent className="pt-3">
               <div className="space-y-2">
-                {ingressHosts.map((ih: any, i: number) => (
+                {ingressHosts.map((ih: IngressHost, i: number) => (
                   <div key={i} className="flex items-center justify-between text-xs border-b last:border-0 pb-2 last:pb-0">
                     <div className="min-w-0">
                       <a href={`https://${ih.host}`} target="_blank" rel="noopener"
@@ -635,7 +660,7 @@ export default function ClusterOverviewPage() {
               <div>
                 <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1.5"><RefreshCw className="h-3 w-3" />Top Restarts</p>
                 <div className="space-y-1.5">
-                  {restartPods.map((p: any) => (
+                  {restartPods.map((p: RestartPodEntry) => (
                     <div key={p.name} className="flex items-center gap-2 text-xs">
                       <div className="flex-1 min-w-0"><span className="truncate block font-mono">{p.name}</span>{isAllNs && <span className="text-muted-foreground">{p.ns}</span>}</div>
                       <div className="flex items-center gap-1.5 shrink-0">

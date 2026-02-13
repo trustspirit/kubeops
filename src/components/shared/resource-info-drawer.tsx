@@ -1,5 +1,4 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import useSWR from 'swr';
 import {
@@ -246,25 +245,28 @@ function DrawerEvents({
     );
   }
 
-  const allEvents: any[] = data?.items || [];
+  const allEvents: Record<string, unknown>[] = data?.items || [];
   // Match events by involvedObject name (also match prefix for pods owned by this resource)
   const events = allEvents
-    .filter((e: any) => {
-      const objName = e.involvedObject?.name;
+    .filter((e) => {
+      const involvedObject = e.involvedObject as Record<string, string> | undefined;
+      const objName = involvedObject?.name;
       return objName === name || objName?.startsWith(name + '-');
     })
-    .sort((a: any, b: any) => {
+    .sort((a, b) => {
       // Warnings first, then by time
       if (a.type !== b.type) {
         if (a.type === 'Warning') return -1;
         if (b.type === 'Warning') return 1;
       }
-      const ta = a.lastTimestamp || a.metadata?.creationTimestamp || '';
-      const tb = b.lastTimestamp || b.metadata?.creationTimestamp || '';
+      const aMeta = a.metadata as Record<string, string> | undefined;
+      const bMeta = b.metadata as Record<string, string> | undefined;
+      const ta = (a.lastTimestamp as string) || aMeta?.creationTimestamp || '';
+      const tb = (b.lastTimestamp as string) || bMeta?.creationTimestamp || '';
       return tb.localeCompare(ta);
     });
 
-  const warningCount = events.filter((e: any) => e.type === 'Warning').length;
+  const warningCount = events.filter((e) => e.type === 'Warning').length;
 
   if (events.length === 0) {
     return (
@@ -293,9 +295,9 @@ function DrawerEvents({
         <span className="text-muted-foreground">{events.length} event{events.length > 1 ? 's' : ''}</span>
       </div>
 
-      {events.map((evt: any, i: number) => {
+      {events.map((evt, i: number) => {
         const isWarning = evt.type === 'Warning';
-        const reason = evt.reason || '';
+        const reason = (evt.reason as string) || '';
         const isUnhealthy = isWarning || [
           'BackOff', 'Failed', 'FailedScheduling', 'Unhealthy',
           'FailedMount', 'FailedAttachVolume', 'ImagePullBackOff',
@@ -304,7 +306,7 @@ function DrawerEvents({
 
         return (
           <div
-            key={evt.metadata?.uid || i}
+            key={(evt.metadata as Record<string, string>)?.uid || i}
             className={`rounded-md border p-2.5 text-xs space-y-1 ${
               isUnhealthy
                 ? 'border-red-500/40 bg-red-500/5'
@@ -316,20 +318,20 @@ function DrawerEvents({
                 variant={isUnhealthy ? 'destructive' : 'secondary'}
                 className="text-[10px]"
               >
-                {evt.type}
+                {evt.type as string}
               </Badge>
               <span className="font-medium text-foreground">{reason}</span>
-              {(evt.count ?? 0) > 1 && (
-                <span className="text-muted-foreground">×{evt.count}</span>
+              {((evt.count as number) ?? 0) > 1 && (
+                <span className="text-muted-foreground">x{evt.count as number}</span>
               )}
               <span className="ml-auto text-muted-foreground shrink-0">
-                <AgeDisplay timestamp={evt.lastTimestamp || evt.metadata?.creationTimestamp} />
+                <AgeDisplay timestamp={(evt.lastTimestamp as string) || (evt.metadata as Record<string, string>)?.creationTimestamp} />
               </span>
             </div>
-            <p className="text-muted-foreground leading-relaxed break-words">{evt.message}</p>
-            {evt.involvedObject?.name !== name && (
+            <p className="text-muted-foreground leading-relaxed break-words">{evt.message as string}</p>
+            {(evt.involvedObject as Record<string, string>)?.name !== name && (
               <span className="text-[10px] text-muted-foreground font-mono">
-                {evt.involvedObject?.kind}/{evt.involvedObject?.name}
+                {(evt.involvedObject as Record<string, string>)?.kind}/{(evt.involvedObject as Record<string, string>)?.name}
               </span>
             )}
           </div>
@@ -343,33 +345,34 @@ function DrawerEvents({
 /* Kind-specific overview sections                                     */
 /* ------------------------------------------------------------------ */
 
-function PodOverview({ status, spec }: { status: any; spec: any }) {
-  const containers = spec.containers || [];
-  const containerStatuses = status.containerStatuses || [];
+function PodOverview({ status, spec }: { status: Record<string, unknown>; spec: Record<string, unknown> }) {
+  const containers = (spec.containers || []) as Array<Record<string, unknown>>;
+  const containerStatuses = (status.containerStatuses || []) as Array<Record<string, unknown>>;
 
   return (
     <>
       <Section title="Status">
-        <Row label="Phase" value={status.phase} />
-        <Row label="Pod IP" value={status.podIP || '-'} mono />
-        <Row label="Node" value={spec.nodeName || status.hostIP || '-'} mono />
-        <Row label="Restart Policy" value={spec.restartPolicy || '-'} />
+        <Row label="Phase" value={status.phase as string} />
+        <Row label="Pod IP" value={(status.podIP as string) || '-'} mono />
+        <Row label="Node" value={(spec.nodeName as string) || (status.hostIP as string) || '-'} mono />
+        <Row label="Restart Policy" value={(spec.restartPolicy as string) || '-'} />
       </Section>
       <Section title={`Containers (${containers.length})`}>
-        {containers.map((c: any) => {
-          const cs = containerStatuses.find((s: any) => s.name === c.name);
-          const stateKey = cs?.state ? Object.keys(cs.state)[0] : 'unknown';
+        {containers.map((c) => {
+          const cs = containerStatuses.find((s) => s.name === c.name);
+          const state = cs?.state as Record<string, unknown> | undefined;
+          const stateKey = state ? Object.keys(state)[0] : 'unknown';
           return (
-            <div key={c.name} className="rounded border p-2 space-y-1 text-xs">
+            <div key={c.name as string} className="rounded border p-2 space-y-1 text-xs">
               <div className="flex justify-between">
-                <span className="font-medium">{c.name}</span>
+                <span className="font-medium">{c.name as string}</span>
                 <Badge variant="secondary" className="text-[10px]">{stateKey}</Badge>
               </div>
-              <div className="text-muted-foreground font-mono text-[10px] truncate">{c.image}</div>
+              <div className="text-muted-foreground font-mono text-[10px] truncate">{c.image as string}</div>
               {cs && (
                 <div className="flex gap-3 text-muted-foreground">
                   <span>Ready: {cs.ready ? 'Yes' : 'No'}</span>
-                  <span>Restarts: {cs.restartCount ?? 0}</span>
+                  <span>Restarts: {(cs.restartCount as number) ?? 0}</span>
                 </div>
               )}
             </div>
@@ -380,34 +383,34 @@ function PodOverview({ status, spec }: { status: any; spec: any }) {
   );
 }
 
-function WorkloadOverview({ kind, status, spec }: { kind: string; status: any; spec: any }) {
+function WorkloadOverview({ kind, status, spec }: { kind: string; status: Record<string, unknown>; spec: Record<string, unknown> }) {
   return (
     <Section title="Replicas">
-      <Row label="Desired" value={spec.replicas ?? (kind === 'DaemonSet' ? status.desiredNumberScheduled : 1)} />
-      <Row label="Ready" value={status.readyReplicas ?? status.numberReady ?? 0} />
-      <Row label="Updated" value={status.updatedReplicas ?? status.updatedNumberScheduled ?? 0} />
-      <Row label="Available" value={status.availableReplicas ?? status.numberAvailable ?? 0} />
-      {kind === 'Deployment' && spec.strategy && (
-        <Row label="Strategy" value={spec.strategy.type || '-'} />
+      <Row label="Desired" value={((spec.replicas as number | undefined) ?? (kind === 'DaemonSet' ? (status.desiredNumberScheduled as number) : 1))} />
+      <Row label="Ready" value={((status.readyReplicas as number | undefined) ?? (status.numberReady as number | undefined) ?? 0)} />
+      <Row label="Updated" value={((status.updatedReplicas as number | undefined) ?? (status.updatedNumberScheduled as number | undefined) ?? 0)} />
+      <Row label="Available" value={((status.availableReplicas as number | undefined) ?? (status.numberAvailable as number | undefined) ?? 0)} />
+      {kind === 'Deployment' && !!spec.strategy && (
+        <Row label="Strategy" value={((spec.strategy as Record<string, string>).type || '-')} />
       )}
     </Section>
   );
 }
 
-function ServiceOverview({ spec }: { spec: any }) {
-  const ports = spec.ports || [];
+function ServiceOverview({ spec }: { spec: Record<string, unknown> }) {
+  const ports = (spec.ports || []) as Array<Record<string, unknown>>;
   return (
     <>
       <Section title="Service">
-        <Row label="Type" value={spec.type || 'ClusterIP'} />
-        <Row label="Cluster IP" value={spec.clusterIP || '-'} mono />
-        {spec.externalIPs && <Row label="External IPs" value={spec.externalIPs.join(', ')} mono />}
-        <Row label="Session Affinity" value={spec.sessionAffinity || 'None'} />
+        <Row label="Type" value={(spec.type as string) || 'ClusterIP'} />
+        <Row label="Cluster IP" value={(spec.clusterIP as string) || '-'} mono />
+        {!!spec.externalIPs && <Row label="External IPs" value={(spec.externalIPs as string[]).join(', ')} mono />}
+        <Row label="Session Affinity" value={(spec.sessionAffinity as string) || 'None'} />
       </Section>
       {ports.length > 0 && (
         <Section title={`Ports (${ports.length})`}>
-          {ports.map((p: any, i: number) => (
-            <Row key={i} label={p.name || `port-${i}`} value={`${p.port}${p.targetPort ? `→${p.targetPort}` : ''}/${p.protocol || 'TCP'}`} mono />
+          {ports.map((p, i: number) => (
+            <Row key={i} label={(p.name as string) || `port-${i}`} value={`${p.port}${p.targetPort ? `\u2192${p.targetPort}` : ''}/${p.protocol || 'TCP'}`} mono />
           ))}
         </Section>
       )}
@@ -415,27 +418,33 @@ function ServiceOverview({ spec }: { spec: any }) {
   );
 }
 
-function IngressOverview({ spec, status }: { spec: any; status: any }) {
-  const rules = spec.rules || [];
-  const lbIngress = status?.loadBalancer?.ingress || [];
+function IngressOverview({ spec, status }: { spec: Record<string, unknown>; status: Record<string, unknown> }) {
+  const rules = (spec.rules || []) as Array<Record<string, unknown>>;
+  const lb = status?.loadBalancer as Record<string, unknown> | undefined;
+  const lbIngress = (lb?.ingress || []) as Array<Record<string, string>>;
   return (
     <>
       <Section title="Ingress">
-        {spec.ingressClassName && <Row label="Class" value={spec.ingressClassName} />}
+        {!!spec.ingressClassName && <Row label="Class" value={spec.ingressClassName as string} />}
         {lbIngress.length > 0 && (
-          <Row label="LB Address" value={lbIngress.map((lb: any) => lb.hostname || lb.ip).join(', ')} mono />
+          <Row label="LB Address" value={lbIngress.map((lb) => lb.hostname || lb.ip).join(', ')} mono />
         )}
       </Section>
       {rules.length > 0 && (
         <Section title={`Rules (${rules.length})`}>
-          {rules.map((rule: any, i: number) => (
+          {rules.map((rule, i: number) => (
             <div key={i} className="text-xs space-y-0.5">
-              <span className="font-medium">{rule.host || '*'}</span>
-              {(rule.http?.paths || []).map((p: any, j: number) => (
+              <span className="font-medium">{(rule.host as string) || '*'}</span>
+              {((rule.http as Record<string, unknown>)?.paths as Array<Record<string, unknown>> || []).map((p, j: number) => {
+                const backend = p.backend as Record<string, unknown> | undefined;
+                const service = backend?.service as Record<string, unknown> | undefined;
+                const port = service?.port as Record<string, unknown> | undefined;
+                return (
                 <div key={j} className="text-muted-foreground font-mono pl-2">
-                  {p.path || '/'} → {p.backend?.service?.name}:{p.backend?.service?.port?.number || p.backend?.service?.port?.name}
+                  {(p.path as string) || '/'} &rarr; {service?.name as string}:{(port?.number || port?.name) as string}
                 </div>
-              ))}
+                );
+              })}
             </div>
           ))}
         </Section>

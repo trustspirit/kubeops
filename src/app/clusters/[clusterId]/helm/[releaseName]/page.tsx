@@ -1,5 +1,4 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useHelmReleaseDetail } from '@/hooks/use-helm-release-detail';
@@ -16,6 +15,7 @@ import { apiClient, fetcher } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
 import useSWR from 'swr';
+import type { HelmReleaseDetail, HelmRevision } from '@/types/helm';
 import {
   ArrowLeft,
   Trash2,
@@ -25,15 +25,6 @@ import {
   Clock,
   FileText,
 } from 'lucide-react';
-
-interface HistoryEntry {
-  revision: number;
-  updated: string;
-  status: string;
-  chart: string;
-  app_version: string;
-  description: string;
-}
 
 export default function HelmReleaseDetailPage() {
   const params = useParams();
@@ -71,7 +62,7 @@ export default function HelmReleaseDetailPage() {
   useEffect(() => {
     if (valuesData) {
       import('js-yaml').then((yaml) => {
-        const vals = (valuesData as any).values;
+        const vals = (valuesData as { values?: Record<string, unknown> }).values;
         if (vals && Object.keys(vals).length > 0) {
           setValuesYaml(yaml.default.dump(vals, { lineWidth: -1 }));
         } else {
@@ -85,14 +76,15 @@ export default function HelmReleaseDetailPage() {
   if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
   if (!detail) return null;
 
-  const info = (detail as any).info || {};
-  const chartMeta = (detail as any).chart?.metadata || {};
-  const releaseNamespace = (detail as any).namespace || namespace;
+  const releaseDetail = detail as HelmReleaseDetail;
+  const info = releaseDetail.info || {} as HelmReleaseDetail['info'];
+  const chartMeta = releaseDetail.chart?.metadata || {} as HelmReleaseDetail['chart']['metadata'];
+  const releaseNamespace = releaseDetail.namespace || namespace;
   const status = info.status || 'unknown';
-  const history: HistoryEntry[] = (historyData as any)?.history || [];
+  const history: HelmRevision[] = (historyData as { history?: HelmRevision[] })?.history || [];
   const currentChart = chartMeta.name
     ? `${chartMeta.name}`
-    : (detail as any).chart || '';
+    : (releaseDetail.chart?.metadata?.name || '');
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -177,7 +169,7 @@ export default function HelmReleaseDetailPage() {
                     <StatusBadge status={status.charAt(0).toUpperCase() + status.slice(1)} />
                   </td>
                   <td className="px-3 py-1.5 text-muted-foreground font-medium">Revision</td>
-                  <td className="px-3 py-1.5">{(detail as any).version || '-'}</td>
+                  <td className="px-3 py-1.5">{releaseDetail.version || '-'}</td>
                 </tr>
                 <tr className="border-b">
                   <td className="px-3 py-1.5 text-muted-foreground font-medium">Chart</td>
