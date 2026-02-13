@@ -7,7 +7,7 @@ import { ErrorDisplay } from '@/components/shared/error-display';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { ArrowLeft, Trash2, GitCompare } from 'lucide-react';
 import { RESOURCE_LABELS } from '@/lib/constants';
 import { AgeDisplay } from '@/components/shared/age-display';
 import { useState } from 'react';
@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { YamlEditor } from '@/components/shared/yaml-editor';
+import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
 
 interface ResourceDetailPageProps {
   resourceType: string;
@@ -30,6 +31,7 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
   const name = (params.name as string) || (params.podName as string) || (params.nodeName as string);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const { data, error, isLoading, mutate } = useResourceDetail({
     clusterId: clusterId ? decodeURIComponent(clusterId) : null,
@@ -81,6 +83,12 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
             {metadata.namespace && ` in ${metadata.namespace}`}
           </p>
         </div>
+        {!clusterScoped && (
+          <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)}>
+            <GitCompare className="h-4 w-4 mr-1" />
+            Compare
+          </Button>
+        )}
         <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
           <Trash2 className="h-4 w-4 mr-1" />
           Delete
@@ -186,6 +194,18 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
         onConfirm={handleDelete}
         loading={deleting}
       />
+
+      {!clusterScoped && (
+        <ResourceDiffDialog
+          open={compareOpen}
+          onOpenChange={setCompareOpen}
+          sourceClusterId={clusterId}
+          sourceNamespace={namespace}
+          resourceType={resourceType}
+          resourceName={name}
+          sourceResource={resource}
+        />
+      )}
     </div>
   );
 }

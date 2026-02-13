@@ -88,8 +88,8 @@ export function DataTable<TData, TValue>({
                 {headerGroup.headers.map((header) => (
                   <TableHead
                     key={header.id}
-                    className="cursor-pointer select-none"
-                    onClick={header.column.getToggleSortingHandler()}
+                    className={header.column.getCanSort() ? 'cursor-pointer select-none' : 'w-[50px]'}
+                    onClick={header.column.getCanSort() ? header.column.getToggleSortingHandler() : undefined}
                   >
                     {header.isPlaceholder
                       ? null

@@ -54,6 +54,10 @@ There are many Kubernetes tools out there. Here's how KubeOps compares:
 | Visual resource topology | **Yes** | Extension | No | Limited |
 | Built-in terminal & logs | **Yes** | Yes | Yes | Yes |
 | Real-time metrics & charts | **Yes** | Yes | Basic | Basic |
+| Quick actions on resource rows | **Yes** | No | Yes | No |
+| Multi-cluster overview | **Yes** | Yes | No | No |
+| Cross-cluster resource diff | **Yes** | No | No | No |
+| Multi-namespace selection | **Yes** | No | No | No |
 | Helm chart management | **Yes** | Yes | View only | No |
 | RBAC visualization | **Yes** | No | Basic | No |
 | YAML diff view | **Yes** | No | No | No |
@@ -67,6 +71,10 @@ There are many Kubernetes tools out there. Here's how KubeOps compares:
 - **Free forever** — No subscriptions, no feature gates, no telemetry. MIT licensed.
 - **Visual-first** — Interactive App Map shows how Ingresses, Services, Deployments, and Pods connect. Not just resource lists.
 - **All-in-one desktop app** — Terminal, logs, port forwarding, metrics charts, YAML editor, Helm management in a single window. No server to deploy, no browser extension to install.
+- **Quick actions** — Restart, scale, delete, view logs, and exec directly from resource list rows without navigating to detail pages.
+- **Multi-cluster overview** — See the health of all connected clusters at a glance on a single dashboard.
+- **Cross-cluster diff** — Compare the same resource across clusters or namespaces with a visual YAML diff.
+- **Multi-namespace** — Select multiple namespaces simultaneously and view resources across them in one list.
 - **Helm chart management** — Browse, install, upgrade, rollback, and uninstall Helm releases directly from the UI.
 - **RBAC visualization** — See who can do what with a permission matrix and interactive access review.
 - **Modern & lightweight** — Fast startup, small footprint. No Electron bloat from bundled IDE features you don't need.
@@ -79,7 +87,7 @@ There are many Kubernetes tools out there. Here's how KubeOps compares:
 
 ### Cluster Overview Dashboard
 
-Auto-detects all clusters from kubeconfig. Select a cluster to see node/pod counts, pod status distribution, workload health, CPU usage per node, active services with port-forward buttons, ingress endpoints, and recent warning events.
+Auto-detects all clusters from kubeconfig. Select a cluster to see node/pod counts, pod status distribution, workload health, CPU usage per node, active services with port-forward buttons, ingress endpoints, and recent warning events. A **Workload Health Summary** at the top surfaces failing pods, non-ready workloads, container restarts, and warning events at a glance — or shows a green "All Healthy" banner when everything is fine.
 
 <!-- Screenshot: Cluster Overview -->
 
@@ -92,6 +100,15 @@ Interactive flowchart visualizing resource relationships: Ingress → Service �
 <!-- Screenshot: App Map -->
 
 ![KubeOps map](assets/app-map.png)
+
+### Quick Actions
+
+Every resource list row has a `...` context menu for common operations without navigating to the detail page:
+
+- **Pods** — View Logs, Exec, Delete
+- **Deployments / StatefulSets** — Restart, Scale, Delete
+- **DaemonSets** — Restart, Delete
+- **All resources** — Delete, Compare (cross-cluster diff)
 
 ### Live Status Display
 
@@ -157,6 +174,36 @@ Click the info icon on any App Map node to open a right-side drawer with Overvie
 <!-- Screenshot: Resource Info Drawer -->
 
 ![KubeOps drawer](assets/drawer.png)
+
+### Cross-Cluster Resource Diff
+
+Compare the same resource across different clusters or namespaces. Click the **Compare** button on any resource detail page (or from the Quick Actions menu) to open a diff dialog:
+
+1. Select a target cluster and namespace
+2. Click **Compare** to see a side-by-side YAML diff
+3. Metadata noise (uid, resourceVersion, managedFields) and status are stripped for a clean comparison
+
+Useful for verifying configuration parity across staging and production environments.
+
+### Multi-Namespace Selector
+
+Select multiple namespaces simultaneously to view resources across them in a single list. Click the checklist icon in the namespace selector to enter multi-select mode:
+
+- Toggle individual namespaces with checkboxes
+- "All Namespaces" toggles select-all / deselect-all
+- The trigger button shows "N namespaces" when multiple are selected
+- Resources are fetched from all namespaces and filtered client-side
+
+### Multi-Cluster Overview
+
+Navigate to `/clusters` and click the **Overview** button to see all connected clusters on a single dashboard:
+
+- **Summary stats** — Total connected clusters, running pods, failing pods, and warning events
+- **Cluster health grid** — Cards per cluster with status dot, pod count, failing count, and warning count
+- **Failing pods breakdown** — Table of clusters with failing pods, sorted by severity
+- **Warning events breakdown** — Table of clusters with recent warning events
+
+Click any cluster card to jump directly to that cluster's overview page.
 
 ### Deployment Scaling
 

@@ -14,7 +14,7 @@ import { ScaleDialog } from '@/components/resources/scale-dialog';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { YamlEditor } from '@/components/shared/yaml-editor';
 import { PodMetricsCharts } from '@/components/shared/metrics-charts';
-import { ArrowLeft, Trash2, Scaling, Terminal, ScrollText, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Trash2, Scaling, Terminal, ScrollText, RotateCcw, GitCompare } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useState } from 'react';
@@ -24,6 +24,7 @@ import Link from 'next/link';
 import { PortForwardBtn } from '@/components/shared/port-forward-btn';
 import { ResourceTreeView } from '@/components/shared/resource-tree';
 import { useResourceTree } from '@/hooks/use-resource-tree';
+import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
 
 export default function DeploymentDetailPage() {
   const params = useParams();
@@ -35,6 +36,7 @@ export default function DeploymentDetailPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const { addTab } = usePanelStore();
 
   const decodedClusterId = decodeURIComponent(clusterId);
@@ -173,6 +175,9 @@ export default function DeploymentDetailPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)}>
+            <GitCompare className="h-4 w-4 mr-1" />Compare
+          </Button>
           <Button variant="outline" size="sm" onClick={handleRestart} disabled={restarting}>
             <RotateCcw className={`h-4 w-4 mr-1 ${restarting ? 'animate-spin' : ''}`} />
             {restarting ? 'Restarting...' : 'Restart'}
@@ -452,6 +457,7 @@ export default function DeploymentDetailPage() {
 
       <ScaleDialog open={scaleOpen} onOpenChange={setScaleOpen} clusterId={decodedClusterId} namespace={namespace} resourceType="deployments" name={name} currentReplicas={spec.replicas || 0} onScaled={() => mutate()} />
       <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title={`Delete ${name}?`} description={`This will permanently delete the deployment "${name}".`} confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} loading={deleting} />
+      <ResourceDiffDialog open={compareOpen} onOpenChange={setCompareOpen} sourceClusterId={clusterId} sourceNamespace={namespace} resourceType="deployments" resourceName={name} sourceResource={dep} />
     </div>
   );
 }

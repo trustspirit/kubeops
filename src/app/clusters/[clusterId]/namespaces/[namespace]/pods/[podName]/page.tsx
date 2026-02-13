@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AgeDisplay } from '@/components/shared/age-display';
-import { ArrowLeft, Terminal, ScrollText, Trash2, KeyRound } from 'lucide-react';
+import { ArrowLeft, Terminal, ScrollText, Trash2, KeyRound, GitCompare } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { usePanelStore } from '@/stores/panel-store';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -24,6 +24,7 @@ import { PodWatchButton } from '@/components/pods/pod-watch-button';
 import { usePodRestartWatcher } from '@/hooks/use-pod-watcher';
 import { ResourceTreeView } from '@/components/shared/resource-tree';
 import { useResourceTree } from '@/hooks/use-resource-tree';
+import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
 
 function PodResourceTree({ clusterId, namespace, rootKind, rootName, focusPodName }: {
   clusterId: string;
@@ -57,6 +58,7 @@ export default function PodDetailPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [envDrawerOpen, setEnvDrawerOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const { addTab } = usePanelStore();
   const decodedClusterId = decodeURIComponent(clusterId);
 
@@ -168,6 +170,9 @@ export default function PodDetailPage() {
               </Button>
             </div>
           ))}
+          <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)}>
+            <GitCompare className="h-4 w-4 mr-1" />Compare
+          </Button>
           <PodWatchButton clusterId={decodedClusterId} namespace={namespace} podName={podName} />
           <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
             <Trash2 className="h-4 w-4 mr-1" />Delete
@@ -392,6 +397,7 @@ export default function PodDetailPage() {
       </Tabs>
 
       <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title={`Delete ${podName}?`} description={`This will delete the pod "${podName}". If managed by a controller, it will be recreated.`} confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} loading={deleting} />
+      <ResourceDiffDialog open={compareOpen} onOpenChange={setCompareOpen} sourceClusterId={clusterId} sourceNamespace={namespace} resourceType="pods" resourceName={podName} sourceResource={pod} />
 
       {/* Env Variables Drawer */}
       <Sheet open={envDrawerOpen} onOpenChange={setEnvDrawerOpen}>

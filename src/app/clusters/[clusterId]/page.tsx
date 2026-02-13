@@ -16,6 +16,7 @@ import {
   AreaChart, Area,
 } from 'recharts';
 import { NodeMetricsSummary } from '@/components/shared/metrics-charts';
+import { WorkloadHealthSummary } from '@/components/dashboard/workload-health-summary';
 
 const POD_COLORS: Record<string, string> = {
   Running: '#22c55e', Succeeded: '#3b82f6', Pending: '#eab308',
@@ -221,6 +222,19 @@ export default function ClusterOverviewPage() {
           </span>
         </div>
       </div>
+
+      {/* Workload Health Summary */}
+      {coreLoaded && (
+        <WorkloadHealthSummary
+          clusterId={clusterId}
+          namespace={namespace}
+          pods={pods}
+          deployments={deployments}
+          statefulsets={statefulsets}
+          daemonsets={daemonsets}
+          events={events}
+        />
+      )}
 
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

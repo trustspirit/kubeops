@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Server, ArrowRight, Search, Settings, RotateCw, LogIn, Loader2, CircleCheck, LayoutGrid, List, Star, Tag, ChevronDown, ChevronRight } from 'lucide-react';
+import { Server, ArrowRight, Search, Settings, RotateCw, LogIn, Loader2, CircleCheck, LayoutGrid, LayoutDashboard, List, Star, Tag, ChevronDown, ChevronRight } from 'lucide-react';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { UpdateIndicator } from '@/components/layout/header';
 import { SettingsDialog } from '@/components/settings/settings-dialog';
@@ -164,6 +164,10 @@ export default function ClustersPage() {
               }
             </TooltipContent>
           </Tooltip>
+          <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => router.push('/clusters/overview')} title="Multi-Cluster Overview">
+            <LayoutDashboard className="h-4 w-4" />
+            <span className="text-xs">Overview</span>
+          </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRefresh} disabled={refreshing} title="Refresh cluster list">
             <RotateCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
