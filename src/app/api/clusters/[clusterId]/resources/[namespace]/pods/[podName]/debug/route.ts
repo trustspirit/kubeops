@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as https from 'https';
 import * as k8s from '@kubernetes/client-node';
 import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
 
@@ -89,12 +90,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     const patchPath = `/api/v1/namespaces/${namespace}/pods/${podName}/ephemeralcontainers`;
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const https = require('https');
     const urlObj = new URL(`${cluster.server}${patchPath}`);
     await new Promise<Record<string, unknown>>((resolve, reject) => {
       const patchData = JSON.stringify(patchBody);
-      const reqOpts = {
+      const reqOpts: https.RequestOptions = {
         hostname: urlObj.hostname,
         port: urlObj.port || 443,
         path: urlObj.pathname,
@@ -105,16 +104,17 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         } as Record<string, string>,
         ca: opts.ca, cert: opts.cert, key: opts.key,
         rejectUnauthorized: !(cluster as { skipTLSVerify?: boolean }).skipTLSVerify,
+        timeout: 30000, // 30s request timeout to prevent hanging
       };
 
       // Add authorization header if present
       if (opts.headers?.Authorization) {
-        reqOpts.headers.Authorization = opts.headers.Authorization;
+        (reqOpts.headers as Record<string, string>).Authorization = opts.headers.Authorization;
       }
 
-      const request = https.request(reqOpts, (res: { statusCode?: number; on: (event: string, cb: (data?: string) => void) => void }) => {
+      const request = https.request(reqOpts, (res) => {
         let responseBody = '';
-        res.on('data', (chunk?: string) => { responseBody += chunk ?? ''; });
+        res.on('data', (chunk) => { responseBody += chunk; });
         res.on('end', () => {
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             try { resolve(JSON.parse(responseBody) as Record<string, unknown>); } catch { resolve({}); }
@@ -124,6 +124,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
             reject({ statusCode: res.statusCode, body: errBody, message: (errBody.message as string) || responseBody });
           }
         });
+      });
+      request.on('timeout', () => {
+        request.destroy(new Error('Request timed out'));
       });
       request.on('error', reject);
       request.write(patchData);

@@ -329,6 +329,19 @@ export function getWatchManager(clusterId: string): WatchManager {
 }
 
 /**
+ * Shutdown and remove a single WatchManager from the registry.
+ * Call this when a cluster is disconnected or removed.
+ */
+export function shutdownWatchManager(clusterId: string): void {
+  const manager = watchManagers.get(clusterId);
+  if (manager) {
+    console.log(`[WatchManager] Shutting down manager for cluster: ${clusterId}`);
+    manager.shutdown();
+    watchManagers.delete(clusterId);
+  }
+}
+
+/**
  * Shutdown all WatchManagers and clear the registry.
  * Call this on server shutdown.
  */

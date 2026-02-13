@@ -122,11 +122,16 @@ export function handleWatchConnection(ws: WebSocket, req: IncomingMessage) {
     cleanup();
   });
 
-  ws.on('error', () => {
+  ws.on('error', (err: Error) => {
+    console.error(`[Watch] WebSocket error for cluster ${clusterId}:`, err.message);
+    // Note: 'close' event fires after 'error', but cleanup is idempotent
     cleanup();
   });
 
+  let cleanedUp = false;
   function cleanup() {
+    if (cleanedUp) return;
+    cleanedUp = true;
     clearInterval(pingInterval);
     // Unsubscribe all active subscriptions
     for (const [, sub] of activeSubscriptions) {

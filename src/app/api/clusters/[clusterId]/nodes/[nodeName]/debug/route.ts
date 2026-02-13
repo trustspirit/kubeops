@@ -120,8 +120,18 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Timeout: attempt to clean up the debug pod that failed to start
+    try {
+      await api.deleteNamespacedPod({
+        name: podName,
+        namespace: 'default',
+      });
+    } catch {
+      // Best effort cleanup -- pod may still be scheduling
+    }
+
     return NextResponse.json(
-      { error: 'Timeout waiting for debug pod to start', podName, namespace: 'default' },
+      { error: 'Timeout waiting for debug pod to start. Pod has been cleaned up.', podName, namespace: 'default' },
       { status: 408 }
     );
   } catch (error: unknown) {

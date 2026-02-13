@@ -103,10 +103,7 @@ async function applyToTarget(
       await client.delete(
         resourceCopy,
         undefined,
-        undefined,
-        dryRun ? 0 : undefined,
-        undefined,
-        dryRun ? 'Foreground' : undefined,
+        dryRun ? 'All' : undefined,
       );
       return {
         clusterId: target.clusterId,

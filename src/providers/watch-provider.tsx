@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useParams } from 'next/navigation';
 import { useWatch, type WatchConnectionState, type WatchEventCallback } from '@/hooks/use-watch';
 
@@ -23,8 +23,16 @@ export function WatchProvider({ children }: { children: ReactNode }) {
 
   const { subscribe, connectionState } = useWatch(clusterId);
 
+  // Memoize the context value to prevent unnecessary re-renders of consumers.
+  // Without this, every render of WatchProvider creates a new object reference,
+  // causing all useContext(WatchContext) consumers to re-render.
+  const contextValue = useMemo(
+    () => ({ subscribe, connectionState }),
+    [subscribe, connectionState]
+  );
+
   return (
-    <WatchContext.Provider value={{ subscribe, connectionState }}>
+    <WatchContext.Provider value={contextValue}>
       {children}
     </WatchContext.Provider>
   );

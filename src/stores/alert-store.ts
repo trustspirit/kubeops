@@ -46,9 +46,16 @@ export const useAlertStore = create<AlertState>()(
       },
 
       deleteRule: (id) => {
-        set((state) => ({
-          rules: state.rules.filter((r) => r.id !== id),
-        }));
+        set((state) => {
+          // Clean up lastTriggered entry when a rule is deleted to prevent
+          // unbounded growth of orphan entries in localStorage
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { [id]: _removed, ...remainingTriggered } = state.lastTriggered;
+          return {
+            rules: state.rules.filter((r) => r.id !== id),
+            lastTriggered: remainingTriggered,
+          };
+        });
       },
 
       toggleRule: (id) => {

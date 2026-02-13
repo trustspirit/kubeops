@@ -59,84 +59,107 @@ function getResourceStatus(resource: k8s.KubernetesObject): string {
   return 'Active';
 }
 
-async function findDependents(
+// Maximum recursion depth for dependent tree traversal to prevent stack overflow
+// on deeply nested ownership chains (e.g. Deployment -> RS -> Pod is depth 2)
+const MAX_DEPTH = 10;
+
+// Pre-fetched resource cache to avoid N+1 queries: each recursive findDependents
+// call previously listed ALL pods/replicasets/jobs in the namespace.
+interface ResourceCache {
+  pods: k8s.V1Pod[];
+  replicaSets: k8s.V1ReplicaSet[];
+  jobs: k8s.V1Job[];
+}
+
+async function prefetchResources(
   coreApi: k8s.CoreV1Api,
   appsApi: k8s.AppsV1Api,
   batchApi: k8s.BatchV1Api,
   namespace: string,
+): Promise<ResourceCache> {
+  const [podsResult, rsResult, jobsResult] = await Promise.all([
+    coreApi.listNamespacedPod({ namespace }).catch(() => ({ items: [] as k8s.V1Pod[] })),
+    appsApi.listNamespacedReplicaSet({ namespace }).catch(() => ({ items: [] as k8s.V1ReplicaSet[] })),
+    batchApi.listNamespacedJob({ namespace }).catch(() => ({ items: [] as k8s.V1Job[] })),
+  ]);
+
+  return {
+    pods: podsResult.items || [],
+    replicaSets: rsResult.items || [],
+    jobs: jobsResult.items || [],
+  };
+}
+
+async function findDependents(
+  cache: ResourceCache,
+  namespace: string,
   ownerUid: string,
   ownerKind: string,
   ownerName: string,
-  visited: Set<string>
+  visited: Set<string>,
+  depth: number = 0,
 ): Promise<DependentNode[]> {
+  if (depth >= MAX_DEPTH) return [];
+
   const key = `${ownerKind}/${ownerName}/${ownerUid}`;
   if (visited.has(key)) return [];
   visited.add(key);
 
   const dependents: DependentNode[] = [];
 
-  // Search Pods
-  try {
-    const pods = await coreApi.listNamespacedPod({ namespace });
-    for (const pod of pods.items || []) {
-      const refs = pod.metadata?.ownerReferences || [];
-      if (refs.some((r: k8s.V1OwnerReference) => r.uid === ownerUid)) {
-        const podUid = pod.metadata?.uid || '';
-        const childDeps = await findDependents(
-          coreApi, appsApi, batchApi, namespace, podUid, 'Pod', pod.metadata?.name || '', visited
-        );
-        dependents.push({
-          kind: 'Pod',
-          name: pod.metadata?.name || '',
-          namespace: pod.metadata?.namespace,
-          status: getResourceStatus(pod as k8s.KubernetesObject),
-          dependents: childDeps,
-        });
-      }
+  // Search Pods from cache
+  for (const pod of cache.pods) {
+    const refs = pod.metadata?.ownerReferences || [];
+    if (refs.some((r: k8s.V1OwnerReference) => r.uid === ownerUid)) {
+      const podUid = pod.metadata?.uid || '';
+      const childDeps = await findDependents(
+        cache, namespace, podUid, 'Pod', pod.metadata?.name || '', visited, depth + 1
+      );
+      dependents.push({
+        kind: 'Pod',
+        name: pod.metadata?.name || '',
+        namespace: pod.metadata?.namespace,
+        status: getResourceStatus(pod as k8s.KubernetesObject),
+        dependents: childDeps,
+      });
     }
-  } catch { /* ignore search errors */ }
+  }
 
-  // Search ReplicaSets
-  try {
-    const rsList = await appsApi.listNamespacedReplicaSet({ namespace });
-    for (const rs of rsList.items || []) {
-      const refs = rs.metadata?.ownerReferences || [];
-      if (refs.some((r: k8s.V1OwnerReference) => r.uid === ownerUid)) {
-        const rsUid = rs.metadata?.uid || '';
-        const childDeps = await findDependents(
-          coreApi, appsApi, batchApi, namespace, rsUid, 'ReplicaSet', rs.metadata?.name || '', visited
-        );
-        dependents.push({
-          kind: 'ReplicaSet',
-          name: rs.metadata?.name || '',
-          namespace: rs.metadata?.namespace,
-          status: getResourceStatus(rs as k8s.KubernetesObject),
-          dependents: childDeps,
-        });
-      }
+  // Search ReplicaSets from cache
+  for (const rs of cache.replicaSets) {
+    const refs = rs.metadata?.ownerReferences || [];
+    if (refs.some((r: k8s.V1OwnerReference) => r.uid === ownerUid)) {
+      const rsUid = rs.metadata?.uid || '';
+      const childDeps = await findDependents(
+        cache, namespace, rsUid, 'ReplicaSet', rs.metadata?.name || '', visited, depth + 1
+      );
+      dependents.push({
+        kind: 'ReplicaSet',
+        name: rs.metadata?.name || '',
+        namespace: rs.metadata?.namespace,
+        status: getResourceStatus(rs as k8s.KubernetesObject),
+        dependents: childDeps,
+      });
     }
-  } catch { /* ignore search errors */ }
+  }
 
-  // Search Jobs
-  try {
-    const jobList = await batchApi.listNamespacedJob({ namespace });
-    for (const job of jobList.items || []) {
-      const refs = job.metadata?.ownerReferences || [];
-      if (refs.some((r: k8s.V1OwnerReference) => r.uid === ownerUid)) {
-        const jobUid = job.metadata?.uid || '';
-        const childDeps = await findDependents(
-          coreApi, appsApi, batchApi, namespace, jobUid, 'Job', job.metadata?.name || '', visited
-        );
-        dependents.push({
-          kind: 'Job',
-          name: job.metadata?.name || '',
-          namespace: job.metadata?.namespace,
-          status: getResourceStatus(job as k8s.KubernetesObject),
-          dependents: childDeps,
-        });
-      }
+  // Search Jobs from cache
+  for (const job of cache.jobs) {
+    const refs = job.metadata?.ownerReferences || [];
+    if (refs.some((r: k8s.V1OwnerReference) => r.uid === ownerUid)) {
+      const jobUid = job.metadata?.uid || '';
+      const childDeps = await findDependents(
+        cache, namespace, jobUid, 'Job', job.metadata?.name || '', visited, depth + 1
+      );
+      dependents.push({
+        kind: 'Job',
+        name: job.metadata?.name || '',
+        namespace: job.metadata?.namespace,
+        status: getResourceStatus(job as k8s.KubernetesObject),
+        dependents: childDeps,
+      });
     }
-  } catch { /* ignore search errors */ }
+  }
 
   return dependents;
 }
@@ -214,8 +237,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Resource has no UID' }, { status: 500 });
     }
 
+    // Pre-fetch all resources once to avoid N+1 queries during recursive traversal
+    const cache = await prefetchResources(coreApi, appsApi, batchApi, namespace);
     const visited = new Set<string>();
-    const dependents = await findDependents(coreApi, appsApi, batchApi, namespace, uid, targetKind, name, visited);
+    const dependents = await findDependents(cache, namespace, uid, targetKind, name, visited);
     const totalCount = countNodes(dependents);
 
     const tree: DependentNode = {

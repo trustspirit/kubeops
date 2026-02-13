@@ -89,12 +89,18 @@ function EventCard({ event }: { event: K8sEvent }) {
   );
 }
 
+// Limit the number of rendered events to prevent DOM performance issues
+// with large event lists (clusters can produce thousands of events).
+const INITIAL_RENDER_LIMIT = 200;
+const RENDER_LIMIT_INCREMENT = 200;
+
 export function EventTimeline({ events }: EventTimelineProps) {
   const [typeFilter, setTypeFilter] = useState<'all' | 'Normal' | 'Warning'>('all');
   const [reasonFilter, setReasonFilter] = useState('');
   const [followMode, setFollowMode] = useState(true);
   const [groupByResource, setGroupByResource] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [renderLimit, setRenderLimit] = useState(INITIAL_RENDER_LIMIT);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const filteredEvents = useMemo(() => {
@@ -140,6 +146,16 @@ export function EventTimeline({ events }: EventTimelineProps) {
     });
   }, [filteredEvents, groupByResource]);
 
+  // Truncate rendered events for DOM performance.
+  // The render limit is managed via the renderLimit state. It starts at INITIAL_RENDER_LIMIT.
+  // When the user changes filters, the filteredEvents array changes and we always show
+  // the first INITIAL_RENDER_LIMIT items. The "show more" button increments the limit.
+  const visibleEvents = useMemo(
+    () => filteredEvents.slice(0, renderLimit),
+    [filteredEvents, renderLimit]
+  );
+  const hasMoreEvents = filteredEvents.length > renderLimit;
+
   // Auto-scroll on new events in follow mode
   useEffect(() => {
     if (followMode && scrollRef.current) {
@@ -163,7 +179,7 @@ export function EventTimeline({ events }: EventTimelineProps) {
     <div className="space-y-4">
       {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
-        <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'all' | 'Normal' | 'Warning')}>
+        <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v as 'all' | 'Normal' | 'Warning'); setRenderLimit(INITIAL_RENDER_LIMIT); }}>
           <SelectTrigger className="w-[130px]" size="sm">
             <SelectValue placeholder="Event type" />
           </SelectTrigger>
@@ -177,7 +193,7 @@ export function EventTimeline({ events }: EventTimelineProps) {
         <Input
           placeholder="Filter by reason..."
           value={reasonFilter}
-          onChange={(e) => setReasonFilter(e.target.value)}
+          onChange={(e) => { setReasonFilter(e.target.value); setRenderLimit(INITIAL_RENDER_LIMIT); }}
           className="w-[200px] h-8 text-sm"
         />
 
@@ -254,14 +270,25 @@ export function EventTimeline({ events }: EventTimelineProps) {
           </div>
         ) : (
           <div>
-            {filteredEvents.map((event, i) => (
+            {visibleEvents.map((event, i) => (
               <EventCard
                 key={event.metadata?.uid || i}
                 event={event}
-                
-                
+
+
               />
             ))}
+          </div>
+        )}
+        {hasMoreEvents && (
+          <div className="py-3 text-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRenderLimit((prev) => prev + RENDER_LIMIT_INCREMENT)}
+            >
+              Show more ({filteredEvents.length - renderLimit} remaining)
+            </Button>
           </div>
         )}
       </div>

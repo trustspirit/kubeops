@@ -38,6 +38,12 @@ export function useWatch(clusterId: string | null) {
     if (!clusterIdRef.current) return;
     if (!isMountedRef.current) return;
 
+    // Cancel any pending reconnect timer to avoid duplicate connections
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+
     // Clean up existing connection
     if (wsRef.current) {
       wsRef.current.onclose = null;

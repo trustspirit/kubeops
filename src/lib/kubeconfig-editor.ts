@@ -57,12 +57,18 @@ export interface Kubeconfig {
 
 /**
  * Create a backup of the kubeconfig file.
+ * Uses a timestamped backup name to prevent overwriting previous backups,
+ * and maintains a rolling '.bak' symlink/copy pointing to the latest backup.
  */
 export async function backup(): Promise<string> {
   const configPath = getKubeconfigPath();
-  const backupPath = configPath + '.bak';
-  await fs.copyFile(configPath, backupPath);
-  return backupPath;
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const timestampedPath = `${configPath}.bak.${timestamp}`;
+  const latestPath = configPath + '.bak';
+  await fs.copyFile(configPath, timestampedPath);
+  // Also maintain the .bak file as the latest backup for easy recovery
+  await fs.copyFile(configPath, latestPath);
+  return timestampedPath;
 }
 
 /**
@@ -93,12 +99,33 @@ export async function readKubeconfigRaw(): Promise<string> {
 
 /**
  * Write the kubeconfig file, creating a backup first.
+ * Uses atomic write (write to temp file, then rename) to prevent corruption
+ * if the process crashes mid-write. Also preserves file permissions.
  */
 export async function writeKubeconfig(config: Kubeconfig): Promise<void> {
   await backup();
   const configPath = getKubeconfigPath();
   const yaml = jsYaml.dump(config, { lineWidth: -1, noRefs: true });
-  await fs.writeFile(configPath, yaml, 'utf-8');
+
+  // Atomic write: write to temp file then rename to prevent partial writes
+  const tmpPath = configPath + '.tmp.' + process.pid;
+  try {
+    // Try to preserve original file permissions (kubeconfig is typically 0600)
+    let mode: number | undefined;
+    try {
+      const stat = await fs.stat(configPath);
+      mode = stat.mode;
+    } catch {
+      // File might not exist yet
+    }
+
+    await fs.writeFile(tmpPath, yaml, { encoding: 'utf-8', mode: mode ?? 0o600 });
+    await fs.rename(tmpPath, configPath);
+  } catch (err) {
+    // Clean up temp file on failure
+    try { await fs.unlink(tmpPath); } catch { /* ignore */ }
+    throw err;
+  }
 }
 
 /**
