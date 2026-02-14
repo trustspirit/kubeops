@@ -53,21 +53,23 @@ function formatNetRate(val: number): string {
   return `${Math.round(val)} KB/s`;
 }
 
-function MetricTooltip({ active, payload, label }: any) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function MetricTooltip({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-md border bg-popover px-3 py-2 text-xs shadow-md space-y-1">
       <p className="text-muted-foreground">{label}</p>
-      {payload.map((p: any) => {
+      {payload.map((p: Record<string, unknown>) => {
+        const val = p.value as number;
         let text = '';
-        if (p.dataKey === 'cpu') text = `CPU: ${formatCpu(p.value)}`;
-        else if (p.dataKey === 'memory') text = `Memory: ${formatMemory(p.value)}`;
-        else if (p.dataKey === 'netRx') text = `Rx: ${formatNetRate(p.value)}`;
-        else if (p.dataKey === 'netTx') text = `Tx: ${formatNetRate(p.value)}`;
-        else if (p.dataKey === 'fsRead') text = `Read: ${formatNetRate(p.value)}`;
-        else if (p.dataKey === 'fsWrite') text = `Write: ${formatNetRate(p.value)}`;
-        else text = `${p.dataKey}: ${p.value}`;
-        return <p key={p.dataKey} style={{ color: p.color }}>{text}</p>;
+        if (p.dataKey === 'cpu') text = `CPU: ${formatCpu(val)}`;
+        else if (p.dataKey === 'memory') text = `Memory: ${formatMemory(val)}`;
+        else if (p.dataKey === 'netRx') text = `Rx: ${formatNetRate(val)}`;
+        else if (p.dataKey === 'netTx') text = `Tx: ${formatNetRate(val)}`;
+        else if (p.dataKey === 'fsRead') text = `Read: ${formatNetRate(val)}`;
+        else if (p.dataKey === 'fsWrite') text = `Write: ${formatNetRate(val)}`;
+        else text = `${p.dataKey}: ${val}`;
+        return <p key={p.dataKey as string} style={{ color: p.color as string }}>{text}</p>;
       })}
     </div>
   );
@@ -103,9 +105,10 @@ export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: Po
     const containers = data.containers || [];
     let totalCpu = 0;
     let totalMem = 0;
-    containers.forEach((c: any) => {
-      totalCpu += parseCpu(c.usage?.cpu || '0');
-      totalMem += parseMemory(c.usage?.memory || '0');
+    containers.forEach((c: Record<string, unknown>) => {
+      const usage = c.usage as Record<string, string> | undefined;
+      totalCpu += parseCpu(usage?.cpu || '0');
+      totalMem += parseMemory(usage?.memory || '0');
     });
 
     // Network & FS rate from Prometheus (cumulative counters → rate)
@@ -146,7 +149,8 @@ export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: Po
       fsWrite: Math.round(fsWrite * 10) / 10,
     };
 
-    setHistory((prev) => [...prev, point].slice(-60)); // Keep 5 min at 5s interval
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHistory((prev) => [...prev, point].slice(-60)); // Keep 5 min at 5s interval // Keep 5 min at 5s interval
   }, [data, promData]);
 
   if (history.length === 0) {
@@ -352,16 +356,17 @@ interface NodeMetricsProps {
   clusterId: string;
 }
 
-function NodeMetricTooltip({ active, payload, label }: any) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function NodeMetricTooltip({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-lg border bg-popover/95 backdrop-blur-sm px-3 py-2 text-xs shadow-xl space-y-1">
       <p className="font-medium">{label}</p>
-      {payload.map((p: any) => (
-        <div key={p.dataKey} className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+      {payload.map((p: Record<string, unknown>) => (
+        <div key={p.dataKey as string} className="flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color as string }} />
           <span className="text-muted-foreground">{p.dataKey === 'cpu' ? 'CPU' : 'Memory'}:</span>
-          <span className="font-semibold">{p.dataKey === 'cpu' ? formatCpu(p.value) : formatMemory(p.value)}</span>
+          <span className="font-semibold">{p.dataKey === 'cpu' ? formatCpu(p.value as number) : formatMemory(p.value as number)}</span>
         </div>
       ))}
     </div>
@@ -376,14 +381,18 @@ export function NodeMetricsSummary({ clusterId }: NodeMetricsProps) {
 
   if (!data?.items?.length) return null;
 
-  const nodes = data.items.map((n: any) => ({
-    name: n.metadata?.name?.split('.')[0] || n.metadata?.name || '',
-    cpu: parseCpu(n.usage?.cpu || '0'),
-    memory: parseMemory(n.usage?.memory || '0'),
-  }));
+  const nodes = data.items.map((n: Record<string, unknown>) => {
+    const meta = n.metadata as Record<string, string> | undefined;
+    const usage = n.usage as Record<string, string> | undefined;
+    return {
+      name: meta?.name?.split('.')[0] || meta?.name || '',
+      cpu: parseCpu(usage?.cpu || '0'),
+      memory: parseMemory(usage?.memory || '0'),
+    };
+  });
 
   const barHeight = Math.max(120, nodes.length * 32 + 30);
-  const yAxisWidth = Math.min(150, Math.max(70, ...nodes.map((n: any) => n.name.length * 6 + 10)));
+  const yAxisWidth = Math.min(150, Math.max(70, ...nodes.map((n: { name: string }) => n.name.length * 6 + 10)));
 
   return (
     <Card>

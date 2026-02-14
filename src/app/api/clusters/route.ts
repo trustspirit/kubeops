@@ -1,13 +1,11 @@
 import { NextResponse } from 'next/server';
-import * as k8s from '@kubernetes/client-node';
-import { getContexts, getClusterServer, getContextNamespace } from '@/lib/k8s/kubeconfig-manager';
+import { getContexts, getClusterServer } from '@/lib/k8s/kubeconfig-manager';
 import { getCoreV1Api } from '@/lib/k8s/client-factory';
 import { ClusterInfo } from '@/lib/k8s/types';
 
 export const dynamic = 'force-dynamic';
 
 function stripAnsi(str: string): string {
-  // eslint-disable-next-line no-control-regex
   return str.replace(/\x1B\[[0-9;]*m/g, '');
 }
 

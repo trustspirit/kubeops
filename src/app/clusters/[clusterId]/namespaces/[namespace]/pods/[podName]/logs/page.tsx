@@ -1,7 +1,8 @@
 'use client';
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -31,7 +32,7 @@ export default function PodLogsPage() {
     name: podName,
   });
 
-  const containers = pod?.spec?.containers || [];
+  const containers = useMemo(() => pod?.spec?.containers || [], [pod]);
   const [container, setContainer] = useState('');
   const [follow, setFollow] = useState(true);
   const [logs, setLogs] = useState('');
@@ -39,6 +40,7 @@ export default function PodLogsPage() {
   const logRef = useRef<HTMLPreElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
+   
   useEffect(() => {
     if (containers.length > 0 && !container) {
       setContainer(containers[0].name);
@@ -109,8 +111,8 @@ export default function PodLogsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {containers.map((c: any) => (
-                  <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>
+                {containers.map((c: Record<string, unknown>) => (
+                  <SelectItem key={c.name as string} value={c.name as string}>{c.name as string}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

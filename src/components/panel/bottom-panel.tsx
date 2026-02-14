@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useCallback, useEffect } from 'react';
-import { usePanelStore, type PanelTab } from '@/stores/panel-store';
+import { usePanelStore } from '@/stores/panel-store';
 import { TerminalTab } from './terminal-tab';
 import { LogsTab } from './logs-tab';
 import { X, Terminal, ScrollText, GripHorizontal, ChevronDown, ChevronUp } from 'lucide-react';

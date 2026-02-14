@@ -11,6 +11,8 @@ import next from 'next';
 import { WebSocketServer, WebSocket } from 'ws';
 import { handleLogsConnection } from './ws/logs-handler';
 import { handleExecConnection } from './ws/exec-handler';
+import { handleWatchConnection } from './ws/watch-handler';
+import { shutdownAllWatchManagers } from './src/lib/k8s/watch-manager';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
@@ -27,6 +29,7 @@ app.prepare().then(() => {
 
   const wssLogs = new WebSocketServer({ noServer: true });
   const wssExec = new WebSocketServer({ noServer: true });
+  const wssWatch = new WebSocketServer({ noServer: true });
 
   wssLogs.on('connection', (ws: WebSocket, req) => {
     handleLogsConnection(ws, req);
@@ -34,6 +37,10 @@ app.prepare().then(() => {
 
   wssExec.on('connection', (ws: WebSocket, req) => {
     handleExecConnection(ws, req);
+  });
+
+  wssWatch.on('connection', (ws: WebSocket, req) => {
+    handleWatchConnection(ws, req);
   });
 
   server.on('upgrade', (request, socket, head) => {
@@ -47,6 +54,10 @@ app.prepare().then(() => {
       wssExec.handleUpgrade(request, socket, head, (ws) => {
         wssExec.emit('connection', ws, request);
       });
+    } else if (pathname?.startsWith('/ws/watch/')) {
+      wssWatch.handleUpgrade(request, socket, head, (ws) => {
+        wssWatch.emit('connection', ws, request);
+      });
     } else {
       // Let Next.js handle HMR and other upgrades
     }
@@ -56,6 +67,7 @@ app.prepare().then(() => {
   const shutdown = () => {
     console.log('> Shutting down — cleaning up child processes...');
     try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { cleanupAllForwards } = require('./src/app/api/port-forward/route');
       cleanupAllForwards();
     } catch { /* module may not be loaded yet */ }
@@ -63,6 +75,8 @@ app.prepare().then(() => {
     // Close all WebSocket connections
     wssLogs.clients.forEach((ws) => ws.terminate());
     wssExec.clients.forEach((ws) => ws.terminate());
+    wssWatch.clients.forEach((ws) => ws.terminate());
+    shutdownAllWatchManagers();
 
     server.close();
     process.exit(0);

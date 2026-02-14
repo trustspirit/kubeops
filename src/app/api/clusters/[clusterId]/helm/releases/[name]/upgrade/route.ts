@@ -16,7 +16,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const contextName = decodeURIComponent(clusterId);
   const releaseName = decodeURIComponent(name);
 
-  let body: any;
+  let body: { chart?: string; namespace?: string; values?: string; reuseValues?: boolean };
   try {
     body = await req.json();
   } catch {

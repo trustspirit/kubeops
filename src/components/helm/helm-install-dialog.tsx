@@ -72,8 +72,8 @@ export function HelmInstallDialog({ open, onOpenChange, clusterId, onInstalled }
         `/api/clusters/${encodeURIComponent(clusterId)}/helm/search?keyword=${encodeURIComponent(searchKeyword)}`
       );
       setSearchResults(data.results || []);
-    } catch (err: any) {
-      setSearchError(err.message || 'Search failed');
+    } catch (err: unknown) {
+      setSearchError(err instanceof Error ? err.message : 'Search failed');
       setSearchResults([]);
     } finally {
       setSearching(false);
@@ -105,8 +105,8 @@ export function HelmInstallDialog({ open, onOpenChange, clusterId, onInstalled }
       toast.success(`Release "${releaseName}" installed successfully`);
       onInstalled?.();
       handleOpenChange(false);
-    } catch (err: any) {
-      toast.error(`Install failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Install failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setInstalling(false);
     }

@@ -70,15 +70,23 @@ There are many Kubernetes tools out there. Here's how KubeOps compares:
 
 - **Free forever** — No subscriptions, no feature gates, no telemetry. MIT licensed.
 - **Visual-first** — Interactive App Map shows how Ingresses, Services, Deployments, and Pods connect. Not just resource lists.
+- **Real-time updates** — K8s Watch API delivers live resource changes via WebSocket. No more waiting for polling intervals.
 - **All-in-one desktop app** — Terminal, logs, port forwarding, metrics charts, YAML editor, Helm management in a single window. No server to deploy, no browser extension to install.
 - **Quick actions** — Restart, scale, delete, view logs, and exec directly from resource list rows without navigating to detail pages.
-- **Multi-cluster overview** — See the health of all connected clusters at a glance on a single dashboard.
+- **Multi-cluster overview & apply** — See the health of all clusters at a glance. Apply resources to multiple clusters simultaneously with dry-run validation.
 - **Cross-cluster diff** — Compare the same resource across clusters or namespaces with a visual YAML diff.
 - **Multi-namespace** — Select multiple namespaces simultaneously and view resources across them in one list.
 - **Helm chart management** — Browse, install, upgrade, rollback, and uninstall Helm releases directly from the UI.
 - **RBAC visualization** — See who can do what with a permission matrix and interactive access review.
+- **Network topology** — Visualize NetworkPolicy relationships between pod groups with an interactive graph.
+- **Custom alerts** — Define alert rules on resource status, restart counts, or event patterns with desktop notifications.
+- **Debugging tools** — Node debug shells, pod ephemeral containers, and cascade delete preview with propagation policy selection.
+- **Resource templates** — Save and reuse YAML templates with variable substitution. 5 built-in templates included.
+- **kubectl command viewer** — See the equivalent kubectl command for every UI action. Copy with one click.
+- **Kubeconfig management** — Add, edit, delete contexts and merge kubeconfig files directly from the UI.
+- **Resource bookmarks** — Star frequently accessed resources for quick navigation from the sidebar.
 - **Modern & lightweight** — Fast startup, small footprint. No Electron bloat from bundled IDE features you don't need.
-- **30+ resource types** — Pods, Deployments, StatefulSets, DaemonSets, CronJobs, Services, Ingresses, ConfigMaps, Secrets, CRDs, and more.
+- **35+ resource types** — Pods, Deployments, StatefulSets, DaemonSets, CronJobs, HPA, ResourceQuotas, LimitRanges, Services, Ingresses, ConfigMaps, Secrets, CRDs, and more.
 - **Cross-platform** — Runs natively on macOS, Windows, and Linux with auto-update.
 
 ---
@@ -221,6 +229,60 @@ Toggle between dark and light themes from the header. Powered by `next-themes` w
 
 For clusters behind [Teleport](https://goteleport.com/), KubeOps detects Teleport contexts and provides a built-in login flow via `tsh kube login` — no manual terminal steps required.
 
+### Real-time Watch Updates
+
+Resource lists update in real-time via K8s Watch API over WebSocket. A connection status indicator in the header shows the current state (Live / Reconnecting / Polling mode). Falls back to periodic polling when WebSocket is unavailable.
+
+### Custom Alert Rules
+
+Define alert rules to monitor resource status changes, restart counts, CPU/memory thresholds, or event patterns. Alerts trigger desktop notifications and in-app toasts. Manage rules and view alert history from Settings.
+
+### Event Timeline
+
+View cluster events in a timeline format with vertical time axis, Warning/Normal badges, and resource grouping. Toggle between table and timeline views on the Events page. Follow mode auto-scrolls on new events.
+
+### HPA / ResourceQuota / LimitRange Visualization
+
+- **HPA**: Replica gauge, per-metric current vs target charts, scaling event history, linked workload navigation
+- **ResourceQuota**: Usage gauges with color coding (green/yellow/red) per resource type
+- **LimitRange**: Type-specific tables with visual range bars showing min/default/max
+
+### Resource Bookmarks
+
+Star any resource for quick access. Bookmarked resources appear in a dedicated sidebar section, grouped by cluster and resource type.
+
+### Resource Templates
+
+Save YAML templates with `{{variable}}` placeholders. Create resources from templates with a variable input form and YAML preview. 5 built-in templates (Deployment, Service, ConfigMap, CronJob, Ingress) included.
+
+### Kubeconfig Management
+
+Add, edit, and delete kubeconfig contexts from the UI. Merge external kubeconfig files with conflict detection and skip/overwrite strategy. Auto-backup before modifications.
+
+### kubectl Command Viewer
+
+Every action dialog shows the equivalent kubectl command in a collapsible section. Copy to clipboard with one click.
+
+### Node Debug Shell
+
+Create a privileged debug pod on any node with host filesystem access. Choose from BusyBox, Alpine, Ubuntu, or netshoot images. Terminal opens automatically. Debug pods are cleaned up on session close.
+
+### Pod Debug Container (Ephemeral)
+
+Inject an ephemeral debug container into a running pod without restarting it. Share process namespace with a target container for debugging. Requires Kubernetes 1.25+.
+
+### Cascade Delete Preview
+
+Before deleting a resource, see all dependent resources that will be cascade-deleted in a tree view. Choose propagation policy: Foreground, Background, or Orphan.
+
+### Multi-cluster Apply
+
+Apply a single YAML to multiple clusters simultaneously. Stepper dialog with YAML editor, target selection, dry-run validation, and per-target progress tracking.
+
+### Network Policy Topology
+
+Visualize NetworkPolicy relationships as an interactive graph. Pod groups as nodes, ingress/egress rules as edges. Click nodes or edges for detailed policy information. Special nodes for External (ipBlock) and Any (empty selector) traffic.
+
 ### Pod Restart Watcher
 
 Enable Watch on any pod to monitor restart counts in the background. Polls every 10 seconds and sends desktop notifications when restarts increase. Watched pods persist across sessions.
@@ -311,13 +373,13 @@ Logs rotate automatically at 5 MB (previous log kept as `error.log.old`).
 
 ## Supported Resources
 
-KubeOps provides full browse / detail / YAML / edit support for 30+ Kubernetes resource types:
+KubeOps provides full browse / detail / YAML / edit support for 35+ Kubernetes resource types:
 
 | Category        | Resources                                                      |
 | --------------- | -------------------------------------------------------------- |
-| Workloads       | Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs |
-| Network         | Services, Ingresses, Endpoints, Network Policies               |
-| Config          | ConfigMaps, Secrets, Service Accounts                          |
+| Workloads       | Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs, HPA |
+| Network         | Services, Ingresses, Endpoints, Network Policies, Network Topology |
+| Config          | ConfigMaps, Secrets, Service Accounts, Resource Quotas, Limit Ranges |
 | Storage         | Persistent Volumes, Persistent Volume Claims                   |
 | Access Control  | Roles, Role Bindings, Cluster Roles, Cluster Role Bindings, RBAC Summary |
 | Cluster         | Nodes, Namespaces, Events                                      |

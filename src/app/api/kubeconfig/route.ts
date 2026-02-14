@@ -1,10 +1,18 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getContexts, loadKubeConfig, getClusterServer } from '@/lib/k8s/kubeconfig-manager';
+import { readKubeconfigRaw } from '@/lib/kubeconfig-editor';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const format = new URL(req.url).searchParams.get('format');
+
   try {
+    if (format === 'raw') {
+      const rawYaml = await readKubeconfigRaw();
+      return NextResponse.json({ yaml: rawYaml });
+    }
+
     const contexts = getContexts();
     const kc = loadKubeConfig();
 

@@ -9,10 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AgeDisplay } from '@/components/shared/age-display';
-import { ArrowLeft, Terminal, ScrollText, Trash2, KeyRound, GitCompare } from 'lucide-react';
+import { ArrowLeft, Terminal, ScrollText, Trash2, KeyRound, GitCompare, Bug } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { usePanelStore } from '@/stores/panel-store';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { PodDebugDialog } from '@/components/pods/pod-debug-dialog';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -25,6 +26,7 @@ import { usePodRestartWatcher } from '@/hooks/use-pod-watcher';
 import { ResourceTreeView } from '@/components/shared/resource-tree';
 import { useResourceTree } from '@/hooks/use-resource-tree';
 import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
+import type { KubeOwnerReference, ContainerSpec, ContainerStatus } from '@/types/resource';
 
 function PodResourceTree({ clusterId, namespace, rootKind, rootName, focusPodName }: {
   clusterId: string;
@@ -59,6 +61,7 @@ export default function PodDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [envDrawerOpen, setEnvDrawerOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(false);
   const { addTab } = usePanelStore();
   const decodedClusterId = decodeURIComponent(clusterId);
 
@@ -86,7 +89,7 @@ export default function PodDetailPage() {
       return { rootKind: 'StatefulSet' as const, rootName: ownerRef.name };
     }
     if (ownerRef.kind === 'ReplicaSet') {
-      const depRef = ownerRS?.metadata?.ownerReferences?.find((r: any) => r.kind === 'Deployment');
+      const depRef = ownerRS?.metadata?.ownerReferences?.find((r: KubeOwnerReference) => r.kind === 'Deployment');
       if (depRef) {
         return { rootKind: 'Deployment' as const, rootName: depRef.name };
       }
@@ -115,8 +118,8 @@ export default function PodDetailPage() {
       await apiClient.delete(`/api/clusters/${clusterId}/resources/${namespace}/pods/${podName}`);
       toast.success(`${podName} deleted`);
       router.back();
-    } catch (err: any) {
-      toast.error(`Delete failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Delete failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally { setDeleting(false); setDeleteOpen(false); }
   };
 
@@ -134,7 +137,7 @@ export default function PodDetailPage() {
           <p className="text-sm text-muted-foreground">Pod in {namespace}</p>
         </div>
         <div className="flex gap-2">
-          {containers.map((c: any) => c.name).slice(0, 1).map((containerName: string) => (
+          {(containers as ContainerSpec[]).map((c) => c.name).slice(0, 1).map((containerName: string) => (
             <div key={containerName} className="flex gap-2">
               <Button
                 variant="outline"
@@ -170,6 +173,9 @@ export default function PodDetailPage() {
               </Button>
             </div>
           ))}
+          <Button variant="outline" size="sm" onClick={() => setDebugOpen(true)}>
+            <Bug className="h-4 w-4 mr-1" />Debug
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)}>
             <GitCompare className="h-4 w-4 mr-1" />Compare
           </Button>
@@ -247,7 +253,7 @@ export default function PodDetailPage() {
                     <td className="px-3 py-1.5 text-muted-foreground font-medium align-top">Status</td>
                     <td className="px-3 py-1.5" colSpan={5}>
                       <div className="flex flex-wrap gap-1.5">
-                        {(status.conditions || []).map((c: any, i: number) => (
+                        {(status.conditions || []).map((c: { type: string; status: string; reason?: string }, i: number) => (
                           <Badge key={i} variant={c.status === 'True' ? 'default' : 'outline'} className="text-[10px] font-normal py-0 h-5 gap-1">
                             {c.type}
                             {c.status !== 'True' && <span className="text-muted-foreground">({c.reason || c.status})</span>}
@@ -264,11 +270,9 @@ export default function PodDetailPage() {
           {/* Containers */}
           <div className="space-y-3">
             <h3 className="text-sm font-semibold">Containers ({containers.length})</h3>
-            {containers.map((ctr: any, idx: number) => {
-              const cs = containerStatuses.find((s: any) => s.name === ctr.name);
+            {(containers as ContainerSpec[]).map((ctr: ContainerSpec, idx: number) => {
+              const cs = (containerStatuses as ContainerStatus[]).find((s: ContainerStatus) => s.name === ctr.name);
               const stateKey = cs?.state ? Object.keys(cs.state)[0] : 'unknown';
-              const envVars = ctr.env || [];
-              const envFrom = ctr.envFrom || [];
 
               return (
                 <div key={idx} className="rounded-md border overflow-hidden">
@@ -301,7 +305,7 @@ export default function PodDetailPage() {
                               <td className="px-3 py-1.5 text-muted-foreground font-medium">Ports</td>
                               <td className="px-3 py-1.5">
                                 <div className="flex flex-wrap gap-2">
-                                  {ctr.ports.map((p: any, pi: number) => (
+                                  {ctr.ports.map((p, pi: number) => (
                                     <div key={pi} className="inline-flex items-center gap-1.5">
                                       <Badge variant="outline" className="font-mono text-[11px] font-normal">
                                         {p.containerPort}/{p.protocol || 'TCP'}
@@ -358,7 +362,7 @@ export default function PodDetailPage() {
                               <td className="px-3 py-1.5 text-muted-foreground font-medium align-top">Mounts</td>
                               <td className="px-3 py-1.5">
                                 <div className="space-y-0.5">
-                                  {ctr.volumeMounts.map((vm: any, vi: number) => (
+                                  {ctr.volumeMounts.map((vm, vi: number) => (
                                     <div key={vi} className="font-mono">
                                       <span>{vm.mountPath}</span>
                                       <span className="text-muted-foreground ml-1">← {vm.name}</span>
@@ -399,6 +403,15 @@ export default function PodDetailPage() {
       <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title={`Delete ${podName}?`} description={`This will delete the pod "${podName}". If managed by a controller, it will be recreated.`} confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} loading={deleting} />
       <ResourceDiffDialog open={compareOpen} onOpenChange={setCompareOpen} sourceClusterId={clusterId} sourceNamespace={namespace} resourceType="pods" resourceName={podName} sourceResource={pod} />
 
+      <PodDebugDialog
+        open={debugOpen}
+        onOpenChange={setDebugOpen}
+        clusterId={decodedClusterId}
+        namespace={namespace}
+        podName={podName}
+        containers={(containers as ContainerSpec[]).map((c) => c.name)}
+      />
+
       {/* Env Variables Drawer */}
       <Sheet open={envDrawerOpen} onOpenChange={setEnvDrawerOpen}>
         <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto p-0">
@@ -406,9 +419,7 @@ export default function PodDetailPage() {
             <SheetTitle className="text-base">Environment Variables — {podName}</SheetTitle>
           </SheetHeader>
           <div className="space-y-4 px-4 pb-6 overflow-x-hidden">
-            {containers.map((ctr: any, idx: number) => {
-              const envVars = ctr.env || [];
-              const envFrom = ctr.envFrom || [];
+            {(containers as ContainerSpec[]).map((ctr: ContainerSpec, idx: number) => {
               return (
                 <div key={idx} className="space-y-1">
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{ctr.name}</h3>
@@ -425,7 +436,7 @@ export default function PodDetailPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {envVars.map((env: any, ei: number) => (
+                        {(ctr.env || []).map((env: { name: string; value?: string; valueFrom?: Record<string, unknown> }, ei: number) => (
                           <tr key={ei} className="border-t hover:bg-muted/30">
                             <td className="px-3 py-1 font-mono font-medium text-blue-600 dark:text-blue-400 truncate" title={env.name}>{env.name}</td>
                             <td className="px-3 py-1 font-mono overflow-hidden">
@@ -435,7 +446,7 @@ export default function PodDetailPage() {
                             </td>
                           </tr>
                         ))}
-                        <EnvFromRows envFrom={envFrom} clusterId={decodedClusterId} namespace={namespace} />
+                        <EnvFromRows envFrom={ctr.envFrom || []} clusterId={decodedClusterId} namespace={namespace} />
                         <MountedSecretRows volumes={spec.volumes || []} volumeMounts={ctr.volumeMounts || []} clusterId={decodedClusterId} namespace={namespace} />
                       </tbody>
                     </table>

@@ -41,8 +41,8 @@ export default function PortForwardingPage() {
       await apiClient.delete(`/api/port-forward?id=${encodeURIComponent(id)}`);
       mutate('/api/port-forward');
       toast.success('Port forward stopped');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to stop port forward');
+    } catch (err: unknown) {
+      toast.error((err instanceof Error ? err.message : 'Unknown error') || 'Failed to stop port forward');
     }
   };
 

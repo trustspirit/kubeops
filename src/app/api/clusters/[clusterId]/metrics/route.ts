@@ -3,32 +3,41 @@ import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
 
 export const dynamic = 'force-dynamic';
 
-function extractK8sError(error: any): { status: number; message: string } {
-  const status = error?.code || error?.statusCode || 500;
-  let body = error?.body;
+function extractK8sError(error: unknown): { status: number; message: string } {
+  const err = error as Record<string, unknown>;
+  const status = (err?.code || err?.statusCode || 500) as number;
+  let body = err?.body as Record<string, unknown> | string | undefined;
   if (typeof body === 'string') {
-    try { body = JSON.parse(body); } catch { /* keep as string */ }
+    try { body = JSON.parse(body) as Record<string, unknown>; } catch { /* keep as string */ }
   }
-  return { status, message: body?.message || error?.message || 'Request failed' };
+  return { status, message: String((typeof body === 'object' ? (body as Record<string, unknown>)?.message : body) || err?.message || 'Request failed') };
 }
 
 // Helper: make HTTPS request through K8s API
-function k8sRequest(server: string, path: string, opts: any, skipTLS?: boolean, accept = 'application/json'): Promise<string> {
+function k8sRequest(server: string, path: string, opts: Record<string, unknown>, skipTLS?: boolean, accept = 'application/json'): Promise<string> {
   return new Promise((resolve, reject) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const https = require('https');
     const urlObj = new URL(`${server}${path}`);
-    const reqOpts: any = {
+    // Forward authorization headers (bearer token, etc.)
+    const headers: Record<string, string> = { 'Accept': accept };
+    const optsHeaders = opts.headers as Record<string, string> | undefined;
+    if (optsHeaders) {
+      Object.assign(headers, optsHeaders);
+    }
+    const reqOpts = {
       hostname: urlObj.hostname,
       port: urlObj.port || 443,
       path: urlObj.pathname + urlObj.search,
       method: 'GET',
-      headers: { 'Accept': accept },
+      headers,
       ca: opts.ca, cert: opts.cert, key: opts.key,
       rejectUnauthorized: !skipTLS,
+      timeout: 15000, // 15s timeout to prevent hanging
     };
-    const request = https.request(reqOpts, (res: any) => {
+    const request = https.request(reqOpts, (res: { statusCode: number; on: (event: string, cb: (data?: string) => void) => void }) => {
       let body = '';
-      res.on('data', (chunk: string) => { body += chunk; });
+      res.on('data', (chunk?: string) => { body += chunk ?? ''; });
       res.on('end', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(body);
@@ -37,15 +46,20 @@ function k8sRequest(server: string, path: string, opts: any, skipTLS?: boolean, 
         }
       });
     });
+    request.on('timeout', () => {
+      request.destroy(new Error('K8s metrics request timed out'));
+    });
     request.on('error', reject);
     request.end();
   });
 }
 
-// Prometheus service discovery cache
-let promCache: { svc: string | null; ns: string; checkedAt: number } | null = null;
+// Prometheus service discovery cache -- keyed by cluster server URL to prevent
+// returning cached results from one cluster when querying a different cluster.
+const promCacheMap = new Map<string, { svc: string | null; ns: string; checkedAt: number }>();
 
-async function findPrometheusService(server: string, opts: any, skipTLS?: boolean): Promise<{ ns: string; svc: string } | null> {
+async function findPrometheusService(server: string, opts: Record<string, unknown>, skipTLS?: boolean): Promise<{ ns: string; svc: string } | null> {
+  const promCache = promCacheMap.get(server) || null;
   // Cache for 2 minutes (null result) or 10 minutes (found)
   const cacheTTL = promCache?.svc ? 600_000 : 120_000;
   if (promCache && Date.now() - promCache.checkedAt < cacheTTL) {
@@ -69,9 +83,9 @@ async function findPrometheusService(server: string, opts: any, skipTLS?: boolea
       try {
         const raw = await k8sRequest(server, `/api/v1/namespaces/${ns}/services/${svcName}`, opts, skipTLS);
         const svc = JSON.parse(raw);
-        const port = svc.spec?.ports?.find((p: any) => p.port === 9090 || p.port === 8429 || p.port === 8428 || p.port === 80 || p.name === 'http' || p.name === 'web');
+        const port = svc.spec?.ports?.find((p: Record<string, unknown>) => p.port === 9090 || p.port === 8429 || p.port === 8428 || p.port === 80 || p.name === 'http' || p.name === 'web');
         if (port) {
-          promCache = { svc: `${svcName}:${port.port}`, ns, checkedAt: Date.now() };
+          promCacheMap.set(server, { svc: `${svcName}:${port.port}`, ns, checkedAt: Date.now() });
           console.log(`[Metrics] Found Prometheus: ${ns}/${svcName}:${port.port}`);
           return { ns, svc: `${svcName}:${port.port}` };
         }
@@ -79,11 +93,11 @@ async function findPrometheusService(server: string, opts: any, skipTLS?: boolea
     }
   }
 
-  promCache = { svc: null, ns: '', checkedAt: Date.now() };
+  promCacheMap.set(server, { svc: null, ns: '', checkedAt: Date.now() });
   return null;
 }
 
-async function queryPrometheus(server: string, opts: any, skipTLS: boolean | undefined, prom: { ns: string; svc: string }, query: string): Promise<number> {
+async function queryPrometheus(server: string, opts: Record<string, unknown>, skipTLS: boolean | undefined, prom: { ns: string; svc: string }, query: string): Promise<number> {
   const path = `/api/v1/namespaces/${prom.ns}/services/${prom.svc}/proxy/api/v1/query?query=${encodeURIComponent(query)}`;
   const raw = await k8sRequest(server, path, opts, skipTLS);
   const data = JSON.parse(raw);
@@ -110,7 +124,7 @@ export async function GET(
   }
 
   try {
-    const opts: any = {};
+    const opts: Record<string, unknown> = {};
     await kc.applyToHTTPSOptions(opts);
 
     // Prometheus-based metrics for network & filesystem I/O
@@ -119,6 +133,13 @@ export async function GET(
       const nodeName = searchParams.get('node');
       if (!podName || !namespace || namespace === '_all') {
         return NextResponse.json({ error: 'pod name and namespace required' }, { status: 400 });
+      }
+
+      // Sanitize PromQL label values: only allow alphanumeric, hyphens, underscores, dots
+      // to prevent PromQL injection via crafted pod/namespace names
+      const promLabelRe = /^[a-zA-Z0-9._-]+$/;
+      if (!promLabelRe.test(podName) || !promLabelRe.test(namespace)) {
+        return NextResponse.json({ error: 'Invalid pod name or namespace for metrics query' }, { status: 400 });
       }
 
       const results: Record<string, number> = { netRxBytes: 0, netTxBytes: 0, fsReadBytes: 0, fsWriteBytes: 0 };
@@ -147,9 +168,10 @@ export async function GET(
           const statsPath = `/api/v1/nodes/${nodeName}/proxy/stats/summary`;
           const statsRaw = await k8sRequest(cluster.server, statsPath, opts, cluster.skipTLSVerify);
           const statsData = JSON.parse(statsRaw);
-          const pod = (statsData.pods || []).find((p: any) =>
-            p.podRef?.name === podName && p.podRef?.namespace === namespace
-          );
+          const pod = (statsData.pods || []).find((p: Record<string, unknown>) => {
+            const podRef = p.podRef as Record<string, string> | undefined;
+            return podRef?.name === podName && podRef?.namespace === namespace;
+          });
           if (pod) {
             results.netRxBytes = pod.network?.rxBytes || 0;
             results.netTxBytes = pod.network?.txBytes || 0;
@@ -188,7 +210,7 @@ export async function GET(
 
     const raw = await k8sRequest(cluster.server, metricsPath, opts, cluster.skipTLSVerify);
     return NextResponse.json(JSON.parse(raw));
-  } catch (error: any) {
+  } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[Metrics] ${type}: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });

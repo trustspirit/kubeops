@@ -15,7 +15,7 @@ import { useClusters } from '@/hooks/use-clusters';
 import { useNamespaces } from '@/hooks/use-namespaces';
 import { useNamespaceStore } from '@/stores/namespace-store';
 import { SIDEBAR_SECTIONS } from '@/lib/constants';
-import { Server, FolderOpen, Search } from 'lucide-react';
+import { Server, FolderOpen } from 'lucide-react';
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);

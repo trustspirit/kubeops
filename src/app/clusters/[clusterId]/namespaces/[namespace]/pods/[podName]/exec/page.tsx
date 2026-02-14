@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -22,12 +22,13 @@ export default function PodExecPage() {
     name: podName,
   });
 
-  const containers = pod?.spec?.containers || [];
+  const containers = useMemo(() => pod?.spec?.containers || [], [pod]);
   const [container, setContainer] = useState('');
   const [shell, setShell] = useState('/bin/sh');
   const [connected, setConnected] = useState(false);
   const terminalRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const termRef = useRef<any>(null);
 
   useEffect(() => {
@@ -39,7 +40,9 @@ export default function PodExecPage() {
   useEffect(() => {
     if (!container || !terminalRef.current) return;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let term: any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let fitAddon: any;
 
     async function init() {
@@ -148,8 +151,8 @@ export default function PodExecPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {containers.map((c: any) => (
-                  <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>
+                {containers.map((c: Record<string, unknown>) => (
+                  <SelectItem key={c.name as string} value={c.name as string}>{c.name as string}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

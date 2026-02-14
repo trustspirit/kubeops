@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { KubeResource } from '@/types/resource';
 import {
   Dialog,
   DialogContent,
@@ -43,18 +44,20 @@ export function ScaleDialog({
     try {
       // First get the current resource
       const url = `/api/clusters/${encodeURIComponent(clusterId)}/resources/${namespace}/${resourceType}/${name}`;
-      const resource = await apiClient.get<any>(url);
+      const resource = await apiClient.get<KubeResource>(url);
 
       // Update replicas
-      resource.spec.replicas = replicas;
+      const spec = (resource.spec || {}) as Record<string, unknown>;
+      spec.replicas = replicas;
+      resource.spec = spec;
 
       // PUT the updated resource
       await apiClient.put(url, resource);
       toast.success(`Scaled ${name} to ${replicas} replicas`);
       onOpenChange(false);
       onScaled?.();
-    } catch (err: any) {
-      toast.error(`Scale failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Scale failed: ${(err instanceof Error ? err.message : 'Unknown error')}`);
     } finally {
       setLoading(false);
     }

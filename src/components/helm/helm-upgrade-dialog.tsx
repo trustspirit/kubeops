@@ -52,7 +52,7 @@ export function HelmUpgradeDialog({
   const loadCurrentValues = async () => {
     setLoadingValues(true);
     try {
-      const data = await apiClient.get<{ values: Record<string, any> }>(
+      const data = await apiClient.get<{ values: Record<string, unknown> }>(
         `/api/clusters/${encodeURIComponent(clusterId)}/helm/releases/${encodeURIComponent(releaseName)}/values?namespace=${encodeURIComponent(namespace)}`
       );
       if (data.values && Object.keys(data.values).length > 0) {
@@ -62,7 +62,7 @@ export function HelmUpgradeDialog({
       } else {
         setValues('');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load current values:', err);
       setValues('');
     } finally {
@@ -86,8 +86,8 @@ export function HelmUpgradeDialog({
       toast.success(`Release "${releaseName}" upgraded successfully`);
       onUpgraded?.();
       onOpenChange(false);
-    } catch (err: any) {
-      toast.error(`Upgrade failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Upgrade failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setUpgrading(false);
     }

@@ -13,28 +13,29 @@ import { AgeDisplay } from '@/components/shared/age-display';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
-import { ColumnDef } from '@tanstack/react-table';
+import { ColumnDef, CellContext } from '@tanstack/react-table';
+import type { KubeResource } from '@/types/resource';
 
-function resolveJsonPath(obj: any, jsonPath: string): any {
+function resolveJsonPath(obj: KubeResource, jsonPath: string): unknown {
   // Convert JSONPath like ".spec.replicas" to object access
   const path = jsonPath.replace(/^\.\/?/, '').split('.');
-  let current = obj;
+  let current: unknown = obj;
   for (const key of path) {
     if (current == null) return undefined;
-    current = current[key];
+    current = (current as Record<string, unknown>)[key];
   }
   return current;
 }
 
-function buildColumns(crd: CrdItem | undefined, isNamespaced: boolean, clusterId: string, group: string, version: string, plural: string): ColumnDef<any>[] {
-  const cols: ColumnDef<any>[] = [];
+function buildColumns(crd: CrdItem | undefined, isNamespaced: boolean, clusterId: string, group: string, version: string, plural: string): ColumnDef<KubeResource>[] {
+  const cols: ColumnDef<KubeResource>[] = [];
 
   // Name column (clickable)
   cols.push({
     id: 'name',
     header: 'Name',
-    accessorFn: (row: any) => row.metadata?.name,
-    cell: ({ row }: any) => {
+    accessorFn: (row: KubeResource) => row.metadata?.name,
+    cell: ({ row }: CellContext<KubeResource, unknown>) => {
       const name = row.original.metadata?.name;
       const ns = row.original.metadata?.namespace;
       const href = ns
@@ -53,8 +54,8 @@ function buildColumns(crd: CrdItem | undefined, isNamespaced: boolean, clusterId
     cols.push({
       id: 'namespace',
       header: 'Namespace',
-      accessorFn: (row: any) => row.metadata?.namespace,
-      cell: ({ row }: any) => {
+      accessorFn: (row: KubeResource) => row.metadata?.namespace,
+      cell: ({ row }: CellContext<KubeResource, unknown>) => {
         const ns = row.original.metadata?.namespace;
         return ns ? <Badge variant="outline" className="text-xs font-mono font-normal">{ns}</Badge> : null;
       },
@@ -72,8 +73,8 @@ function buildColumns(crd: CrdItem | undefined, isNamespaced: boolean, clusterId
       cols.push({
         id: `printer-${col.name}`,
         header: col.name,
-        accessorFn: (row: any) => resolveJsonPath(row, col.jsonPath),
-        cell: ({ getValue }: any) => {
+        accessorFn: (row: KubeResource) => resolveJsonPath(row, col.jsonPath),
+        cell: ({ getValue }: CellContext<KubeResource, unknown>) => {
           const value = getValue();
           if (value == null) return <span className="text-muted-foreground">-</span>;
           if (typeof value === 'boolean') {
@@ -89,8 +90,8 @@ function buildColumns(crd: CrdItem | undefined, isNamespaced: boolean, clusterId
   cols.push({
     id: 'age',
     header: 'Age',
-    accessorFn: (row: any) => row.metadata?.creationTimestamp,
-    cell: ({ row }: any) => (
+    accessorFn: (row: KubeResource) => row.metadata?.creationTimestamp,
+    cell: ({ row }: CellContext<KubeResource, unknown>) => (
       <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} />
     ),
   });

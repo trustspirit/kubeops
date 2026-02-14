@@ -1,3 +1,12 @@
+export interface KubeOwnerReference {
+  apiVersion?: string;
+  kind: string;
+  name: string;
+  uid: string;
+  controller?: boolean;
+  blockOwnerDeletion?: boolean;
+}
+
 export interface KubeMetadata {
   name: string;
   namespace?: string;
@@ -6,8 +15,11 @@ export interface KubeMetadata {
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
   resourceVersion?: string;
-  ownerReferences?: { kind: string; name: string; uid: string }[];
+  ownerReferences?: KubeOwnerReference[];
   deletionTimestamp?: string;
+  managedFields?: unknown[];
+  generation?: number;
+  [key: string]: unknown;
 }
 
 export interface KubeResource {
@@ -16,7 +28,13 @@ export interface KubeResource {
   metadata: KubeMetadata;
   spec?: Record<string, unknown>;
   status?: Record<string, unknown>;
+  data?: Record<string, unknown>;
+  [key: string]: unknown;
 }
+
+/** For K8s API client class maps */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type K8sApiConstructor = new (...args: any[]) => any;
 
 export interface KubeList<T = KubeResource> {
   apiVersion: string;
@@ -53,6 +71,7 @@ export interface ContainerSpec {
   image?: string;
   ports?: { containerPort: number; protocol?: string; name?: string }[];
   env?: { name: string; value?: string; valueFrom?: Record<string, unknown> }[];
+  envFrom?: Record<string, unknown>[];
   resources?: {
     requests?: { cpu?: string; memory?: string };
     limits?: { cpu?: string; memory?: string };

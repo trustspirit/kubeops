@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import type { Terminal } from '@xterm/xterm';
+import type { FitAddon } from '@xterm/addon-fit';
 import type { PanelTab } from '@/stores/panel-store';
 
 interface TerminalTabProps {
@@ -13,8 +15,8 @@ export function TerminalTab({ tab, active }: TerminalTabProps) {
   const [connected, setConnected] = useState(false);
   const terminalRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const termRef = useRef<any>(null);
-  const fitRef = useRef<any>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
   const initDone = useRef(false);
 
   const focusTerminal = useCallback(() => {
@@ -27,8 +29,8 @@ export function TerminalTab({ tab, active }: TerminalTabProps) {
     if (!container || !terminalRef.current || initDone.current) return;
     initDone.current = true;
 
-    let term: any;
-    let fitAddon: any;
+    let term: Terminal;
+    let fitAddon: FitAddon;
     let ws: WebSocket;
     let disposed = false;
 
@@ -114,7 +116,7 @@ export function TerminalTab({ tab, active }: TerminalTabProps) {
       });
 
       // Terminal resize → WebSocket resize event
-      term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
+      term.onResize(() => {
         sendResize(ws, term);
       });
 
@@ -129,7 +131,7 @@ export function TerminalTab({ tab, active }: TerminalTabProps) {
       return () => ro.disconnect();
     }
 
-    function sendResize(ws: WebSocket, term: any) {
+    function sendResize(ws: WebSocket, term: Terminal) {
       if (ws.readyState !== WebSocket.OPEN) return;
       const payload = JSON.stringify({ cols: term.cols || 80, rows: term.rows || 24 });
       const buf = new Uint8Array(payload.length + 1);

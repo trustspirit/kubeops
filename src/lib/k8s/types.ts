@@ -21,7 +21,7 @@ export interface ResourceConfig {
 }
 
 export interface ResourceListResponse {
-  items: any[];
+  items: Record<string, unknown>[];
   metadata?: {
     continue?: string;
     resourceVersion?: string;

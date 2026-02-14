@@ -10,7 +10,6 @@ import {
   Cpu,
   Copy,
   Play,
-  Clock,
   Network,
   Globe,
   ShieldAlert,
@@ -25,6 +24,10 @@ import {
   Puzzle,
   ShieldQuestion,
   Ship,
+  ArrowUpDown,
+  Gauge,
+  SlidersHorizontal,
+  Share2,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -62,6 +65,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
       { label: 'ReplicaSets', resourceType: 'replicasets', icon: Copy },
       { label: 'Jobs', resourceType: 'jobs', icon: Play },
       { label: 'CronJobs', resourceType: 'cronjobs', icon: CalendarClock },
+      { label: 'HPA', resourceType: 'horizontalpodautoscalers', icon: ArrowUpDown },
     ],
   },
   {
@@ -71,6 +75,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
       { label: 'Ingresses', resourceType: 'ingresses', icon: Globe },
       { label: 'Endpoints', resourceType: 'endpoints', icon: Link },
       { label: 'Network Policies', resourceType: 'networkpolicies', icon: ShieldAlert },
+      { label: 'Network Topology', resourceType: 'network-topology', icon: Share2 },
       { label: 'Port Forwarding', resourceType: 'port-forwarding', icon: Plug, clusterScoped: true },
     ],
   },
@@ -80,6 +85,8 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
       { label: 'ConfigMaps', resourceType: 'configmaps', icon: FileText },
       { label: 'Secrets', resourceType: 'secrets', icon: Lock },
       { label: 'Service Accounts', resourceType: 'serviceaccounts', icon: User },
+      { label: 'Resource Quotas', resourceType: 'resourcequotas', icon: Gauge },
+      { label: 'Limit Ranges', resourceType: 'limitranges', icon: SlidersHorizontal },
     ],
   },
   {
@@ -142,4 +149,8 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'custom-resources': 'Custom Resources',
   'rbac': 'RBAC Summary',
   'helm': 'Helm Releases',
+  horizontalpodautoscalers: 'Horizontal Pod Autoscalers',
+  resourcequotas: 'Resource Quotas',
+  limitranges: 'Limit Ranges',
+  'network-topology': 'Network Topology',
 };

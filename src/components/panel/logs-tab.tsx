@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
@@ -8,6 +9,7 @@ import AnsiToHtml from 'ansi-to-html';
 import type { PanelTab } from '@/stores/panel-store';
 import { usePanelStore } from '@/stores/panel-store';
 import { useResourceList } from '@/hooks/use-resource-list';
+import type { KubeResource } from '@/types/resource';
 
 const MAX_LOG_SIZE = 512 * 1024; // 512KB
 
@@ -48,23 +50,24 @@ export function LogsTab({ tab }: LogsTabProps) {
 
   // Find current pod object and derive sibling pods + container list
   const currentPod = useMemo(() => {
-    const allPods: any[] = podsData?.items || [];
-    return allPods.find((p: any) => p.metadata?.name === podName);
+    const allPods: KubeResource[] = podsData?.items || [];
+    return allPods.find((p: KubeResource) => p.metadata?.name === podName);
   }, [podsData, podName]);
 
   const siblingPods = useMemo(() => {
-    const allPods: any[] = podsData?.items || [];
+    const allPods: KubeResource[] = podsData?.items || [];
     const ownerUid = currentPod?.metadata?.ownerReferences?.[0]?.uid;
     if (!ownerUid) return [];
     return allPods
-      .filter((p: any) => p.metadata?.ownerReferences?.[0]?.uid === ownerUid)
-      .map((p: any) => p.metadata?.name as string)
+      .filter((p: KubeResource) => p.metadata?.ownerReferences?.[0]?.uid === ownerUid)
+      .map((p: KubeResource) => p.metadata?.name as string)
       .sort();
   }, [podsData, currentPod]);
 
   const containers = useMemo(() => {
-    const regular: string[] = (currentPod?.spec?.containers || []).map((c: any) => c.name);
-    const init: string[] = (currentPod?.spec?.initContainers || []).map((c: any) => c.name);
+    const podSpec = currentPod?.spec as Record<string, unknown> | undefined;
+    const regular: string[] = ((podSpec?.containers || []) as { name: string }[]).map((c) => c.name);
+    const init: string[] = ((podSpec?.initContainers || []) as { name: string }[]).map((c) => c.name);
     return [...regular, ...init];
   }, [currentPod]);
 
@@ -121,9 +124,10 @@ export function LogsTab({ tab }: LogsTabProps) {
   }, [container, clusterId, namespace, podName, follow, flushBuffer]);
 
   // Memoize ANSI conversion — only re-runs when logs change
-  const logsHtml = useMemo(() => {
-    if (!logs) return 'Connecting...';
-    return converterRef.current.toHtml(logs);
+  const [logsHtml, setLogsHtml] = useState('Connecting...');
+  useEffect(() => {
+    if (!logs) { setLogsHtml('Connecting...'); return; }
+    setLogsHtml(converterRef.current.toHtml(logs));
   }, [logs]);
 
   useEffect(() => {

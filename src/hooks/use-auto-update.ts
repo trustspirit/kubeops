@@ -22,7 +22,7 @@ export function useAutoUpdate() {
   const api = typeof window !== 'undefined' ? window.electronUpdater : undefined;
   const isAvailable = !!api;
   const apiRef = useRef(api);
-  apiRef.current = api;
+  useEffect(() => { apiRef.current = api; });
 
   useEffect(() => {
     apiRef.current?.getAppVersion().then(setAppVersion).catch(() => {});
@@ -69,6 +69,7 @@ export function useAutoUpdate() {
     setPhase('checking');
     setErrorMessage(null);
     apiRef.current.checkForUpdates()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .then((info: any) => {
         if (!info) {
           // No update info returned — treat as up-to-date
@@ -89,9 +90,9 @@ export function useAutoUpdate() {
         });
         if (info.version) setVersion(info.version);
       })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         setPhase('error');
-        setErrorMessage(err?.message || 'Update check failed');
+        setErrorMessage(err instanceof Error ? err.message : 'Update check failed');
       });
   }, []);
 
@@ -99,9 +100,9 @@ export function useAutoUpdate() {
     if (!apiRef.current) return;
     setPercent(0);
     setPhase('downloading');
-    apiRef.current.downloadUpdate().catch((err: any) => {
+    apiRef.current.downloadUpdate().catch((err: unknown) => {
       setPhase('error');
-      setErrorMessage(err?.message || 'Download failed');
+      setErrorMessage(err instanceof Error ? err.message : 'Download failed');
     });
   }, []);
 

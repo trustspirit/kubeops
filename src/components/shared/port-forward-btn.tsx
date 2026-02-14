@@ -19,7 +19,7 @@ interface PortForwardBtnProps {
 export function PortForwardBtn({ clusterId, namespace, resourceType, resourceName, port }: PortForwardBtnProps) {
   const { forwards } = usePortForwards();
   const [starting, setStarting] = useState(false);
-  const active = forwards.find((f: any) => f.containerPort === port && f.id.includes(resourceName));
+  const active = forwards.find((f) => f.containerPort === port && f.id.includes(resourceName));
 
   const start = async () => {
     setStarting(true);
@@ -27,7 +27,7 @@ export function PortForwardBtn({ clusterId, namespace, resourceType, resourceNam
       await apiClient.post('/api/port-forward', { clusterId, namespace, resourceType, resourceName, containerPort: port, localPort: port });
       globalMutate('/api/port-forward');
       toast.success(`Forwarding localhost:${port} → ${port}`);
-    } catch (err: any) { toast.error(err.message); }
+    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : 'Unknown error'); }
     finally { setStarting(false); }
   };
 

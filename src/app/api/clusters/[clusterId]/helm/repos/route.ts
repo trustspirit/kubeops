@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   const helmCheck = requireHelm();
   if (helmCheck) return helmCheck;
 
-  let body: any;
+  let body: { name?: string; url?: string };
   try {
     body = await req.json();
   } catch {

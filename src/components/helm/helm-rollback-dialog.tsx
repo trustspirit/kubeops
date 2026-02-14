@@ -45,8 +45,8 @@ export function HelmRollbackDialog({
       toast.success(`Release "${releaseName}" rolled back to revision ${revision}`);
       onRolledBack?.();
       onOpenChange(false);
-    } catch (err: any) {
-      toast.error(`Rollback failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Rollback failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -58,7 +58,7 @@ export function HelmRollbackDialog({
         <DialogHeader>
           <DialogTitle>Rollback Release</DialogTitle>
           <DialogDescription>
-            Are you sure you want to rollback "{releaseName}" to revision {revision}?
+            Are you sure you want to rollback &ldquo;{releaseName}&rdquo; to revision {revision}?
             This will create a new revision based on the selected one.
           </DialogDescription>
         </DialogHeader>

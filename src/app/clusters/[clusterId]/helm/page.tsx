@@ -10,8 +10,9 @@ import { helmReleaseColumns } from '@/components/resources/resource-columns';
 import { HelmInstallDialog } from '@/components/helm/helm-install-dialog';
 import { Button } from '@/components/ui/button';
 import { Ship, Plus, AlertTriangle } from 'lucide-react';
-import { ColumnDef } from '@tanstack/react-table';
+import { ColumnDef, CellContext } from '@tanstack/react-table';
 import { useState } from 'react';
+import type { HelmRelease } from '@/types/helm';
 
 export default function HelmReleasesPage() {
   const params = useParams();
@@ -26,7 +27,7 @@ export default function HelmReleasesPage() {
   if (isLoading) return <ListSkeleton />;
 
   // Handle helm not available (503)
-  if (error && (error as any).status === 503) {
+  if (error && (error as { status?: number }).status === 503) {
     return (
       <div className="flex flex-col gap-6 p-6">
         <div className="flex items-center gap-3">
@@ -54,11 +55,11 @@ export default function HelmReleasesPage() {
   const releases = data?.releases || [];
 
   // Make name column clickable to the detail page
-  const clickableColumns: ColumnDef<any>[] = helmReleaseColumns.map((col: any) => {
+  const clickableColumns: ColumnDef<HelmRelease>[] = helmReleaseColumns.map((col) => {
     if (col.id === 'name') {
       return {
         ...col,
-        cell: ({ row }: any) => {
+        cell: ({ row }: CellContext<HelmRelease, unknown>) => {
           const name = row.original.name;
           const ns = row.original.namespace;
           return (
