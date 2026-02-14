@@ -148,17 +148,24 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const urlObj = new URL(`${cluster.server}${patchPath}`);
     const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
       const patchData = JSON.stringify(body);
+      const patchHeaders: Record<string, string | number> = {
+        'Content-Type': 'application/strategic-merge-patch+json',
+        'Content-Length': Buffer.byteLength(patchData),
+      };
+      // Forward authorization headers (bearer token, etc.)
+      const optsHeaders = opts.headers as Record<string, string> | undefined;
+      if (optsHeaders) {
+        Object.assign(patchHeaders, optsHeaders);
+      }
       const reqOpts = {
         hostname: urlObj.hostname,
         port: urlObj.port || 443,
         path: urlObj.pathname,
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/strategic-merge-patch+json',
-          'Content-Length': Buffer.byteLength(patchData),
-        },
+        headers: patchHeaders,
         ca: opts.ca, cert: opts.cert, key: opts.key,
         rejectUnauthorized: !cluster.skipTLSVerify,
+        timeout: 30000, // 30s request timeout to prevent hanging
       };
       const request = https.request(reqOpts, (res: { statusCode: number; on: (event: string, cb: (data?: string) => void) => void }) => {
         let responseBody = '';
@@ -170,6 +177,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
             reject({ code: res.statusCode, message: responseBody });
           }
         });
+      });
+      request.on('timeout', () => {
+        request.destroy(new Error('PATCH request timed out'));
       });
       request.on('error', reject);
       request.write(patchData);

@@ -32,6 +32,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
     const body = await req.json().catch(() => ({}));
     const image = body.image || 'busybox';
+
+    // Validate image name: allow standard Docker image references only
+    // (alphanumeric, dots, dashes, underscores, slashes, colons for tags)
+    const imageRe = /^[a-zA-Z0-9][a-zA-Z0-9._\-/:@]+$/;
+    if (!imageRe.test(image)) {
+      return NextResponse.json({ error: 'Invalid image name' }, { status: 400 });
+    }
+
     const timestamp = Date.now();
     const podName = `node-debug-${nodeName}-${timestamp}`;
 

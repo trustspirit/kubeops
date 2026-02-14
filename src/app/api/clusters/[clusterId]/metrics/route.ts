@@ -19,14 +19,21 @@ function k8sRequest(server: string, path: string, opts: Record<string, unknown>,
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const https = require('https');
     const urlObj = new URL(`${server}${path}`);
+    // Forward authorization headers (bearer token, etc.)
+    const headers: Record<string, string> = { 'Accept': accept };
+    const optsHeaders = opts.headers as Record<string, string> | undefined;
+    if (optsHeaders) {
+      Object.assign(headers, optsHeaders);
+    }
     const reqOpts = {
       hostname: urlObj.hostname,
       port: urlObj.port || 443,
       path: urlObj.pathname + urlObj.search,
       method: 'GET',
-      headers: { 'Accept': accept },
+      headers,
       ca: opts.ca, cert: opts.cert, key: opts.key,
       rejectUnauthorized: !skipTLS,
+      timeout: 15000, // 15s timeout to prevent hanging
     };
     const request = https.request(reqOpts, (res: { statusCode: number; on: (event: string, cb: (data?: string) => void) => void }) => {
       let body = '';
@@ -39,15 +46,20 @@ function k8sRequest(server: string, path: string, opts: Record<string, unknown>,
         }
       });
     });
+    request.on('timeout', () => {
+      request.destroy(new Error('K8s metrics request timed out'));
+    });
     request.on('error', reject);
     request.end();
   });
 }
 
-// Prometheus service discovery cache
-let promCache: { svc: string | null; ns: string; checkedAt: number } | null = null;
+// Prometheus service discovery cache -- keyed by cluster server URL to prevent
+// returning cached results from one cluster when querying a different cluster.
+const promCacheMap = new Map<string, { svc: string | null; ns: string; checkedAt: number }>();
 
 async function findPrometheusService(server: string, opts: Record<string, unknown>, skipTLS?: boolean): Promise<{ ns: string; svc: string } | null> {
+  const promCache = promCacheMap.get(server) || null;
   // Cache for 2 minutes (null result) or 10 minutes (found)
   const cacheTTL = promCache?.svc ? 600_000 : 120_000;
   if (promCache && Date.now() - promCache.checkedAt < cacheTTL) {
@@ -73,7 +85,7 @@ async function findPrometheusService(server: string, opts: Record<string, unknow
         const svc = JSON.parse(raw);
         const port = svc.spec?.ports?.find((p: Record<string, unknown>) => p.port === 9090 || p.port === 8429 || p.port === 8428 || p.port === 80 || p.name === 'http' || p.name === 'web');
         if (port) {
-          promCache = { svc: `${svcName}:${port.port}`, ns, checkedAt: Date.now() };
+          promCacheMap.set(server, { svc: `${svcName}:${port.port}`, ns, checkedAt: Date.now() });
           console.log(`[Metrics] Found Prometheus: ${ns}/${svcName}:${port.port}`);
           return { ns, svc: `${svcName}:${port.port}` };
         }
@@ -81,7 +93,7 @@ async function findPrometheusService(server: string, opts: Record<string, unknow
     }
   }
 
-  promCache = { svc: null, ns: '', checkedAt: Date.now() };
+  promCacheMap.set(server, { svc: null, ns: '', checkedAt: Date.now() });
   return null;
 }
 
@@ -121,6 +133,13 @@ export async function GET(
       const nodeName = searchParams.get('node');
       if (!podName || !namespace || namespace === '_all') {
         return NextResponse.json({ error: 'pod name and namespace required' }, { status: 400 });
+      }
+
+      // Sanitize PromQL label values: only allow alphanumeric, hyphens, underscores, dots
+      // to prevent PromQL injection via crafted pod/namespace names
+      const promLabelRe = /^[a-zA-Z0-9._-]+$/;
+      if (!promLabelRe.test(podName) || !promLabelRe.test(namespace)) {
+        return NextResponse.json({ error: 'Invalid pod name or namespace for metrics query' }, { status: 400 });
       }
 
       const results: Record<string, number> = { netRxBytes: 0, netTxBytes: 0, fsReadBytes: 0, fsWriteBytes: 0 };
