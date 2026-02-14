@@ -28,6 +28,7 @@ interface YamlEditorProps {
   apiUrl: string;
   onSaved?: () => void;
   portForwardContext?: PortForwardContext;
+  clusterScoped?: boolean;
 }
 
 
@@ -291,7 +292,7 @@ function ActiveForwardsBanner() {
 
 // === Main Component ===
 
-export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEditorProps) {
+export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterScoped }: YamlEditorProps) {
   const [mode, setMode] = useState<'table' | 'yaml' | 'edit' | 'review'>('table');
   const [saving, setSaving] = useState(false);
   const [editValue, setEditValue] = useState('');
@@ -437,10 +438,12 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext }: YamlEd
                 <Pencil className="h-4 w-4 mr-1" />
                 Edit
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setMultiApplyOpen(true)}>
-                <Globe className="h-4 w-4 mr-1" />
-                Multi-cluster
-              </Button>
+              {!clusterScoped && (
+                <Button variant="outline" size="sm" onClick={() => setMultiApplyOpen(true)}>
+                  <Globe className="h-4 w-4 mr-1" />
+                  Multi-cluster
+                </Button>
+              )}
             </>
           )}
         </div>

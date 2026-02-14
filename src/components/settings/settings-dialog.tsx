@@ -27,7 +27,7 @@ interface SettingsDialogProps {
 function SettingsDialogContent({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
   const { tshProxyUrl, tshAuthType, setTshProxyUrl, setTshAuthType } = useSettingsStore();
   const { notificationsEnabled, setNotificationsEnabled } = usePodWatcherStore();
-  const unreadCount = useAlertStore((s) => s.unreadCount);
+  const alertUnread = useAlertStore((s) => s.history.filter((a) => !a.read).length);
 
   const [proxyUrl, setProxyUrl] = useState(tshProxyUrl);
   const [authType, setAuthType] = useState(tshAuthType);
@@ -47,8 +47,6 @@ function SettingsDialogContent({ onOpenChange }: { onOpenChange: (open: boolean)
     }
     setNotifEnabled(next);
   };
-
-  const alertUnread = unreadCount();
 
   return (
     <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">

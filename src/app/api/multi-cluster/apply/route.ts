@@ -57,11 +57,6 @@ async function applyToTarget(
       }
     }
 
-    const queryParams: Record<string, string> = {};
-    if (dryRun) {
-      queryParams.dryRun = 'All';
-    }
-
     if (action === 'apply') {
       try {
         // Try patch first (update existing)

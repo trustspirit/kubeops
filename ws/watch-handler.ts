@@ -6,7 +6,14 @@ import type { WatchEvent, WatchSubscription, WatchMessage } from '../src/types/w
 
 export function handleWatchConnection(ws: WebSocket, req: IncomingMessage) {
   const { pathname } = parse(req.url!, true);
-  const parts = pathname!.split('/').filter(Boolean);
+  const parts = pathname ? pathname.split('/').filter(Boolean) : [];
+
+  if (parts.length < 3 || !parts[2]) {
+    ws.send(JSON.stringify({ type: 'error', resourceType: '', error: 'Missing clusterId in URL path' }));
+    ws.close();
+    return;
+  }
+
   // parts: ['ws', 'watch', clusterId]
   const clusterId = decodeURIComponent(parts[2]);
 
@@ -48,6 +55,16 @@ export function handleWatchConnection(ws: WebSocket, req: IncomingMessage) {
         type: 'error',
         resourceType: '',
         error: 'Invalid JSON message',
+      });
+      return;
+    }
+
+    // Validate required fields
+    if (!msg.action || typeof msg.action !== 'string' || !msg.resourceType || typeof msg.resourceType !== 'string') {
+      sendMessage({
+        type: 'error',
+        resourceType: msg.resourceType || '',
+        error: 'Invalid message: action (string) and resourceType (string) are required',
       });
       return;
     }

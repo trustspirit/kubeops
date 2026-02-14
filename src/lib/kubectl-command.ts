@@ -80,7 +80,7 @@ export function kubectlExec(
   command: string = '/bin/sh',
   ctx?: CommandContext
 ): string {
-  return `kubectl exec -it ${podName} -- ${command}${contextFlags(ctx)}`;
+  return `kubectl exec -it${contextFlags(ctx)} ${podName} -- ${command}`;
 }
 
 export function kubectlLogs(

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useCallback, useRef } from 'react';
+import { useParams } from 'next/navigation';
 import { useWatchContext } from '@/providers/watch-provider';
 import { useAlertStore } from '@/stores/alert-store';
 import { evaluateRules } from '@/lib/alert-evaluator';
@@ -13,6 +14,8 @@ import type { WatchEvent } from '@/types/watch';
  * Mount this inside the cluster layout.
  */
 export function AlertListener() {
+  const params = useParams();
+  const clusterId = typeof params?.clusterId === 'string' ? decodeURIComponent(params.clusterId) : null;
   const watchCtx = useWatchContext();
   const rules = useAlertStore((s) => s.rules);
   const lastTriggered = useAlertStore((s) => s.lastTriggered);
@@ -22,14 +25,20 @@ export function AlertListener() {
   // Use refs to avoid stale closures in the subscription callback
   const rulesRef = useRef(rules);
   const lastTriggeredRef = useRef(lastTriggered);
+  const clusterIdRef = useRef(clusterId);
   useEffect(() => { rulesRef.current = rules; });
   useEffect(() => { lastTriggeredRef.current = lastTriggered; });
+  useEffect(() => { clusterIdRef.current = clusterId; });
 
   const handleWatchEvent = useCallback(
     (event: WatchEvent) => {
       if (event.type === 'BOOKMARK' || event.type === 'ERROR') return;
 
-      const enabledRules = rulesRef.current.filter((r) => r.enabled);
+      // Only evaluate rules for the current cluster
+      const currentClusterId = clusterIdRef.current;
+      const enabledRules = rulesRef.current.filter(
+        (r) => r.enabled && r.clusterId === currentClusterId
+      );
       if (enabledRules.length === 0) return;
 
       const alerts = evaluateRules(enabledRules, event, lastTriggeredRef.current);

@@ -200,6 +200,7 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
                   }
                 : undefined
             }
+            clusterScoped={clusterScoped}
           />
         </TabsContent>
       </Tabs>
