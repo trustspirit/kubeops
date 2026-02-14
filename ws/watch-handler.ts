@@ -15,7 +15,14 @@ export function handleWatchConnection(ws: WebSocket, req: IncomingMessage) {
   }
 
   // parts: ['ws', 'watch', clusterId]
-  const clusterId = decodeURIComponent(parts[2]);
+  let clusterId: string;
+  try {
+    clusterId = decodeURIComponent(parts[2]);
+  } catch {
+    ws.send(JSON.stringify({ type: 'error', resourceType: '', error: 'Malformed clusterId in URL' }));
+    ws.close();
+    return;
+  }
 
   console.log(`[Watch] Client connected for cluster: ${clusterId}`);
 

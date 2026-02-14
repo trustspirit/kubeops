@@ -158,6 +158,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Resource must have an "apiVersion" field' }, { status: 400 });
     }
 
+    if (!resource.metadata?.name) {
+      return NextResponse.json({ error: 'Resource must have a "metadata.name" field' }, { status: 400 });
+    }
+
     // Apply to all targets in parallel
     const results = await Promise.all(
       targets.map((target) => applyToTarget(target, resource, action, dryRun))

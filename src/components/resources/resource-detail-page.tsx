@@ -50,11 +50,11 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
 
   const resourceYaml = useMemo(() => {
     if (!data) return '';
-    const clean = { ...data };
-    if (clean.metadata?.managedFields) delete clean.metadata.managedFields;
-    if (clean.metadata?.resourceVersion) delete clean.metadata.resourceVersion;
-    if (clean.metadata?.uid) delete clean.metadata.uid;
-    if (clean.metadata?.creationTimestamp) delete clean.metadata.creationTimestamp;
+    const clean = { ...data, metadata: { ...data.metadata } };
+    delete clean.metadata?.managedFields;
+    delete clean.metadata?.resourceVersion;
+    delete clean.metadata?.uid;
+    delete clean.metadata?.creationTimestamp;
     return yaml.dump(clean, { lineWidth: -1 });
   }, [data]);
 

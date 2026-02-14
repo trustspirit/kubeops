@@ -55,22 +55,6 @@ export function useResourceList({
   const dataRef = useRef(data);
   useEffect(() => { dataRef.current = data; });
 
-  // Track whether initial data has loaded so we can subscribe to watch events.
-  // Using a ref instead of `data` directly as a dependency prevents the watch
-  // subscription from being torn down and re-created on every SWR data update,
-  // which would cause duplicate subscriptions and missed events.
-  const hasInitialDataRef = useRef(false);
-  useEffect(() => {
-    if (data && !hasInitialDataRef.current) {
-      hasInitialDataRef.current = true;
-    }
-  }, [data]);
-
-  // Reset when key changes (e.g. namespace/resourceType change)
-  useEffect(() => {
-    hasInitialDataRef.current = false;
-  }, [key]);
-
   const handleWatchEvent = useCallback((event: WatchEvent) => {
     if (event.type === 'ERROR' || event.type === 'BOOKMARK') return;
 

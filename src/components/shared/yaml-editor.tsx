@@ -307,7 +307,7 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
   );
 
   const startEditing = useCallback(() => {
-    const clean = { ...data };
+    const clean = { ...data, metadata: { ...data.metadata } };
     if (clean.metadata?.managedFields) delete clean.metadata.managedFields;
     const yamlStr = yaml.dump(clean, { lineWidth: -1 });
     setEditValue(yamlStr);
@@ -499,11 +499,11 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
           open={multiApplyOpen}
           onOpenChange={setMultiApplyOpen}
           initialYaml={(() => {
-            const clean = { ...data };
-            if (clean.metadata?.managedFields) delete clean.metadata.managedFields;
-            if (clean.metadata?.resourceVersion) delete clean.metadata.resourceVersion;
-            if (clean.metadata?.uid) delete clean.metadata.uid;
-            if (clean.metadata?.creationTimestamp) delete clean.metadata.creationTimestamp;
+            const clean = { ...data, metadata: { ...data.metadata } };
+            delete clean.metadata?.managedFields;
+            delete clean.metadata?.resourceVersion;
+            delete clean.metadata?.uid;
+            delete clean.metadata?.creationTimestamp;
             return yaml.dump(clean, { lineWidth: -1 });
           })()}
         />

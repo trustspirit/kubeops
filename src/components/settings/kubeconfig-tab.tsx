@@ -61,11 +61,10 @@ export function KubeconfigTab() {
 
   const handleEditRawYaml = async () => {
     try {
-      const response = await fetch('/api/kubeconfig');
+      const response = await fetch('/api/kubeconfig?format=raw');
       if (!response.ok) throw new Error('Failed to load kubeconfig');
       const data = await response.json();
-      // The existing /api/kubeconfig returns context list, so we'll show that as info
-      setRawYaml(JSON.stringify(data, null, 2));
+      setRawYaml(data.yaml || '');
       setShowRawYaml(true);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Unknown error');
