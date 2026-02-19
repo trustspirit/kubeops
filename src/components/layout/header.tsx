@@ -16,6 +16,9 @@ import {
 } from '@/components/ui/tooltip';
 
 export function UpdateIndicator() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   const {
     phase, version, percent, errorMessage, isAvailable,
     checkForUpdates, downloadUpdate, quitAndInstall,
@@ -55,7 +58,7 @@ export function UpdateIndicator() {
     }
   }, [phase, version, errorMessage, quitAndInstall]);
 
-  if (!isAvailable) return null;
+  if (!mounted || !isAvailable) return null;
 
   if (phase === 'idle' || phase === 'not-available') {
     return (

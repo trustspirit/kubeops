@@ -73,8 +73,13 @@ export function AlertListener() {
     [addAlert, setLastTriggered]
   );
 
+  // Extract subscribe from context — subscribe is a stable useCallback reference,
+  // so this effect only re-runs when the cluster changes, not on every WebSocket
+  // connectionState transition (connecting/connected/reconnecting).
+  const subscribe = watchCtx?.subscribe;
+
   useEffect(() => {
-    if (!watchCtx) return;
+    if (!subscribe) return;
 
     // Subscribe to common resource types for alert evaluation
     const resourceTypes = [
@@ -90,7 +95,7 @@ export function AlertListener() {
 
     const unsubscribers: (() => void)[] = [];
     for (const rt of resourceTypes) {
-      const unsub = watchCtx.subscribe(rt, undefined, handleWatchEvent);
+      const unsub = subscribe(rt, undefined, handleWatchEvent);
       unsubscribers.push(unsub);
     }
 
@@ -99,7 +104,7 @@ export function AlertListener() {
         unsub();
       }
     };
-  }, [watchCtx, handleWatchEvent]);
+  }, [subscribe, handleWatchEvent]);
 
   // Headless: renders nothing
   return null;
