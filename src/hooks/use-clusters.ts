@@ -17,6 +17,9 @@ export function useClusters() {
   const [checkedClusters, setCheckedClusters] = useState<Set<string>>(new Set());
   // Tracks individual clusters being refreshed
   const [refreshingClusters, setRefreshingClusters] = useState<Set<string>>(new Set());
+  // Differentiates manual refresh (button click) from background auto-refresh
+  const isManualRefreshRef = useRef(false);
+  const hasLoadedOnceRef = useRef(false);
 
   // Auto-set namespace from kubeconfig context when not yet configured
   useEffect(() => {
@@ -31,14 +34,17 @@ export function useClusters() {
   const eventSourceRef = useRef<EventSource | null>(null);
 
   // Stream health status updates — each cluster status arrives as its check completes
-  const startStatusStream = useCallback(() => {
+  // silent=true: background refresh — don't show loading indicators, just swap data
+  const startStatusStream = useCallback((silent = false) => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
 
-    setIsCheckingStatus(true);
-    setCheckedClusters(new Set());
+    if (!silent) {
+      setIsCheckingStatus(true);
+      setCheckedClusters(new Set());
+    }
     const es = new EventSource('/api/clusters/status');
     eventSourceRef.current = es;
 
@@ -53,12 +59,14 @@ export function useClusters() {
       if (update.done) {
         es.close();
         eventSourceRef.current = null;
-        setIsCheckingStatus(false);
+        if (!silent) setIsCheckingStatus(false);
         return;
       }
 
       if (update.name) {
-        setCheckedClusters((prev) => new Set(prev).add(update.name!));
+        if (!silent) {
+          setCheckedClusters((prev) => new Set(prev).add(update.name!));
+        }
         mutate(
           (current) => {
             if (!current) return current;
@@ -78,7 +86,7 @@ export function useClusters() {
     es.onerror = () => {
       es.close();
       eventSourceRef.current = null;
-      setIsCheckingStatus(false);
+      if (!silent) setIsCheckingStatus(false);
     };
   }, [mutate]);
 
@@ -129,13 +137,22 @@ export function useClusters() {
 
   // Start status stream whenever SWR completes a fetch (initial load or 30s revalidation).
   // Using isValidating transition (true→false) avoids re-triggering on local mutate calls.
+  // First load + manual refresh: show loading indicators. Background refresh: silent swap.
   const prevValidatingRef = useRef(true);
   useEffect(() => {
     const wasValidating = prevValidatingRef.current;
     prevValidatingRef.current = isValidating;
 
     if (wasValidating && !isValidating && data?.clusters?.length) {
-      startStatusStream();
+      const isFirstLoad = !hasLoadedOnceRef.current;
+      hasLoadedOnceRef.current = true;
+
+      if (isFirstLoad || isManualRefreshRef.current) {
+        isManualRefreshRef.current = false;
+        startStatusStream(false);
+      } else {
+        startStatusStream(true);
+      }
     }
   }, [isValidating, data?.clusters?.length, startStatusStream]);
 
@@ -146,6 +163,12 @@ export function useClusters() {
     };
   }, []);
 
+  // Manual refresh: triggers loading indicators
+  const manualRefresh = useCallback(async () => {
+    isManualRefreshRef.current = true;
+    await mutate();
+  }, [mutate]);
+
   return {
     clusters: data?.clusters || [],
     error,
@@ -154,6 +177,7 @@ export function useClusters() {
     checkedClusters,
     refreshingClusters,
     refreshClusterStatus,
+    manualRefresh,
     mutate,
   };
 }

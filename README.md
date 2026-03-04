@@ -20,9 +20,25 @@
 
 ---
 
-## Download
+## Install
 
-Download the latest version for your platform from the **[Releases](https://github.com/trustspirit/kubeops/releases/latest)** page.
+### macOS (Recommended)
+
+**One-line install** — downloads, installs, and removes Gatekeeper quarantine automatically:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/trustspirit/kubeops/main/install.sh | bash
+```
+
+**Homebrew:**
+
+```bash
+brew install --no-quarantine trustspirit/tap/kubeops
+```
+
+### Manual Download
+
+Download from the **[Releases](https://github.com/trustspirit/kubeops/releases/latest)** page:
 
 | Platform              | File                          |
 | --------------------- | ----------------------------- |
@@ -30,6 +46,8 @@ Download the latest version for your platform from the **[Releases](https://gith
 | macOS (Intel)         | `KubeOps-{version}-x64.dmg`   |
 | Linux                 | `KubeOps-{version}.AppImage`  |
 | Windows               | `KubeOps-{version}.exe`       |
+
+> If macOS shows "developer cannot be verified", run: `xattr -cr /Applications/KubeOps.app`
 
 > The app supports auto-update after installation.
 

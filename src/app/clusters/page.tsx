@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils';
 
 export default function ClustersPage() {
   const router = useRouter();
-  const { clusters, isLoading, error, isCheckingStatus, checkedClusters, refreshingClusters, refreshClusterStatus, mutate } = useClusters();
+  const { clusters, isLoading, error, isCheckingStatus, checkedClusters, refreshingClusters, refreshClusterStatus, manualRefresh, mutate } = useClusters();
   const { tshProxyUrl, tshAuthType } = useSettingsStore();
   const { viewMode, setViewMode, showFavoritesOnly, setShowFavoritesOnly, getClusterMeta, toggleFavorite } = useClusterCatalogStore();
   const [search, setSearch] = useState('');
@@ -48,11 +48,11 @@ export default function ClustersPage() {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await mutate();
+      await manualRefresh();
     } finally {
       setRefreshing(false);
     }
-  }, [mutate]);
+  }, [manualRefresh]);
 
   const handleTshLogin = useCallback(async () => {
     if (!tshProxyUrl) {
