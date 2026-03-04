@@ -6,6 +6,12 @@ on:
       - main
     paths:
       - 'package.json'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force publish even if version unchanged (e.g. README update)'
+        type: boolean
+        default: true
 
 jobs:
   publish:
@@ -21,24 +27,29 @@ jobs:
         run: |
           CURRENT=$(node -p "require('./package.json').version")
           PREVIOUS=$(git show HEAD~1:package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).version" 2>/dev/null || echo "")
+          FORCE="${{ github.event.inputs.force }}"
+
           if [ "$CURRENT" != "$PREVIOUS" ]; then
             echo "Version changed: $PREVIOUS → $CURRENT"
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          elif [ "$FORCE" = "true" ]; then
+            echo "Force publish requested (v$CURRENT)"
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "Version unchanged ($CURRENT) — skipping publish"
-            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Setup Node.js
-        if: steps.check.outputs.changed == 'true'
+        if: steps.check.outputs.should_publish == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Authenticate npm
-        if: steps.check.outputs.changed == 'true'
+        if: steps.check.outputs.should_publish == 'true'
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.TRUST_NPM }}" > ~/.npmrc
 
       - name: Publish to npm
-        if: steps.check.outputs.changed == 'true'
+        if: steps.check.outputs.should_publish == 'true'
         run: npm publish
