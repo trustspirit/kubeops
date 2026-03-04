@@ -1,5 +1,5 @@
 import useSWR from 'swr';
-import { useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ClusterInfo } from '@/types/cluster';
 import { useNamespaceStore } from '@/stores/namespace-store';
 
@@ -12,6 +12,11 @@ export function useClusters() {
   );
 
   const { activeNamespaces, setActiveNamespace } = useNamespaceStore();
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  // Tracks clusters that have received their status update in the current stream
+  const [checkedClusters, setCheckedClusters] = useState<Set<string>>(new Set());
+  // Tracks individual clusters being refreshed
+  const [refreshingClusters, setRefreshingClusters] = useState<Set<string>>(new Set());
 
   // Auto-set namespace from kubeconfig context when not yet configured
   useEffect(() => {
@@ -32,6 +37,8 @@ export function useClusters() {
       eventSourceRef.current = null;
     }
 
+    setIsCheckingStatus(true);
+    setCheckedClusters(new Set());
     const es = new EventSource('/api/clusters/status');
     eventSourceRef.current = es;
 
@@ -46,10 +53,12 @@ export function useClusters() {
       if (update.done) {
         es.close();
         eventSourceRef.current = null;
+        setIsCheckingStatus(false);
         return;
       }
 
       if (update.name) {
+        setCheckedClusters((prev) => new Set(prev).add(update.name!));
         mutate(
           (current) => {
             if (!current) return current;
@@ -69,7 +78,37 @@ export function useClusters() {
     es.onerror = () => {
       es.close();
       eventSourceRef.current = null;
+      setIsCheckingStatus(false);
     };
+  }, [mutate]);
+
+  // Refresh status for a single cluster
+  const refreshClusterStatus = useCallback(async (contextName: string) => {
+    setRefreshingClusters((prev) => new Set(prev).add(contextName));
+    try {
+      const res = await fetch(`/api/clusters/status/${encodeURIComponent(contextName)}`);
+      if (!res.ok) return;
+      const update = await res.json() as { name: string; status: ClusterInfo['status']; error: string | null };
+      mutate(
+        (current) => {
+          if (!current) return current;
+          return {
+            clusters: current.clusters.map((c) =>
+              c.name === update.name
+                ? { ...c, status: update.status, error: update.error ?? undefined }
+                : c
+            ),
+          };
+        },
+        { revalidate: false }
+      );
+    } finally {
+      setRefreshingClusters((prev) => {
+        const next = new Set(prev);
+        next.delete(contextName);
+        return next;
+      });
+    }
   }, [mutate]);
 
   // Start status stream whenever SWR completes a fetch (initial load or 30s revalidation).
@@ -95,6 +134,10 @@ export function useClusters() {
     clusters: data?.clusters || [],
     error,
     isLoading,
+    isCheckingStatus,
+    checkedClusters,
+    refreshingClusters,
+    refreshClusterStatus,
     mutate,
   };
 }

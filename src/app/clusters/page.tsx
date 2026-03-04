@@ -24,9 +24,9 @@ import { cn } from '@/lib/utils';
 
 export default function ClustersPage() {
   const router = useRouter();
-  const { clusters, isLoading, error, mutate } = useClusters();
+  const { clusters, isLoading, error, isCheckingStatus, checkedClusters, refreshingClusters, refreshClusterStatus, mutate } = useClusters();
   const { tshProxyUrl, tshAuthType } = useSettingsStore();
-  const { viewMode, setViewMode, showFavoritesOnly, setShowFavoritesOnly, getClusterMeta } = useClusterCatalogStore();
+  const { viewMode, setViewMode, showFavoritesOnly, setShowFavoritesOnly, getClusterMeta, toggleFavorite } = useClusterCatalogStore();
   const [search, setSearch] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -105,7 +105,18 @@ export default function ClustersPage() {
         return;
       }
       toast.success('Cluster login successful', { description: realName });
-      await mutate();
+      // Optimistically mark as connected — avoids stale cached 'error' status
+      await mutate(
+        (current) => {
+          if (!current) return current;
+          return {
+            clusters: current.clusters.map((c) =>
+              c.name === contextName ? { ...c, status: 'connected', error: undefined } : c
+            ),
+          };
+        },
+        { revalidate: false }
+      );
       router.push(`/clusters/${encodeURIComponent(contextName)}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -168,8 +179,8 @@ export default function ClustersPage() {
             <LayoutDashboard className="h-4 w-4" />
             <span className="text-xs">Overview</span>
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRefresh} disabled={refreshing} title="Refresh cluster list">
-            <RotateCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRefresh} disabled={refreshing || isCheckingStatus} title="Refresh cluster list">
+            <RotateCw className={`h-4 w-4 ${refreshing || isCheckingStatus ? 'animate-spin' : ''}`} />
           </Button>
           <UpdateIndicator />
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSettingsOpen(true)}>
@@ -275,7 +286,13 @@ export default function ClustersPage() {
                   </div>
                 )}
 
-                <span className="text-sm text-muted-foreground ml-auto">
+                <span className="text-sm text-muted-foreground ml-auto flex items-center gap-2">
+                  {isCheckingStatus && (
+                    <span className="flex items-center gap-1 text-xs">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Checking status...
+                    </span>
+                  )}
                   {filtered.length} of {clusters.length} clusters
                 </span>
               </div>
@@ -299,6 +316,9 @@ export default function ClustersPage() {
                             status={cluster.status}
                             error={cluster.error}
                             isLogging={kubeLoggingIn === cluster.name}
+                            isStatusPending={isCheckingStatus && !checkedClusters.has(cluster.name)}
+                            isRefreshing={refreshingClusters.has(cluster.name)}
+                            onRefreshStatus={() => refreshClusterStatus(cluster.name)}
                             onClick={() => handleClusterClick(cluster.name, cluster.cluster, cluster.status)}
                             parseClusterName={parseClusterName}
                           />
@@ -330,6 +350,9 @@ export default function ClustersPage() {
                                 status={cluster.status}
                                 error={cluster.error}
                                 isLogging={kubeLoggingIn === cluster.name}
+                                isStatusPending={isCheckingStatus && !checkedClusters.has(cluster.name)}
+                                isRefreshing={refreshingClusters.has(cluster.name)}
+                                onRefreshStatus={() => refreshClusterStatus(cluster.name)}
                                 onClick={() => handleClusterClick(cluster.name, cluster.cluster, cluster.status)}
                                 parseClusterName={parseClusterName}
                               />
@@ -349,6 +372,9 @@ export default function ClustersPage() {
                           status={cluster.status}
                           error={cluster.error}
                           isLogging={kubeLoggingIn === cluster.name}
+                          isStatusPending={isCheckingStatus && !checkedClusters.has(cluster.name)}
+                          isRefreshing={refreshingClusters.has(cluster.name)}
+                          onRefreshStatus={() => refreshClusterStatus(cluster.name)}
                           onClick={() => handleClusterClick(cluster.name, cluster.cluster, cluster.status)}
                           parseClusterName={parseClusterName}
                         />
@@ -363,6 +389,9 @@ export default function ClustersPage() {
                     const isKubeLogging = kubeLoggingIn === cluster.name;
                     const { prefix, realName } = parseClusterName(cluster.name, cluster.cluster);
                     const meta = getClusterMeta(cluster.name);
+                    const isStatusPending = isCheckingStatus && !checkedClusters.has(cluster.name);
+                    const isRefreshingSingle = refreshingClusters.has(cluster.name);
+                    const showPending = isStatusPending || isRefreshingSingle;
                     return (
                       <div
                         key={cluster.name}
@@ -372,15 +401,19 @@ export default function ClustersPage() {
                         onKeyDown={(e) => e.key === 'Enter' && !isKubeLogging && handleClusterClick(cluster.name, cluster.cluster, cluster.status)}
                         className={`flex items-center gap-4 px-4 py-3 hover:bg-accent/50 transition-colors group cursor-pointer ${isKubeLogging ? 'opacity-60 pointer-events-none' : ''}`}
                       >
-                        <div
-                          className={`h-2 w-2 rounded-full shrink-0 ${
-                            cluster.status === 'connected'
-                              ? 'bg-green-500'
-                              : cluster.status === 'error'
-                              ? 'bg-red-500'
-                              : 'bg-yellow-500'
-                          }`}
-                        />
+                        {showPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin shrink-0 text-muted-foreground" />
+                        ) : (
+                          <div
+                            className={`h-2 w-2 rounded-full shrink-0 ${
+                              cluster.status === 'connected'
+                                ? 'bg-green-500'
+                                : cluster.status === 'error'
+                                ? 'bg-red-500'
+                                : 'bg-yellow-500'
+                            }`}
+                          />
+                        )}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             {meta.favorite && <Star className="h-3 w-3 fill-yellow-400 text-yellow-400 shrink-0" />}
@@ -388,18 +421,24 @@ export default function ClustersPage() {
                               {prefix && <span className="text-muted-foreground">{prefix}</span>}
                               <span className="text-primary">{realName}</span>
                             </span>
-                            <Badge
-                              variant="outline"
-                              className={
-                                cluster.status === 'connected'
-                                  ? 'bg-green-500/10 text-green-500 border-green-500/20'
-                                  : cluster.status === 'error'
-                                  ? 'bg-red-500/10 text-red-500 border-red-500/20'
-                                  : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
-                              }
-                            >
-                              {cluster.status}
-                            </Badge>
+                            {showPending ? (
+                              <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-muted">
+                                checking...
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className={
+                                  cluster.status === 'connected'
+                                    ? 'bg-green-500/10 text-green-500 border-green-500/20'
+                                    : cluster.status === 'error'
+                                    ? 'bg-red-500/10 text-red-500 border-red-500/20'
+                                    : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
+                                }
+                              >
+                                {cluster.status}
+                              </Badge>
+                            )}
                             {meta.group && <Badge variant="secondary" className="text-[10px]">{meta.group}</Badge>}
                             {meta.tags.map((tag) => (
                               <Badge key={tag} variant="outline" className="text-[10px]">{tag}</Badge>
@@ -421,6 +460,33 @@ export default function ClustersPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                disabled={showPending}
+                                onClick={(e) => { e.stopPropagation(); refreshClusterStatus(cluster.name); }}
+                              >
+                                <RotateCw className={cn('h-3 w-3 text-muted-foreground', isRefreshingSingle && 'animate-spin')} />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Refresh status</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={(e) => { e.stopPropagation(); toggleFavorite(cluster.name); }}
+                              >
+                                <Star className={cn('h-3.5 w-3.5', meta.favorite ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{meta.favorite ? 'Remove from favorites' : 'Add to favorites'}</TooltipContent>
+                          </Tooltip>
                           <ClusterTagEditor contextName={cluster.name} />
                           <ArrowRight className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground" />
                         </div>
