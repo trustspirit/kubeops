@@ -5,10 +5,18 @@ import { ThemeToggle } from './theme-toggle';
 import { ClusterSelector } from '@/components/clusters/cluster-selector';
 import { NamespaceSelector } from '@/components/namespaces/namespace-selector';
 import { Button } from '@/components/ui/button';
-import { Search, Settings, Download, Sparkles, Loader2, RotateCcw } from 'lucide-react';
+import { Search, Settings, Download, Sparkles, Loader2, RotateCcw, ExternalLink } from 'lucide-react';
 import { SettingsDialog } from '@/components/settings/settings-dialog';
 import { useAutoUpdate, type UpdatePhase } from '@/hooks/use-auto-update';
 import { toast } from 'sonner';
+
+const RELEASES_URL = 'https://github.com/trustspirit/kubeops/releases/latest';
+
+function isInstallError(message?: string | null): boolean {
+  if (!message) return false;
+  const lower = message.toLowerCase();
+  return lower.includes('code signature') || lower.includes('codesign') || lower.includes('shipit');
+}
 import {
   Tooltip,
   TooltipContent,
@@ -45,10 +53,21 @@ export function UpdateIndicator() {
         });
         break;
       case 'error':
-        toast.error('Update check failed', {
-          description: errorMessage,
-          duration: 5000,
-        });
+        if (isInstallError(errorMessage)) {
+          toast.error('Auto-update is not supported on this version', {
+            description: 'Please download the latest version manually.',
+            duration: Infinity,
+            action: {
+              label: 'Download',
+              onClick: () => window.open(RELEASES_URL, '_blank'),
+            },
+          });
+        } else {
+          toast.error('Update check failed', {
+            description: errorMessage,
+            duration: 5000,
+          });
+        }
         break;
       case 'not-available':
         if (prevPhase === 'checking') {
@@ -130,6 +149,24 @@ export function UpdateIndicator() {
   }
 
   if (phase === 'error') {
+    if (isInstallError(errorMessage)) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 text-destructive"
+              onClick={() => window.open(RELEASES_URL, '_blank')}
+            >
+              <ExternalLink className="h-4 w-4" />
+              <span className="text-xs">Manual Update</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Auto-update failed. Click to download manually.</TooltipContent>
+        </Tooltip>
+      );
+    }
     return (
       <Tooltip>
         <TooltipTrigger asChild>
