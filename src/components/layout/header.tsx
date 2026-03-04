@@ -5,6 +5,7 @@ import { ThemeToggle } from './theme-toggle';
 import { ClusterSelector } from '@/components/clusters/cluster-selector';
 import { NamespaceSelector } from '@/components/namespaces/namespace-selector';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Search, Settings, Download, Sparkles, Loader2, RotateCcw, ExternalLink } from 'lucide-react';
 import { SettingsDialog } from '@/components/settings/settings-dialog';
 import { useAutoUpdate, type UpdatePhase } from '@/hooks/use-auto-update';
@@ -17,11 +18,6 @@ function isInstallError(message?: string | null): boolean {
   const lower = message.toLowerCase();
   return lower.includes('code signature') || lower.includes('codesign') || lower.includes('shipit');
 }
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 
 export function UpdateIndicator() {
   const [mounted, setMounted] = useState(false);

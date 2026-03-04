@@ -3,12 +3,14 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Pause, Play, Download, ArrowDown } from 'lucide-react';
+import { Pause, Play, Download, ArrowDown, Search, ChevronUp, ChevronDown, X, CaseSensitive, Regex } from 'lucide-react';
 import AnsiToHtml from 'ansi-to-html';
 import type { PanelTab } from '@/stores/panel-store';
 import { usePanelStore } from '@/stores/panel-store';
 import { useResourceList } from '@/hooks/use-resource-list';
+import { useLogSearch } from '@/hooks/use-log-search';
 import type { KubeResource } from '@/types/resource';
 
 const MAX_LOG_SIZE = 512 * 1024; // 512KB
@@ -71,6 +73,14 @@ export function LogsTab({ tab }: LogsTabProps) {
     return [...regular, ...init];
   }, [currentPod]);
 
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const search = useLogSearch({
+    logs,
+    logRef,
+    onScrollToMatch: () => setFollow(false),
+  });
+
   const flushBuffer = useCallback(() => {
     const chunk = bufferRef.current;
     if (!chunk) return;
@@ -124,17 +134,36 @@ export function LogsTab({ tab }: LogsTabProps) {
   }, [container, clusterId, namespace, podName, follow, flushBuffer]);
 
   // Memoize ANSI conversion — only re-runs when logs change
-  const [logsHtml, setLogsHtml] = useState('Connecting...');
+  const [baseHtml, setBaseHtml] = useState('Connecting...');
   useEffect(() => {
-    if (!logs) { setLogsHtml('Connecting...'); return; }
-    setLogsHtml(converterRef.current.toHtml(logs));
+    if (!logs) { setBaseHtml('Connecting...'); return; }
+    setBaseHtml(converterRef.current.toHtml(logs));
   }, [logs]);
+
+  // Apply search highlighting on top of ANSI-converted HTML
+  const logsHtml = useMemo(
+    () => (search.query ? search.highlightHtml(baseHtml) : baseHtml),
+    [baseHtml, search.query, search.highlightHtml]
+  );
 
   useEffect(() => {
     if (follow && logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
     }
   }, [logsHtml, follow]);
+
+  // Cmd+F / Ctrl+F keyboard shortcut
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        search.open();
+        setTimeout(() => searchInputRef.current?.focus(), 0);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [search.open]);
 
   const handleDownload = () => {
     const blob = new Blob([logs], { type: 'text/plain' });
@@ -181,6 +210,18 @@ export function LogsTab({ tab }: LogsTabProps) {
           <Download className="h-3 w-3 mr-1" />
           Download
         </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-xs"
+          onClick={() => {
+            search.open();
+            setTimeout(() => searchInputRef.current?.focus(), 0);
+          }}
+        >
+          <Search className="h-3 w-3 mr-1" />
+          Search
+        </Button>
         {siblingPods.length >= 2 && (
           <Select value={podName} onValueChange={handlePodSwitch}>
             <SelectTrigger size="sm" className="h-6 text-xs max-w-[200px]">
@@ -214,11 +255,74 @@ export function LogsTab({ tab }: LogsTabProps) {
           <span className="text-xs text-muted-foreground">{connected ? 'Streaming' : 'Disconnected'}</span>
         </div>
       </div>
+      {search.isOpen && (
+        <div className="flex items-center gap-1.5 px-3 py-1 border-b bg-card shrink-0">
+          <Search className="h-3 w-3 text-muted-foreground shrink-0" />
+          <Input
+            ref={searchInputRef}
+            value={search.query}
+            onChange={(e) => search.setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                e.shiftKey ? search.goToPrev() : search.goToNext();
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                search.close();
+              }
+            }}
+            placeholder="Search logs..."
+            className="h-6 text-xs flex-1 min-w-0 border-none shadow-none focus-visible:ring-0 px-1"
+          />
+          <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+            {search.query ? `${search.matchCount > 0 ? search.currentIndex + 1 : 0}/${search.matchCount}` : ''}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`h-5 w-5 p-0 ${search.caseSensitive ? 'bg-muted' : ''}`}
+            onClick={search.toggleCaseSensitive}
+            title="Case Sensitive"
+          >
+            <CaseSensitive className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`h-5 w-5 p-0 ${search.useRegex ? 'bg-muted' : ''}`}
+            onClick={search.toggleRegex}
+            title="Regex"
+          >
+            <Regex className="h-3 w-3" />
+          </Button>
+          <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={search.goToPrev} disabled={search.matchCount === 0}>
+            <ChevronUp className="h-3 w-3" />
+          </Button>
+          <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={search.goToNext} disabled={search.matchCount === 0}>
+            <ChevronDown className="h-3 w-3" />
+          </Button>
+          <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={search.close}>
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
       <pre
         ref={logRef}
         className="flex-1 min-h-0 overflow-auto bg-[#1e1e2e] text-[#cdd6f4] p-3 font-mono text-xs leading-5 whitespace-pre"
         dangerouslySetInnerHTML={{ __html: logsHtml }}
       />
+      <style jsx global>{`
+        .log-highlight {
+          background: #f9e2af33;
+          color: #f9e2af;
+          border-radius: 2px;
+        }
+        .log-highlight-active {
+          background: #f9e2af66;
+          outline: 1px solid #f9e2af;
+        }
+      `}</style>
     </div>
   );
 }

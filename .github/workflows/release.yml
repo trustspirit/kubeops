@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'package.json'
+      - 'electron/**'
+      - 'src/**'
+      - 'scripts/**'
+      - 'electron-builder.yml'
   workflow_dispatch:
     inputs:
       force:
@@ -13,6 +19,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   check-version:
@@ -42,11 +52,11 @@ jobs:
           fi
 
           # Release if: new version OR manual trigger with force
-          FORCE="${{ github.event.inputs.force }}"
           TAG_EXISTS=$(git rev-parse "v$VERSION" >/dev/null 2>&1 && echo "true" || echo "false")
           IS_MANUAL="${{ github.event_name == 'workflow_dispatch' }}"
+          FORCE="${{ github.event.inputs.force }}"
 
-          if [ "$TAG_EXISTS" = "false" ] || [ "$IS_MANUAL" = "true" ]; then
+          if [ "$TAG_EXISTS" = "false" ] || ([ "$IS_MANUAL" = "true" ] && [ "$FORCE" = "true" ]); then
             echo "should_release=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_release=false" >> "$GITHUB_OUTPUT"

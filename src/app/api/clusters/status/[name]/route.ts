@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getContexts } from '@/lib/k8s/kubeconfig-manager';
 import { checkClusterStatus } from '@/lib/k8s/cluster-status-cache';
 
 export const dynamic = 'force-dynamic';
@@ -12,6 +13,12 @@ export async function GET(
 ) {
   const { name } = await params;
   const contextName = decodeURIComponent(name);
+
+  const contexts = getContexts();
+  if (!contexts.some(c => c.name === contextName)) {
+    return NextResponse.json({ error: 'Context not found' }, { status: 404 });
+  }
+
   const entry = await checkClusterStatus(contextName);
   return NextResponse.json({
     name: contextName,

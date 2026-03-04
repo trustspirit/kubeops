@@ -52,7 +52,7 @@ There are many Kubernetes tools out there. Here's how KubeOps compares:
 | --- | :---: | :---: | :---: | :---: |
 | Free & open source | **Yes** | Freemium | Yes | Yes (archived) |
 | Visual resource topology | **Yes** | Extension | No | Limited |
-| Built-in terminal & logs | **Yes** | Yes | Yes | Yes |
+| Built-in terminal & logs (with search) | **Yes** | Yes | Yes | Yes |
 | Real-time metrics & charts | **Yes** | Yes | Basic | Basic |
 | Quick actions on resource rows | **Yes** | No | Yes | No |
 | Multi-cluster overview | **Yes** | Yes | No | No |
@@ -128,7 +128,7 @@ Every resource list features searchable, sortable tables with health status badg
 
 ### Pod Terminal & Logs
 
-A resizable bottom panel supports multiple concurrent sessions as tabs. Full PTY-based terminal via `kubectl exec` with keyboard input and resizing. Real-time log streaming with pause/follow toggle, jump-to-bottom, and download. Sessions persist across page navigation.
+A resizable bottom panel supports multiple concurrent sessions as tabs. Full PTY-based terminal via `kubectl exec` with keyboard input and resizing. Real-time log streaming with pause/follow toggle, jump-to-bottom, and download. **Log Search** (`Cmd+F` / `Ctrl+F`) with match highlighting, match counter, prev/next navigation, case sensitivity toggle, and regex mode. Sessions persist across page navigation.
 
 <!-- Screenshot: Terminal & Logs -->
 
@@ -333,6 +333,7 @@ Output is written to `dist-electron/`.
 | Shortcut           | Action                              |
 | ------------------ | ----------------------------------- |
 | `Cmd+K` / `Ctrl+K` | Open command palette                |
+| `Cmd+F` / `Ctrl+F` | Search logs                         |
 | `Cmd+S` / `Ctrl+S` | Review changes (edit mode)          |
 | `Cmd+S` / `Ctrl+S` | Apply changes (review mode)         |
 

@@ -87,7 +87,23 @@ export function useClusters() {
     setRefreshingClusters((prev) => new Set(prev).add(contextName));
     try {
       const res = await fetch(`/api/clusters/status/${encodeURIComponent(contextName)}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        // Update cluster status to reflect the error
+        mutate(
+          (current) => {
+            if (!current) return current;
+            return {
+              clusters: current.clusters.map((c) =>
+                c.name === contextName
+                  ? { ...c, status: 'error' as const, error: `Status check failed (${res.status})` }
+                  : c
+              ),
+            };
+          },
+          { revalidate: false }
+        );
+        return;
+      }
       const update = await res.json() as { name: string; status: ClusterInfo['status']; error: string | null };
       mutate(
         (current) => {
