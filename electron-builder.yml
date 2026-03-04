@@ -36,7 +36,7 @@ publish:
     releaseType: release
 
 mac:
-  identity: "-"
+  identity: null
   icon: resources/icon.icns
   category: public.app-category.developer-tools
   target:

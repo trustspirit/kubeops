@@ -2,8 +2,10 @@ name: Publish to npm
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+    paths:
+      - 'package.json'
   workflow_dispatch:
 
 jobs:
@@ -12,14 +14,32 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check if version changed
+        id: check
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          PREVIOUS=$(git show HEAD~1:package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).version" 2>/dev/null || echo "")
+          if [ "$CURRENT" != "$PREVIOUS" ]; then
+            echo "Version changed: $PREVIOUS → $CURRENT"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Version unchanged ($CURRENT) — skipping publish"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Setup Node.js
+        if: steps.check.outputs.changed == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Authenticate npm
+        if: steps.check.outputs.changed == 'true'
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.TRUST_NPM }}" > ~/.npmrc
 
       - name: Publish to npm
+        if: steps.check.outputs.changed == 'true'
         run: npm publish

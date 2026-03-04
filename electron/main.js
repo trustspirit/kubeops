@@ -2,6 +2,7 @@ const { app, BrowserWindow, shell, Menu, dialog, ipcMain } = require('electron')
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
+const { execFile } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 
 const isDev = !app.isPackaged;
@@ -55,12 +56,107 @@ process.on('unhandledRejection', (reason) => {
 
 // === Auto-Updater ===
 autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.autoInstallOnAppQuit = false; // We handle install manually on macOS
 autoUpdater.logger = null;
 
 // Skip code signing verification for unsigned builds
 if (process.platform === 'darwin') {
   autoUpdater.forceCodeSigning = false;
+}
+
+// Track the downloaded update file path for manual install on macOS
+let downloadedUpdateFile = null;
+
+/**
+ * Manually install update on macOS — bypasses ShipIt/Squirrel code signature validation.
+ * 1. Find the downloaded zip in electron-updater cache
+ * 2. Extract to temp dir
+ * 3. Remove quarantine attributes
+ * 4. Replace current app bundle
+ * 5. Relaunch
+ */
+async function macOSManualInstall() {
+  const appPath = app.getAppPath();
+  // app.getAppPath() → /Applications/KubeOps.app/Contents/Resources/app
+  // We need the .app bundle root
+  const appBundlePath = appPath.replace(/\/Contents\/Resources\/app\/?$/, '');
+
+  // Find the downloaded zip
+  let zipPath = downloadedUpdateFile;
+  if (!zipPath) {
+    // Fallback: search in electron-updater cache directory
+    const cacheDir = path.join(app.getPath('userData'), '..', `${app.name}-updater`);
+    if (fs.existsSync(cacheDir)) {
+      const files = fs.readdirSync(cacheDir).filter(f => f.endsWith('.zip'));
+      if (files.length > 0) {
+        // Pick the most recently modified zip
+        files.sort((a, b) => {
+          return fs.statSync(path.join(cacheDir, b)).mtimeMs - fs.statSync(path.join(cacheDir, a)).mtimeMs;
+        });
+        zipPath = path.join(cacheDir, files[0]);
+      }
+    }
+  }
+
+  if (!zipPath || !fs.existsSync(zipPath)) {
+    throw new Error('Downloaded update zip not found');
+  }
+
+  writeErrorLog('updater:manual-install', `Zip: ${zipPath}, App: ${appBundlePath}`);
+
+  const tempDir = path.join(app.getPath('temp'), 'kubeops-update');
+
+  // Clean temp dir if exists
+  if (fs.existsSync(tempDir)) {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(tempDir, { recursive: true });
+
+  // Extract zip
+  await new Promise((resolve, reject) => {
+    execFile('/usr/bin/ditto', ['-xk', zipPath, tempDir], (err) => {
+      if (err) reject(new Error(`Unzip failed: ${err.message}`));
+      else resolve();
+    });
+  });
+
+  // Find the .app inside extracted dir
+  const extracted = fs.readdirSync(tempDir);
+  const newApp = extracted.find(f => f.endsWith('.app'));
+  if (!newApp) {
+    throw new Error('No .app found in update zip');
+  }
+  const newAppPath = path.join(tempDir, newApp);
+
+  // Remove quarantine attribute
+  await new Promise((resolve) => {
+    execFile('/usr/bin/xattr', ['-cr', newAppPath], () => resolve());
+  });
+
+  // Build a shell script that waits for quit, replaces the app, and relaunches
+  const script = `
+    # Wait for the app to quit
+    while kill -0 ${process.pid} 2>/dev/null; do sleep 0.2; done
+    # Replace the app bundle
+    rm -rf "${appBundlePath}"
+    mv "${newAppPath}" "${appBundlePath}"
+    # Clean up temp
+    rm -rf "${tempDir}"
+    # Remove quarantine from installed app
+    xattr -cr "${appBundlePath}" 2>/dev/null
+    # Relaunch
+    open "${appBundlePath}"
+  `;
+
+  // Run the script detached so it survives app quit
+  const child = require('child_process').spawn('/bin/bash', ['-c', script], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+
+  // Quit the app to let the script take over
+  app.quit();
 }
 
 function sendUpdateStatus(status) {
@@ -102,6 +198,10 @@ function setupAutoUpdater() {
 
   autoUpdater.on('update-downloaded', (info) => {
     writeErrorLog('updater', `Update downloaded: ${info.version}`);
+    // Store the downloaded file path for manual install on macOS
+    if (info.downloadedFile) {
+      downloadedUpdateFile = info.downloadedFile;
+    }
     sendUpdateStatus({ status: 'downloaded', version: info.version });
   });
 
@@ -150,8 +250,18 @@ function setupUpdaterIPC() {
     }
   });
 
-  ipcMain.handle('updater:install', () => {
-    autoUpdater.quitAndInstall(false, true);
+  ipcMain.handle('updater:install', async () => {
+    if (process.platform === 'darwin') {
+      try {
+        await macOSManualInstall();
+      } catch (err) {
+        writeErrorLog('updater:install:manual', err);
+        // Fallback to default installer
+        autoUpdater.quitAndInstall(false, true);
+      }
+    } else {
+      autoUpdater.quitAndInstall(false, true);
+    }
   });
 
   ipcMain.handle('updater:get-version', () => {

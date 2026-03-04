@@ -2,16 +2,58 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version_changed: ${{ steps.check.outputs.changed }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if version tag exists
+        id: check
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "Tag v$VERSION already exists — skipping release"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New version v$VERSION detected"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  create-tag:
+    needs: check-version
+    if: needs.check-version.outputs.version_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create git tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v${{ needs.check-version.outputs.version }}"
+          git push origin "v${{ needs.check-version.outputs.version }}"
+
   release:
+    needs: [check-version, create-tag]
+    if: needs.check-version.outputs.version_changed == 'true'
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -36,6 +78,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Windows: set UTF-8 encoding and use short cache path to avoid
+      # ERR_ELECTRON_BUILDER_CANNOT_EXECUTE from path length / encoding issues
+      - name: Configure Windows build environment
+        if: matrix.platform == 'win'
+        run: |
+          chcp 65001
+          mkdir C:\eb-cache 2>nul
+        shell: cmd
+
       - name: Build Next.js
         run: npm run build
 
@@ -45,6 +96,7 @@ jobs:
       - name: Build and Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_BUILDER_CACHE: ${{ matrix.platform == 'win' && 'C:\eb-cache' || '' }}
         run: npx electron-builder --${{ matrix.platform }} --publish always
 
       - name: Upload artifacts
