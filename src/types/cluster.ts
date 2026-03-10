@@ -7,6 +7,7 @@ export interface ClusterInfo {
   server?: string;
   status: 'connected' | 'disconnected' | 'error';
   error?: string;
+  authProvider?: string;
 }
 
 export interface ContextInfo {

@@ -6,10 +6,14 @@ import { validateConfig } from '@/lib/auth/validate-config';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: NextRequest) {
-  const provider = getProvider('tsh');
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ providerId: string }> }
+) {
+  const { providerId } = await params;
+  const provider = getProvider(providerId);
   if (!provider) {
-    return NextResponse.json({ error: 'tsh provider not registered' }, { status: 500 });
+    return NextResponse.json({ error: `Unknown provider: ${providerId}` }, { status: 404 });
   }
 
   let config: Record<string, string>;
@@ -25,7 +29,7 @@ export async function POST(request: NextRequest) {
 
   if (result.success) {
     clearClientCache();
-    return NextResponse.json({ success: true, output: result.output });
   }
-  return NextResponse.json({ error: result.error }, { status: 500 });
+
+  return NextResponse.json(result, { status: result.success ? 200 : 400 });
 }

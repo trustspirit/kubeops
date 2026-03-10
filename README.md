@@ -59,6 +59,10 @@ Download from the **[Releases](https://github.com/trustspirit/kubeops/releases/l
 - *(Optional)* `metrics-server` in the cluster for CPU/memory charts
 - *(Optional)* Prometheus for network I/O and filesystem charts
 - *(Optional)* `tsh` CLI for Teleport-managed clusters
+- *(Optional)* `aws` CLI for AWS EKS clusters (SSO and IAM authentication)
+- *(Optional)* `gcloud` CLI for Google GKE clusters
+- *(Optional)* `az` CLI for Azure AKS clusters
+- *(Optional)* `kubelogin` for OIDC-based authentication (Keycloak, Dex, etc.)
 
 ---
 
@@ -82,7 +86,7 @@ There are many Kubernetes tools out there. Here's how KubeOps compares:
 | Desktop app (no server install) | **Yes** | Yes | Terminal | Needs deploy |
 | Zero config (reads kubeconfig) | **Yes** | Yes | Yes | Needs deploy |
 | CRD browser | **Yes** | Yes | Yes | Limited |
-| Teleport auth | **Yes** | No | No | No |
+| Multi-provider auth (Teleport, AWS, GKE, AKS, OIDC) | **Yes** | No | No | No |
 
 ### In short
 
@@ -243,9 +247,28 @@ Browse cluster-installed CRDs and their instances. The sidebar lists discovered 
 
 Toggle between dark and light themes from the header. Powered by `next-themes` with system preference detection. Your choice persists across sessions.
 
-### Teleport Authentication
+### Multi-Provider Authentication
 
-For clusters behind [Teleport](https://goteleport.com/), KubeOps detects Teleport contexts and provides a built-in login flow via `tsh kube login` — no manual terminal steps required.
+KubeOps supports multiple authentication providers for Kubernetes clusters. It auto-detects the provider from your kubeconfig's `exec` field and server URL, showing login buttons only for installed CLIs.
+
+| Provider | CLI Tool | Status Check | Auto-Detect |
+|----------|----------|-------------|-------------|
+| Teleport | `tsh` | `tsh status` | exec command contains `tsh` |
+| AWS EKS (SSO) | `aws` | `aws sts get-caller-identity` | exec contains `aws` or server `*.eks.amazonaws.com` |
+| AWS EKS (IAM) | `aws-iam-authenticator` / `aws` | `aws sts get-caller-identity` | exec contains `aws-iam-authenticator` |
+| OIDC | `kubelogin` | Cluster API probe | exec contains `kubelogin` or `oidc-login` |
+| Google GKE | `gcloud` | `gcloud auth print-access-token` | exec contains `gke-gcloud-auth-plugin` |
+| Azure AKS | `az` | `az account show` | server `*.azmk8s.io` or exec contains `kubelogin` + `--server-id` |
+
+Configure provider-specific settings (profiles, regions, project IDs) in **Settings > Authentication**. Each provider shows its installation status and configuration fields.
+
+![Authentication Providers Settings](docs/screenshots/settings-auth-providers.png)
+
+When a provider is installed and authenticated, the header shows the logged-in username. Clicking a disconnected cluster automatically routes the login to the correct provider.
+
+![Cluster Page with Auth](docs/screenshots/clusters-page-auth-buttons.png)
+
+![Provider Configuration](docs/screenshots/settings-auth-provider-config.png)
 
 ### Real-time Watch Updates
 
@@ -418,6 +441,11 @@ KubeOps provides full browse / detail / YAML / edit support for 35+ Kubernetes r
 | Network/FS charts missing | Requires Prometheus with `container_network_*` and `container_fs_*` metrics |
 | Port forward fails        | Check that `kubectl` is on your PATH and the target pod is running          |
 | Teleport login fails      | Ensure `tsh` is installed and on your PATH                                  |
+| AWS EKS login fails       | Ensure `aws` CLI is installed and configured (`aws configure`)              |
+| GKE login fails           | Ensure `gcloud` CLI is installed (`gcloud auth login`)                      |
+| AKS login fails           | Ensure `az` CLI is installed (`az login`)                                   |
+| OIDC login fails          | Ensure `kubelogin` is installed (`kubectl krew install oidc-login`)         |
+| Auth provider not detected| Configure manually in Settings > Authentication                             |
 | Diagnosing crashes        | Open **Help → Open Error Log** to see captured errors                       |
 
 ### macOS Gatekeeper
