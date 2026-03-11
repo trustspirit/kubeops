@@ -46,9 +46,9 @@ else
   exit 1
 fi
 
-# --- Fetch latest version ---
+# --- Fetch latest version (uses redirect, no API rate limit) ---
 info "Fetching latest release..."
-LATEST=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/')
+LATEST=$(curl -fsSI "https://github.com/$REPO/releases/latest" 2>/dev/null | grep -i '^location:' | sed 's|.*/tag/v\{0,1\}||' | tr -d '\r')
 
 if [ -z "$LATEST" ]; then
   error "Failed to fetch latest version. Check your internet connection."
