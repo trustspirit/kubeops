@@ -36,7 +36,7 @@ export const tshProvider: AuthProvider = {
     if (!path) return { success: false, error: 'tsh not found in PATH' };
 
     try {
-      const { action, proxyUrl, authType, cluster } = config;
+      const { action = 'proxy-login', proxyUrl, authType, cluster } = config;
 
       if (action === 'proxy-login') {
         if (!proxyUrl) return { success: false, error: 'proxyUrl is required' };
