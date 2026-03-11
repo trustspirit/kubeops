@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import useSWR from 'swr';
 import { useClusters } from '@/hooks/use-clusters';
 import { useClustersFiltering } from '@/hooks/use-clusters-filtering';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -14,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Server, ArrowRight, Search, Settings, RotateCw, LogIn, Loader2, CircleCheck, LayoutGrid, LayoutDashboard, List, Star, Tag, ChevronDown, ChevronRight } from 'lucide-react';
+import { useAuthProviders, useProviderLogin } from '@/hooks/use-auth-providers';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { UpdateIndicator } from '@/components/layout/header';
 import { SettingsDialog } from '@/components/settings/settings-dialog';
@@ -25,17 +25,40 @@ import { cn } from '@/lib/utils';
 export default function ClustersPage() {
   const router = useRouter();
   const { clusters, isLoading, error, isCheckingStatus, checkedClusters, refreshingClusters, refreshClusterStatus, manualRefresh, mutate } = useClusters();
-  const { tshProxyUrl, tshAuthType } = useSettingsStore();
   const { viewMode, setViewMode, showFavoritesOnly, setShowFavoritesOnly, getClusterMeta, toggleFavorite } = useClusterCatalogStore();
   const [search, setSearch] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [loggingIn, setLoggingIn] = useState(false);
   const [kubeLoggingIn, setKubeLoggingIn] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [tagFilter, setTagFilter] = useState<string | null>(null);
-  const { data: tshStatus, isLoading: tshLoading, mutate: mutateTshStatus } = useSWR('/api/tsh/status', { refreshInterval: 60_000 });
-  const tshLoggedIn = tshStatus?.loggedIn === true;
+  const { providers } = useAuthProviders();
+  const { login: providerLogin } = useProviderLogin();
+  const [providerStatuses, setProviderStatuses] = useState<Record<string, { authenticated: boolean; user?: string }>>({});
+  const [loginLoadingProvider, setLoginLoadingProvider] = useState<string | null>(null);
+
+  // Fetch provider statuses on mount and when providers change
+  useEffect(() => {
+    if (providers.length === 0) return;
+    const available = providers.filter(p => p.available);
+    Promise.all(
+      available.map(async (p) => {
+        try {
+          const config = useSettingsStore.getState().authProviderConfigs[p.id] || {};
+          const queryParams = new URLSearchParams(config).toString();
+          const res = await fetch(`/api/auth/${p.id}/status${queryParams ? `?${queryParams}` : ''}`);
+          const status = await res.json();
+          return { id: p.id, status: { authenticated: status.authenticated || status.loggedIn || false, user: status.user || status.username } };
+        } catch {
+          return { id: p.id, status: { authenticated: false } };
+        }
+      })
+    ).then((results) => {
+      const statuses: Record<string, { authenticated: boolean; user?: string }> = {};
+      for (const r of results) statuses[r.id] = r.status;
+      setProviderStatuses(statuses);
+    });
+  }, [providers]);
 
   const { filtered, allTags, grouped, hasGroups } = useClustersFiltering({
     clusters,
@@ -54,37 +77,22 @@ export default function ClustersPage() {
     }
   }, [manualRefresh]);
 
-  const handleTshLogin = useCallback(async () => {
-    if (!tshProxyUrl) {
-      toast.error('Teleport Proxy URL is not configured. Please set it in Settings.');
-      setSettingsOpen(true);
-      return;
-    }
-    setLoggingIn(true);
+  const handleProviderLogin = useCallback(async (providerId: string) => {
+    setLoginLoadingProvider(providerId);
     try {
-      const res = await fetch('/api/tsh/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'proxy-login',
-          proxyUrl: tshProxyUrl,
-          authType: tshAuthType || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(`tsh login failed: ${data.error}`);
-        return;
-      }
-      toast.success('Teleport login successful');
-      await Promise.all([mutate(), mutateTshStatus()]);
+      await providerLogin(providerId);
+      toast.success(`${providerId} login successful`);
+      await mutate();
+      const res = await fetch(`/api/auth/${providerId}/status`);
+      const status = await res.json();
+      setProviderStatuses((prev) => ({ ...prev, [providerId]: status }));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      toast.error(`tsh login failed: ${message}`);
+      toast.error(`Login failed: ${message}`);
     } finally {
-      setLoggingIn(false);
+      setLoginLoadingProvider(null);
     }
-  }, [tshProxyUrl, tshAuthType, mutate, mutateTshStatus]);
+  }, [providerLogin, mutate]);
 
   const handleClusterClick = useCallback(async (contextName: string, clusterField: string, status: string) => {
     if (status === 'connected') {
@@ -94,18 +102,38 @@ export default function ClustersPage() {
     const { realName } = parseClusterName(contextName, clusterField);
     setKubeLoggingIn(contextName);
     try {
-      const res = await fetch('/api/tsh/login', {
+      // Detect provider for this cluster
+      const detectRes = await fetch(`/api/auth/detect/${encodeURIComponent(contextName)}`);
+      const detection = await detectRes.json();
+      const detectedProvider = detection?.providerId;
+
+      if (!detectedProvider) {
+        toast.error('Cannot determine auth provider', {
+          description: `${realName}: Configure provider in Settings > Authentication`,
+        });
+        setSettingsOpen(true);
+        setKubeLoggingIn(null);
+        return;
+      }
+
+      // Build provider-appropriate login config
+      const savedConfig = useSettingsStore.getState().authProviderConfigs[detectedProvider] || {};
+      const loginConfig: Record<string, string> = detectedProvider === 'tsh'
+        ? { ...savedConfig, action: 'kube-login', cluster: realName }
+        : { ...savedConfig };
+
+      const res = await fetch(`/api/auth/${detectedProvider}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'kube-login', cluster: realName }),
+        body: JSON.stringify(loginConfig),
       });
       const data = await res.json();
-      if (!res.ok) {
-        toast.error('tsh kube login failed', { description: `${realName}: ${data.error}` });
+      if (!res.ok || !data.success) {
+        toast.error('Cluster login failed', { description: `${realName}: ${data.error || 'Unknown error'}` });
         return;
       }
       toast.success('Cluster login successful', { description: realName });
-      // Optimistically mark as connected — avoids stale cached 'error' status
+      // Optimistically mark as connected
       await mutate(
         (current) => {
           if (!current) return current;
@@ -120,7 +148,7 @@ export default function ClustersPage() {
       router.push(`/clusters/${encodeURIComponent(contextName)}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      toast.error('tsh kube login failed', { description: `${realName}: ${message}` });
+      toast.error('Cluster login failed', { description: `${realName}: ${message}` });
     } finally {
       setKubeLoggingIn(null);
     }
@@ -143,38 +171,37 @@ export default function ClustersPage() {
           <h1 className="text-lg font-bold tracking-tight">KubeOps</h1>
         </div>
         <div className="flex items-center gap-2 no-drag-region">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className={`h-8 gap-1.5 ${tshLoggedIn ? 'text-green-500' : ''}`}
-                onClick={handleTshLogin}
-                disabled={loggingIn || tshLoading}
-              >
-                {loggingIn || tshLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : tshLoggedIn ? (
-                  <CircleCheck className="h-4 w-4" />
-                ) : (
-                  <LogIn className="h-4 w-4" />
-                )}
-                <span className="text-xs">
-                  {tshLoading ? 'TSH' : tshLoggedIn ? tshStatus.username?.split('@')[0] : 'TSH Login'}
-                </span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {tshLoading
-                ? 'Checking Teleport status...'
-                : tshLoggedIn
-                  ? `Logged in as ${tshStatus.username} · ${tshStatus.cluster}`
-                  : tshProxyUrl
-                    ? `tsh login --proxy=${tshProxyUrl}`
-                    : 'Configure Teleport in Settings first'
-              }
-            </TooltipContent>
-          </Tooltip>
+          {providers.filter(p => p.available).map((provider) => (
+            <Tooltip key={provider.id}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`h-8 gap-1.5 ${providerStatuses[provider.id]?.authenticated ? 'text-green-500' : ''}`}
+                  onClick={() => handleProviderLogin(provider.id)}
+                  disabled={loginLoadingProvider === provider.id}
+                >
+                  {loginLoadingProvider === provider.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : providerStatuses[provider.id]?.authenticated ? (
+                    <CircleCheck className="h-4 w-4" />
+                  ) : (
+                    <LogIn className="h-4 w-4" />
+                  )}
+                  <span className="text-xs">
+                    {providerStatuses[provider.id]?.authenticated
+                      ? providerStatuses[provider.id].user?.split('@')[0]
+                      : provider.name}
+                  </span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {providerStatuses[provider.id]?.authenticated
+                  ? `Logged in as ${providerStatuses[provider.id].user}`
+                  : `Login with ${provider.name}`}
+              </TooltipContent>
+            </Tooltip>
+          ))}
           <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => router.push('/clusters/overview')} title="Multi-Cluster Overview">
             <LayoutDashboard className="h-4 w-4" />
             <span className="text-xs">Overview</span>
@@ -222,8 +249,8 @@ export default function ClustersPage() {
                 <p className="text-sm text-muted-foreground mt-1">
                   Make sure you have a valid kubeconfig file at ~/.kube/config
                 </p>
-                <p className="text-sm text-muted-foreground mt-1 font-mono">
-                  tsh kube login &lt;cluster-name&gt;
+                <p className="text-sm text-muted-foreground mt-1">
+                  Use your cloud provider CLI to add cluster credentials.
                 </p>
               </div>
             </div>

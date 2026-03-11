@@ -9,15 +9,14 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useSettingsStore } from '@/stores/settings-store';
 import { usePodWatcherStore } from '@/stores/pod-watcher-store';
 import { useAlertStore } from '@/stores/alert-store';
 import { Bell, BellOff } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { AlertRulesTab } from './alert-rules-tab';
 import { AlertHistory } from './alert-history';
+import { AuthProvidersTab } from './auth-providers-tab';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -25,17 +24,12 @@ interface SettingsDialogProps {
 }
 
 function SettingsDialogContent({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
-  const { tshProxyUrl, tshAuthType, setTshProxyUrl, setTshAuthType } = useSettingsStore();
   const { notificationsEnabled, setNotificationsEnabled } = usePodWatcherStore();
   const alertUnread = useAlertStore((s) => s.history.filter((a) => !a.read).length);
 
-  const [proxyUrl, setProxyUrl] = useState(tshProxyUrl);
-  const [authType, setAuthType] = useState(tshAuthType);
   const [notifEnabled, setNotifEnabled] = useState(notificationsEnabled);
 
   const handleSave = () => {
-    setTshProxyUrl(proxyUrl);
-    setTshAuthType(authType);
     setNotificationsEnabled(notifEnabled);
     onOpenChange(false);
   };
@@ -57,6 +51,7 @@ function SettingsDialogContent({ onOpenChange }: { onOpenChange: (open: boolean)
       <Tabs defaultValue="general">
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="auth">Authentication</TabsTrigger>
           <TabsTrigger value="alert-rules" className="gap-1">
             Alert Rules
           </TabsTrigger>
@@ -72,26 +67,6 @@ function SettingsDialogContent({ onOpenChange }: { onOpenChange: (open: boolean)
 
         <TabsContent value="general" className="mt-4">
           <div className="space-y-4">
-            <div className="space-y-3">
-              <h4 className="text-sm font-semibold">Teleport (tsh)</h4>
-              <div className="space-y-1.5">
-                <label className="text-xs text-muted-foreground">Proxy URL</label>
-                <Input
-                  placeholder="teleport.example.com:443"
-                  value={proxyUrl}
-                  onChange={(e) => setProxyUrl(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs text-muted-foreground">Auth Type</label>
-                <Input
-                  placeholder="e.g. github, saml, oidc"
-                  value={authType}
-                  onChange={(e) => setAuthType(e.target.value)}
-                />
-              </div>
-            </div>
-
             <div className="space-y-3">
               <h4 className="text-sm font-semibold">Notifications</h4>
               <Button
@@ -113,6 +88,10 @@ function SettingsDialogContent({ onOpenChange }: { onOpenChange: (open: boolean)
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button onClick={handleSave}>Save</Button>
           </DialogFooter>
+        </TabsContent>
+
+        <TabsContent value="auth" className="mt-4">
+          <AuthProvidersTab />
         </TabsContent>
 
         <TabsContent value="alert-rules" className="mt-4">
