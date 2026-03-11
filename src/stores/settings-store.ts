@@ -46,6 +46,21 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'kubeops-settings',
       storage: createJSONStorage(() => localStorage),
+      onRehydrateStorage: () => {
+        return (state) => {
+          if (!state) return;
+          // Migrate legacy tsh settings into authProviderConfigs
+          const { tshProxyUrl, tshAuthType, authProviderConfigs } = state;
+          if (tshProxyUrl && !authProviderConfigs['tsh']?.proxyUrl) {
+            const legacyConfig: Record<string, string> = { proxyUrl: tshProxyUrl };
+            if (tshAuthType) legacyConfig.authType = tshAuthType;
+            state.setAuthProviderConfig('tsh', {
+              ...legacyConfig,
+              ...authProviderConfigs['tsh'],
+            });
+          }
+        };
+      },
     }
   )
 );
