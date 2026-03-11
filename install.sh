@@ -48,7 +48,7 @@ fi
 
 # --- Fetch latest version (uses redirect, no API rate limit) ---
 info "Fetching latest release..."
-LATEST=$(curl -fsSI "https://github.com/$REPO/releases/latest" 2>/dev/null | grep -i '^location:' | sed 's|.*/tag/v\{0,1\}||' | tr -d '\r')
+LATEST=$(curl -sSI "https://github.com/$REPO/releases/latest" 2>/dev/null | grep -i '^location:' | sed 's|.*/tag/v\{0,1\}||' | tr -d '\r')
 
 if [ -z "$LATEST" ]; then
   error "Failed to fetch latest version. Check your internet connection."
