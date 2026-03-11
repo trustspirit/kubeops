@@ -29,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
+      should_publish: ${{ steps.check.outputs.should_publish }}
       version: ${{ steps.check.outputs.version }}
       tag_exists: ${{ steps.check.outputs.tag_exists }}
     steps:
@@ -37,29 +38,52 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check if version tag exists
+      - name: Check version and changed files
         id: check
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+          # Check if version tag already exists
           if git rev-parse "v$VERSION" >/dev/null 2>&1; then
             echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+            TAG_EXISTS="true"
             echo "Tag v$VERSION already exists"
           else
             echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+            TAG_EXISTS="false"
             echo "New version v$VERSION detected"
           fi
 
-          # Release if: new version OR manual trigger with force
-          TAG_EXISTS=$(git rev-parse "v$VERSION" >/dev/null 2>&1 && echo "true" || echo "false")
+          # Check if version changed from previous commit
+          PREVIOUS=$(git show HEAD~1:package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).version" 2>/dev/null || echo "")
+          if [ "$VERSION" != "$PREVIOUS" ]; then
+            VERSION_CHANGED="true"
+          else
+            VERSION_CHANGED="false"
+          fi
+
+          # Check if source files changed (needs Electron rebuild)
+          SOURCE_CHANGED="false"
+          if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -qE '^(electron/|src/|scripts/|electron-builder\.yml)'; then
+            SOURCE_CHANGED="true"
+          fi
+
           IS_MANUAL="${{ github.event_name == 'workflow_dispatch' }}"
           FORCE="${{ github.event.inputs.force }}"
 
-          if [ "$TAG_EXISTS" = "false" ] || ([ "$IS_MANUAL" = "true" ] && [ "$FORCE" = "true" ]); then
+          # Electron release: source changed + new version, or manual force
+          if ([ "$SOURCE_CHANGED" = "true" ] && [ "$TAG_EXISTS" = "false" ]) || ([ "$IS_MANUAL" = "true" ] && [ "$FORCE" = "true" ]); then
             echo "should_release=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # npm publish: version changed, or manual force
+          if [ "$VERSION_CHANGED" = "true" ] || ([ "$IS_MANUAL" = "true" ] && [ "$FORCE" = "true" ]); then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
           fi
 
   create-tag:
@@ -142,3 +166,26 @@ jobs:
             dist-electron/*.yml
             dist-electron/*.yaml
           if-no-files-found: ignore
+
+  npm-publish:
+    needs: [check-version, release]
+    if: |
+      always() &&
+      needs.check-version.outputs.should_publish == 'true' &&
+      needs.check-version.result == 'success' &&
+      (needs.release.result == 'success' || needs.release.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Authenticate npm
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.TRUST_NPM }}" > ~/.npmrc
+
+      - name: Publish to npm
+        run: npm publish
