@@ -1,40 +1,25 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useReducer } from 'react';
 
-const INTERVAL_MS = 30_000;
+/**
+ * Returns a tick counter that increments at the given interval (ms).
+ * Each component gets its own timer scoped to the interval it needs.
+ */
+export function useAgeTick(intervalMs: number = 30_000): number {
+  const [tick, bump] = useReducer((n: number) => n + 1, 0);
 
-let tick = 0;
-const listeners = new Set<() => void>();
-let timer: ReturnType<typeof setInterval> | null = null;
+  useEffect(() => {
+    const id = setInterval(bump, intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
 
-function startTimer() {
-  if (timer) return;
-  timer = setInterval(() => {
-    tick++;
-    listeners.forEach((l) => l());
-  }, INTERVAL_MS);
-}
-
-function stopTimer() {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  if (listeners.size === 1) startTimer();
-  return () => {
-    listeners.delete(listener);
-    if (listeners.size === 0) stopTimer();
-  };
-}
-
-function getSnapshot() {
   return tick;
 }
 
-/** Returns a counter that increments every 30s. All consumers share a single timer. */
-export function useAgeTick(): number {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+/** Pick a tick interval based on how old the resource is. */
+export function ageTickInterval(timestamp: string | undefined): number {
+  if (!timestamp) return 60_000;
+  const diffMs = Date.now() - new Date(timestamp).getTime();
+  if (diffMs < 60_000) return 1_000;   // < 1 min → every 1s
+  if (diffMs < 3_600_000) return 30_000; // < 1 hour → every 30s
+  return 60_000;                          // >= 1 hour → every 60s
 }

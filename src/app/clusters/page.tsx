@@ -82,9 +82,10 @@ export default function ClustersPage() {
     try {
       await providerLogin(providerId);
       toast.success(`${providerId} login successful`);
-      await mutate();
-      const res = await fetch(`/api/auth/${providerId}/status`);
-      const status = await res.json();
+      // Trigger cluster list refresh with visible loading (best-effort)
+      manualRefresh().catch(() => {});
+      const statusRes = await fetch(`/api/auth/${providerId}/status`);
+      const status = await statusRes.json();
       setProviderStatuses((prev) => ({ ...prev, [providerId]: status }));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -92,7 +93,7 @@ export default function ClustersPage() {
     } finally {
       setLoginLoadingProvider(null);
     }
-  }, [providerLogin, mutate]);
+  }, [providerLogin, manualRefresh]);
 
   const handleClusterClick = useCallback(async (contextName: string, clusterField: string, status: string) => {
     if (status === 'connected') {
