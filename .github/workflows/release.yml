@@ -86,27 +86,38 @@ jobs:
             echo "should_publish=false" >> "$GITHUB_OUTPUT"
           fi
 
-  create-tag:
+  create-release:
     needs: check-version
-    if: needs.check-version.outputs.should_release == 'true' && needs.check-version.outputs.tag_exists == 'false'
+    if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Create git tag
+        if: needs.check-version.outputs.tag_exists == 'false'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "v${{ needs.check-version.outputs.version }}"
           git push origin "v${{ needs.check-version.outputs.version }}"
 
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: |
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --generate-notes \
+            || echo "Release already exists, continuing..."
+
   release:
-    needs: [check-version, create-tag]
+    needs: [check-version, create-release]
     if: |
       always() &&
       needs.check-version.outputs.should_release == 'true' &&
-      (needs.create-tag.result == 'success' || needs.create-tag.result == 'skipped')
+      needs.create-release.result == 'success'
     strategy:
       fail-fast: false
       matrix:
