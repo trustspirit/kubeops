@@ -149,20 +149,16 @@ function ResourceTreeViewInner({
   const [nodes, setNodes, onNodesChange] = useNodesState(layoutedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(layoutedEdges);
 
-  // Track node IDs to detect real layout changes (not just data refreshes)
-  const prevNodeIdsRef = useRef('');
+  // Track whether this is the initial render (fitView only on first load)
+  const initialFitDoneRef = useRef(false);
 
-  // Sync nodes/edges when layout changes and fitView on structural changes
+  // Sync nodes/edges when layout changes; only fitView on initial load
   useEffect(() => {
     setNodes(layoutedNodes);
     setEdges(layoutedEdges);
 
-    const nodeIds = layoutedNodes.map((n) => n.id).sort().join(',');
-    const changed = nodeIds !== prevNodeIdsRef.current;
-    prevNodeIdsRef.current = nodeIds;
-
-    if (changed && layoutedNodes.length > 0) {
-      // Delay to let ReactFlow render the new nodes first
+    if (!initialFitDoneRef.current && layoutedNodes.length > 0) {
+      initialFitDoneRef.current = true;
       const timer = setTimeout(() => {
         fitView({ padding: 0.2, duration: 300 });
       }, 50);

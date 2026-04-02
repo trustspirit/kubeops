@@ -16,6 +16,7 @@ import {
   Clock,
   type LucideIcon,
 } from 'lucide-react';
+import { useAgeTick, ageTickInterval } from '@/hooks/use-age-tick';
 
 function compactAge(timestamp: string | undefined): string {
   if (!timestamp) return '';
@@ -90,6 +91,7 @@ export interface ResourceNodeData {
 function ResourceNodeComponent({ data }: NodeProps) {
   const router = useRouter();
   const { kind, name, health, status, info, href, createdAt, onInfoClick } = data as unknown as ResourceNodeData;
+  useAgeTick(ageTickInterval(createdAt as string | undefined));
   const age = compactAge(createdAt as string | undefined);
   const Icon = KIND_ICONS[kind] || Box;
   const borderClass = HEALTH_BORDER[health] || HEALTH_BORDER.Unknown;

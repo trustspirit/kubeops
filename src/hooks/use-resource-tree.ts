@@ -194,34 +194,34 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
 
   const isLoading = podsLoading || depsLoading || rsLoading || stsLoading || dsLoading || svcLoading || ingLoading;
 
-  // Create stable dependency keys based on resource UIDs to avoid recomputing
-  // the topology when SWR refreshes return identical data
-  const podUids = useMemo(
-    () => (podsData?.items || []).map((p: KubeResource) => p.metadata?.uid).sort().join(','),
+  // Create stable dependency keys based on resource UIDs + resourceVersion to
+  // recompute topology when resources are added/removed OR their status changes
+  const podKey = useMemo(
+    () => (podsData?.items || []).map((p: KubeResource) => `${p.metadata?.uid}:${p.metadata?.resourceVersion}`).sort().join(','),
     [podsData]
   );
-  const deploymentUids = useMemo(
-    () => (deploymentsData?.items || []).map((d: KubeResource) => d.metadata?.uid).sort().join(','),
+  const deploymentKey = useMemo(
+    () => (deploymentsData?.items || []).map((d: KubeResource) => `${d.metadata?.uid}:${d.metadata?.resourceVersion}`).sort().join(','),
     [deploymentsData]
   );
-  const rsUids = useMemo(
-    () => (rsData?.items || []).map((r: KubeResource) => r.metadata?.uid).sort().join(','),
+  const rsKey = useMemo(
+    () => (rsData?.items || []).map((r: KubeResource) => `${r.metadata?.uid}:${r.metadata?.resourceVersion}`).sort().join(','),
     [rsData]
   );
-  const stsUids = useMemo(
-    () => (stsData?.items || []).map((s: KubeResource) => s.metadata?.uid).sort().join(','),
+  const stsKey = useMemo(
+    () => (stsData?.items || []).map((s: KubeResource) => `${s.metadata?.uid}:${s.metadata?.resourceVersion}`).sort().join(','),
     [stsData]
   );
-  const dsUids = useMemo(
-    () => (dsData?.items || []).map((d: KubeResource) => d.metadata?.uid).sort().join(','),
+  const dsKey = useMemo(
+    () => (dsData?.items || []).map((d: KubeResource) => `${d.metadata?.uid}:${d.metadata?.resourceVersion}`).sort().join(','),
     [dsData]
   );
-  const serviceUids = useMemo(
-    () => (servicesData?.items || []).map((s: KubeResource) => s.metadata?.uid).sort().join(','),
+  const serviceKey = useMemo(
+    () => (servicesData?.items || []).map((s: KubeResource) => `${s.metadata?.uid}:${s.metadata?.resourceVersion}`).sort().join(','),
     [servicesData]
   );
-  const ingressUids = useMemo(
-    () => (ingressData?.items || []).map((i: KubeResource) => i.metadata?.uid).sort().join(','),
+  const ingressKey = useMemo(
+    () => (ingressData?.items || []).map((i: KubeResource) => `${i.metadata?.uid}:${i.metadata?.resourceVersion}`).sort().join(','),
     [ingressData]
   );
 
@@ -240,7 +240,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
     }
     return Array.from(labels).sort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deploymentUids, stsUids, dsUids, serviceUids]);
+  }, [deploymentKey, stsKey, dsKey, serviceKey]);
 
   const { nodes, edges } = useMemo((): { nodes: TreeNode[]; edges: TreeEdge[] } => {
     const nodes: TreeNode[] = [];
@@ -588,9 +588,9 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
     }
 
     return { nodes, edges };
-  // Use stable UID keys instead of raw data objects to prevent unnecessary recomputation
+  // Use stable keys (UID + resourceVersion) to recompute only when resources change
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [podUids, deploymentUids, rsUids, stsUids, dsUids, serviceUids, ingressUids, clusterId, namespace, rootKind, rootName, appFilter]);
+  }, [podKey, deploymentKey, rsKey, stsKey, dsKey, serviceKey, ingressKey, clusterId, namespace, rootKind, rootName, appFilter]);
 
   return { nodes, edges, isLoading, appLabels };
 }
