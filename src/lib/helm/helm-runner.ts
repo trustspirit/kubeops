@@ -74,6 +74,16 @@ export function isValidHelmName(name: string): boolean {
   return /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,252}$/.test(name);
 }
 
+/** Validate a Kubernetes namespace name (DNS-1123 label) */
+export function isValidNamespace(ns: string): boolean {
+  return /^[a-z0-9][a-z0-9-]{0,62}$/.test(ns);
+}
+
+/** Validate a chart reference (repo/chart, OCI URL, or local path — must not start with -) */
+export function isValidChartRef(chart: string): boolean {
+  return chart.length > 0 && chart.length <= 512 && !chart.startsWith('-');
+}
+
 /** Validate a helm repo URL */
 export function isValidRepoUrl(url: string): boolean {
   try {

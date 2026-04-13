@@ -5,6 +5,7 @@ import { SWRProvider } from "@/providers/swr-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ElectronClass } from "@/components/layout/electron-class";
+import { ErrorBoundary } from "@/components/error-boundary";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -35,15 +36,17 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <ThemeProvider>
-          <SWRProvider>
-            <TooltipProvider>
-              <ElectronClass />
-              {children}
-              <Toaster />
-            </TooltipProvider>
-          </SWRProvider>
-        </ThemeProvider>
+        <ErrorBoundary>
+          <ThemeProvider>
+            <SWRProvider>
+              <TooltipProvider>
+                <ElectronClass />
+                {children}
+                <Toaster />
+              </TooltipProvider>
+            </SWRProvider>
+          </ThemeProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

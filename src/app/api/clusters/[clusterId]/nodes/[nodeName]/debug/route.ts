@@ -159,6 +159,9 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   if (!podName) {
     return NextResponse.json({ error: 'Missing podName parameter' }, { status: 400 });
   }
+  if (!podName.startsWith('node-debug-')) {
+    return NextResponse.json({ error: 'Only debug pods (node-debug-*) can be deleted via this endpoint' }, { status: 400 });
+  }
 
   try {
     const kc = getKubeConfigForContext(contextName);

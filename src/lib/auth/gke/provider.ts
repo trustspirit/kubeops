@@ -18,11 +18,15 @@ export const gkeProvider: AuthProvider = {
     if (!path) return { authenticated: false };
     try {
       runCli(path, ['auth', 'print-access-token'], 5_000);
-      const account = runCli(path, ['config', 'get-value', 'account'], 5_000).trim();
-      return { authenticated: true, user: account || undefined };
     } catch {
       return { authenticated: false };
     }
+    // Account lookup is best-effort — don't fail auth status if only this fails
+    let account: string | undefined;
+    try {
+      account = runCli(path, ['config', 'get-value', 'account'], 5_000).trim() || undefined;
+    } catch { /* non-fatal */ }
+    return { authenticated: true, user: account };
   },
 
   async login(config: Record<string, string>) {

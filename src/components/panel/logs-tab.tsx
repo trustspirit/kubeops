@@ -96,7 +96,7 @@ export function LogsTab({ tab }: LogsTabProps) {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const decodedCluster = decodeURIComponent(clusterId);
-    const wsUrl = `${protocol}//${window.location.host}/ws/logs/${encodeURIComponent(decodedCluster)}/${namespace}/${podName}?container=${container}&follow=${follow}&timestamps=true&tailLines=500`;
+    const wsUrl = `${protocol}//${window.location.host}/ws/logs/${encodeURIComponent(decodedCluster)}/${namespace}/${podName}?container=${container}&follow=true&timestamps=true&tailLines=500`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -131,7 +131,7 @@ export function LogsTab({ tab }: LogsTabProps) {
       bufferRef.current = '';
       setLogs('');
     };
-  }, [container, clusterId, namespace, podName, follow, flushBuffer]);
+  }, [container, clusterId, namespace, podName, flushBuffer]);
 
   // Memoize ANSI conversion — only re-runs when logs change
   const [baseHtml, setBaseHtml] = useState('Connecting...');

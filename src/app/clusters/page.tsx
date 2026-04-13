@@ -41,6 +41,9 @@ export default function ClustersPage() {
   // external session changes (e.g. tsh session expiring or renewed outside the app).
   // On check failure (timeout, network error), preserve the previous status
   // to avoid falsely showing "unauthenticated" for a healthy session.
+  const providerStatusesRef = useRef(providerStatuses);
+  providerStatusesRef.current = providerStatuses;
+
   const refreshProviderStatuses = useCallback(async (providerList: typeof providers) => {
     const available = providerList.filter(p => p.available);
     if (available.length === 0) return {};
@@ -57,19 +60,16 @@ export default function ClustersPage() {
         }
       })
     );
-    // Build the merged statuses: successful checks update, failures preserve previous.
-    // Return the same merged view so callers (e.g. auto-login) see consistent data.
-    let merged: Record<string, { authenticated: boolean; user?: string }> = {};
-    setProviderStatuses((prev) => {
-      const next = { ...prev };
-      for (const r of results) {
-        if (r.ok) {
-          next[r.id] = r.status;
-        }
+    // Build merged statuses synchronously from results + current snapshot.
+    // Cannot rely on setState updater return value (React 18 batches updates).
+    const prev = providerStatusesRef.current;
+    const merged: Record<string, { authenticated: boolean; user?: string }> = { ...prev };
+    for (const r of results) {
+      if (r.ok) {
+        merged[r.id] = r.status;
       }
-      merged = next;
-      return next;
-    });
+    }
+    setProviderStatuses(merged);
     return merged;
   }, []);
 

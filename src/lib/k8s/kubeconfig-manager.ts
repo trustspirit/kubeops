@@ -22,9 +22,14 @@ export function getContexts(): k8s.Context[] {
 }
 
 export function getKubeConfigForContext(contextName: string): k8s.KubeConfig {
+  const base = loadKubeConfig();
   const kc = new k8s.KubeConfig();
-  kc.loadFromDefault();
-  kc.setCurrentContext(contextName);
+  kc.loadFromOptions({
+    clusters: base.getClusters(),
+    users: base.getUsers(),
+    contexts: base.getContexts(),
+    currentContext: contextName,
+  });
   return kc;
 }
 

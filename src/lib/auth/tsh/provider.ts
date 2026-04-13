@@ -3,7 +3,10 @@ import { findCli, getCliVersion, runCli, extractCliError } from '../cli-utils';
 
 // Preserve last successful status to avoid UI flicker when tsh is temporarily
 // slow or busy (timeout, parse error). Mirrors tsh-session-guard strategy.
+// TTL prevents stale authenticated:true from persisting forever after tsh logout.
 let lastKnownStatus: AuthProviderStatus | null = null;
+let lastKnownStatusAt = 0;
+const STATUS_PRESERVE_TTL = 90_000; // 90s — 3x the session guard TTL
 
 export const tshProvider: AuthProvider = {
   id: 'tsh',
@@ -21,6 +24,7 @@ export const tshProvider: AuthProvider = {
     const path = findCli('tsh');
     if (!path) {
       lastKnownStatus = { authenticated: false };
+      lastKnownStatusAt = Date.now();
       return lastKnownStatus;
     }
     try {
@@ -29,6 +33,7 @@ export const tshProvider: AuthProvider = {
       const active = data?.active;
       if (!active?.username) {
         lastKnownStatus = { authenticated: false };
+        lastKnownStatusAt = Date.now();
         return lastKnownStatus;
       }
       lastKnownStatus = {
@@ -36,12 +41,15 @@ export const tshProvider: AuthProvider = {
         user: active.username,
         expiresAt: active.valid_until ? new Date(active.valid_until) : undefined,
       };
+      lastKnownStatusAt = Date.now();
       return lastKnownStatus;
     } catch {
       // On failure (timeout, tsh busy), preserve previous state to avoid
-      // UI flicker between authenticated/unauthenticated.
-      // This matches the strategy in tsh-session-guard.ts.
-      if (lastKnownStatus) return lastKnownStatus;
+      // UI flicker — but only within the TTL window. After TTL, fall back
+      // to unauthenticated to avoid stale state after tsh logout.
+      if (lastKnownStatus && Date.now() - lastKnownStatusAt < STATUS_PRESERVE_TTL) {
+        return lastKnownStatus;
+      }
       return { authenticated: false };
     }
   },

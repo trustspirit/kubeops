@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runHelm, isValidHelmName } from '@/lib/helm/helm-runner';
+import { runHelm, isValidHelmName, isValidNamespace, isValidChartRef } from '@/lib/helm/helm-runner';
 import { requireHelm, withTempValuesFile } from '@/lib/helm/helpers';
 
 export const dynamic = 'force-dynamic';
@@ -27,11 +27,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   if (!releaseName || !isValidHelmName(releaseName)) {
     return NextResponse.json({ error: 'Valid releaseName is required (alphanumeric, hyphens, dots, underscores)' }, { status: 400 });
   }
-  if (!chart) {
-    return NextResponse.json({ error: 'chart is required' }, { status: 400 });
+  if (!chart || !isValidChartRef(chart)) {
+    return NextResponse.json({ error: 'Valid chart reference is required (must not start with -)' }, { status: 400 });
   }
-  if (!namespace) {
-    return NextResponse.json({ error: 'namespace is required' }, { status: 400 });
+  if (!namespace || !isValidNamespace(namespace)) {
+    return NextResponse.json({ error: 'Valid namespace is required (lowercase alphanumeric and hyphens)' }, { status: 400 });
   }
 
   return withTempValuesFile(values, async (tmpFile) => {

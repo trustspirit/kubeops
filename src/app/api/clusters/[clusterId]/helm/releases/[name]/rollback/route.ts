@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runHelm } from '@/lib/helm/helm-runner';
+import { runHelm, isValidNamespace } from '@/lib/helm/helm-runner';
 import { requireHelm } from '@/lib/helm/helpers';
 
 export const dynamic = 'force-dynamic';
@@ -28,8 +28,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   if (!revision) {
     return NextResponse.json({ error: 'revision is required' }, { status: 400 });
   }
-  if (!namespace) {
-    return NextResponse.json({ error: 'namespace is required' }, { status: 400 });
+  if (!namespace || !isValidNamespace(namespace)) {
+    return NextResponse.json({ error: 'Valid namespace is required (lowercase alphanumeric and hyphens)' }, { status: 400 });
   }
 
   const args = ['rollback', releaseName, String(revision), '-n', namespace];
