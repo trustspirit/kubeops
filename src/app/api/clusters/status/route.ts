@@ -35,17 +35,25 @@ export async function GET() {
         }
       };
 
-      const checks = contexts.map(async (ctx) => {
-        const entry = await checkClusterStatus(ctx.name);
-        const payload = JSON.stringify({
-          name: ctx.name,
-          status: entry.status,
-          error: entry.error ?? null,
-        });
-        tryEnqueue(encoder.encode(`data: ${payload}\n\n`));
-      });
+      // Limit concurrency to prevent overwhelming exec credential plugins
+      // (e.g. tsh kube credentials) when many clusters check simultaneously.
+      const MAX_CONCURRENT = 5;
+      let idx = 0;
+      const run = async () => {
+        while (idx < contexts.length) {
+          if (closed) return;
+          const ctx = contexts[idx++];
+          const entry = await checkClusterStatus(ctx.name);
+          const payload = JSON.stringify({
+            name: ctx.name,
+            status: entry.status,
+            error: entry.error ?? null,
+          });
+          tryEnqueue(encoder.encode(`data: ${payload}\n\n`));
+        }
+      };
 
-      Promise.all(checks)
+      Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT, contexts.length) }, () => run()))
         .then(() => {
           tryEnqueue(encoder.encode('data: {"done":true}\n\n'));
           tryClose();

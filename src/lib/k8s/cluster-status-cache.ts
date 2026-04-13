@@ -63,11 +63,40 @@ export async function checkClusterStatus(contextName: string): Promise<StatusEnt
   }
 }
 
+export function clearStatusCache(contextName?: string): void {
+  if (contextName) {
+    statusCache.delete(contextName);
+  } else {
+    statusCache.clear();
+  }
+}
+
+/** Run promises with limited concurrency */
+async function pLimit<T>(tasks: (() => Promise<T>)[], concurrency: number): Promise<T[]> {
+  const results: T[] = [];
+  let idx = 0;
+  const run = async () => {
+    while (idx < tasks.length) {
+      const i = idx++;
+      results[i] = await tasks[i]();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, () => run()));
+  return results;
+}
+
+const MAX_CONCURRENT_CHECKS = 5;
+
 export async function refreshStatusesInBackground(contextNames: string[]): Promise<void> {
   if (refreshInProgress) return;
   refreshInProgress = true;
   try {
-    await Promise.all(contextNames.map(checkClusterStatus));
+    // Limit concurrency to prevent overwhelming exec credential plugins
+    // (e.g. tsh kube credentials) when many Teleport clusters check at once.
+    await pLimit(
+      contextNames.map((name) => () => checkClusterStatus(name)),
+      MAX_CONCURRENT_CHECKS,
+    );
   } finally {
     refreshInProgress = false;
   }

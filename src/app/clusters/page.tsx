@@ -111,7 +111,9 @@ export default function ClustersPage() {
         for (const p of available) {
           if (!statuses[p.id]?.authenticated) {
             const config = useSettingsStore.getState().authProviderConfigs[p.id] || {};
+            // Skip auto-login for providers that need manual configuration first
             if (p.id === 'tsh' && !config.proxyUrl) continue;
+            if ((p.id === 'aws-sso' || p.id === 'aws-iam') && !config.profile) continue;
             handleProviderLogin(p.id);
             break; // one at a time — avoid multiple browser windows
           }

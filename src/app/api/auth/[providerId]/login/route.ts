@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import '@/lib/auth/providers';
 import { getProvider } from '@/lib/auth/registry';
 import { clearClientCache } from '@/lib/k8s/client-factory';
+import { clearStatusCache } from '@/lib/k8s/cluster-status-cache';
 import { validateConfig } from '@/lib/auth/validate-config';
 import { invalidateTshSessionCache, clearTeleportContextCache } from '@/lib/k8s/tsh-session-guard';
 
@@ -30,6 +31,9 @@ export async function POST(
 
   if (result.success) {
     clearClientCache();
+    // Clear all cached cluster statuses so the next health-check cycle
+    // re-evaluates from scratch (prevents stale 'disconnected' after login).
+    clearStatusCache();
     // After successful auth, clear cached session state so that the next
     // health-check cycle re-evaluates Teleport contexts immediately.
     if (providerId === 'tsh') {
