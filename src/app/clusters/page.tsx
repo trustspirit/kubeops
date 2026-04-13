@@ -165,8 +165,10 @@ export default function ClustersPage() {
 
       // Build provider-appropriate login config
       const savedConfig = useSettingsStore.getState().authProviderConfigs[detectedProvider] || {};
+      // For Teleport: use --kube-cluster from exec args (authoritative), fallback to parseClusterName
+      const tshKubeCluster = detection?.kubeCluster || realName;
       const loginConfig: Record<string, string> = detectedProvider === 'tsh'
-        ? { ...savedConfig, action: 'kube-login', cluster: realName }
+        ? { ...savedConfig, action: 'kube-login', cluster: tshKubeCluster }
         : { ...savedConfig };
 
       const res = await fetch(`/api/auth/${detectedProvider}/login`, {

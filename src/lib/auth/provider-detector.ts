@@ -4,6 +4,8 @@ interface DetectionResult {
   providerId: string | null;
   confidence: 'high' | 'medium' | 'low';
   reason: string;
+  /** For Teleport contexts: the --kube-cluster value from exec args */
+  kubeCluster?: string;
 }
 
 /**
@@ -26,7 +28,11 @@ export function detectProvider(contextName: string): DetectionResult {
 
   // Teleport
   if (execCommand.includes('tsh') || execCommand.endsWith('/tsh')) {
-    return { providerId: 'tsh', confidence: 'high', reason: `exec.command: ${execCommand}` };
+    // Extract --kube-cluster from exec args for tsh kube login
+    const execArgsList = exec?.args || [];
+    const kubeClusterArg = execArgsList.find((a: string) => a.startsWith('--kube-cluster='));
+    const kubeCluster = kubeClusterArg?.split('=')[1] || undefined;
+    return { providerId: 'tsh', confidence: 'high', reason: `exec.command: ${execCommand}`, kubeCluster };
   }
 
   // AWS EKS
