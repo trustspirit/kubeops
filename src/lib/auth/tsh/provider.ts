@@ -1,6 +1,10 @@
 import type { AuthProvider, AuthProviderAvailability, AuthProviderStatus, AuthConfigField } from '../types';
 import { findCli, getCliVersion, runCli, extractCliError } from '../cli-utils';
 
+// Preserve last successful status to avoid UI flicker when tsh is temporarily
+// slow or busy (timeout, parse error). Mirrors tsh-session-guard strategy.
+let lastKnownStatus: AuthProviderStatus | null = null;
+
 export const tshProvider: AuthProvider = {
   id: 'tsh',
   name: 'Teleport',
@@ -15,18 +19,29 @@ export const tshProvider: AuthProvider = {
 
   async getStatus(_config: Record<string, string>): Promise<AuthProviderStatus> {
     const path = findCli('tsh');
-    if (!path) return { authenticated: false };
+    if (!path) {
+      lastKnownStatus = { authenticated: false };
+      return lastKnownStatus;
+    }
     try {
       const output = runCli(path, ['status', '--format=json'], 10_000);
       const data = JSON.parse(output);
       const active = data?.active;
-      if (!active?.username) return { authenticated: false };
-      return {
+      if (!active?.username) {
+        lastKnownStatus = { authenticated: false };
+        return lastKnownStatus;
+      }
+      lastKnownStatus = {
         authenticated: true,
         user: active.username,
         expiresAt: active.valid_until ? new Date(active.valid_until) : undefined,
       };
+      return lastKnownStatus;
     } catch {
+      // On failure (timeout, tsh busy), preserve previous state to avoid
+      // UI flicker between authenticated/unauthenticated.
+      // This matches the strategy in tsh-session-guard.ts.
+      if (lastKnownStatus) return lastKnownStatus;
       return { authenticated: false };
     }
   },

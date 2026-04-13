@@ -81,7 +81,14 @@ export function isTshSessionValid(): boolean {
   try {
     const output = runCli(path, ['status', '--format=json'], 10_000);
     const data = JSON.parse(output);
-    const valid = !!data?.active?.username;
+    const active = data?.active;
+    // Check both username presence and session expiry — tsh status can return
+    // the user even after the session has expired.
+    let valid = !!active?.username;
+    if (valid && active.valid_until) {
+      const expiry = new Date(active.valid_until).getTime();
+      if (expiry > 0 && expiry < Date.now()) valid = false;
+    }
     sessionCache = { valid, checkedAt: Date.now() };
     return valid;
   } catch {
