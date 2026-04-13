@@ -61,8 +61,11 @@ const SESSION_CACHE_TTL = 30_000; // 30 s — matches the cluster SWR refresh
  * Checks whether the current Teleport session is valid by running
  * `tsh status --format=json`. The result is cached for SESSION_CACHE_TTL.
  *
- * Uses execFileSync (blocking, max 5 s) — acceptable because the call is
+ * Uses execFileSync (blocking, max 10 s) — acceptable because the call is
  * cheap and we only run it once per health-check cycle thanks to caching.
+ *
+ * On failure (timeout, parse error), preserves the previous cached value
+ * to avoid falsely marking a valid session as expired.
  */
 export function isTshSessionValid(): boolean {
   if (sessionCache && Date.now() - sessionCache.checkedAt < SESSION_CACHE_TTL) {
@@ -76,13 +79,19 @@ export function isTshSessionValid(): boolean {
   }
 
   try {
-    const output = runCli(path, ['status', '--format=json'], 5_000);
+    const output = runCli(path, ['status', '--format=json'], 10_000);
     const data = JSON.parse(output);
     const valid = !!data?.active?.username;
     sessionCache = { valid, checkedAt: Date.now() };
     return valid;
   } catch {
-    sessionCache = { valid: false, checkedAt: Date.now() };
+    // On failure, preserve previous state — don't flip a valid session to invalid
+    // just because tsh was temporarily slow or busy.
+    // Update checkedAt to avoid retry storms when tsh is consistently slow.
+    if (sessionCache) {
+      sessionCache = { ...sessionCache, checkedAt: Date.now() };
+      return sessionCache.valid;
+    }
     return false;
   }
 }

@@ -17,7 +17,7 @@ export const tshProvider: AuthProvider = {
     const path = findCli('tsh');
     if (!path) return { authenticated: false };
     try {
-      const output = runCli(path, ['status', '--format=json'], 5_000);
+      const output = runCli(path, ['status', '--format=json'], 10_000);
       const data = JSON.parse(output);
       const active = data?.active;
       if (!active?.username) return { authenticated: false };
@@ -61,7 +61,7 @@ export const tshProvider: AuthProvider = {
   getConfigFields(): AuthConfigField[] {
     return [
       { key: 'proxyUrl', label: 'Proxy URL', type: 'text', required: true, placeholder: 'teleport.example.com:443' },
-      { key: 'authType', label: 'Auth Type', type: 'text', required: false, placeholder: 'e.g. github, saml, oidc' },
+      { key: 'authType', label: 'Auth Type', type: 'text', required: false, placeholder: 'e.g. teleport-github-connector, saml, oidc' },
     ];
   },
 };

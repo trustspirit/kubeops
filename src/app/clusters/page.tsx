@@ -39,9 +39,11 @@ export default function ClustersPage() {
 
   // Fetch provider statuses and refresh periodically so the UI reflects
   // external session changes (e.g. tsh session expiring or renewed outside the app).
+  // On check failure (timeout, network error), preserve the previous status
+  // to avoid falsely showing "unauthenticated" for a healthy session.
   const refreshProviderStatuses = useCallback(async (providerList: typeof providers) => {
     const available = providerList.filter(p => p.available);
-    if (available.length === 0) return;
+    if (available.length === 0) return {};
     const results = await Promise.all(
       available.map(async (p) => {
         try {
@@ -49,46 +51,30 @@ export default function ClustersPage() {
           const queryParams = new URLSearchParams(config).toString();
           const res = await fetch(`/api/auth/${p.id}/status${queryParams ? `?${queryParams}` : ''}`);
           const status = await res.json();
-          return { id: p.id, status: { authenticated: status.authenticated || status.loggedIn || false, user: status.user || status.username } };
+          return { id: p.id, status: { authenticated: status.authenticated || status.loggedIn || false, user: status.user || status.username }, ok: true };
         } catch {
-          return { id: p.id, status: { authenticated: false } };
+          return { id: p.id, status: { authenticated: false }, ok: false };
         }
       })
     );
-    const statuses: Record<string, { authenticated: boolean; user?: string }> = {};
-    for (const r of results) statuses[r.id] = r.status;
-    setProviderStatuses(statuses);
+    // Build the merged statuses: successful checks update, failures preserve previous.
+    // Return the same merged view so callers (e.g. auto-login) see consistent data.
+    let merged: Record<string, { authenticated: boolean; user?: string }> = {};
+    setProviderStatuses((prev) => {
+      const next = { ...prev };
+      for (const r of results) {
+        if (r.ok) {
+          next[r.id] = r.status;
+        }
+      }
+      merged = next;
+      return next;
+    });
+    return merged;
   }, []);
 
-  // Initial fetch + periodic refresh (every 60 s)
   const providersRef = useRef(providers);
   providersRef.current = providers;
-
-  useEffect(() => {
-    if (providers.length === 0) return;
-    refreshProviderStatuses(providersRef.current);
-
-    const id = setInterval(() => refreshProviderStatuses(providersRef.current), 60_000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [providers.length, refreshProviderStatuses]);
-
-  const { filtered, allTags, grouped, hasGroups } = useClustersFiltering({
-    clusters,
-    search,
-    showFavoritesOnly,
-    tagFilter,
-    getClusterMeta,
-  });
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await manualRefresh();
-    } finally {
-      setRefreshing(false);
-    }
-  }, [manualRefresh]);
 
   const handleProviderLogin = useCallback(async (providerId: string) => {
     setLoginLoadingProvider(providerId);
@@ -106,6 +92,54 @@ export default function ClustersPage() {
       setLoginLoadingProvider(null);
     }
   }, [providerLogin, manualRefresh, refreshProviderStatuses]);
+
+  // Initial fetch + periodic refresh (every 60 s).
+  // Auto-login only on first app startup; after that, expired sessions
+  // just update the UI and the user clicks Login manually.
+  const autoLoginDone = useRef(false);
+
+  useEffect(() => {
+    if (providers.length === 0) return;
+
+    (async () => {
+      const statuses = await refreshProviderStatuses(providersRef.current);
+
+      // Auto-login once on app startup for unauthenticated providers
+      if (!autoLoginDone.current && statuses) {
+        autoLoginDone.current = true;
+        const available = providersRef.current.filter(p => p.available);
+        for (const p of available) {
+          if (!statuses[p.id]?.authenticated) {
+            const config = useSettingsStore.getState().authProviderConfigs[p.id] || {};
+            if (p.id === 'tsh' && !config.proxyUrl) continue;
+            handleProviderLogin(p.id);
+            break; // one at a time — avoid multiple browser windows
+          }
+        }
+      }
+    })();
+
+    const id = setInterval(() => refreshProviderStatuses(providersRef.current), 60_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providers.length, refreshProviderStatuses, handleProviderLogin]);
+
+  const { filtered, allTags, grouped, hasGroups } = useClustersFiltering({
+    clusters,
+    search,
+    showFavoritesOnly,
+    tagFilter,
+    getClusterMeta,
+  });
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await manualRefresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [manualRefresh]);
 
   const handleClusterClick = useCallback(async (contextName: string, clusterField: string, status: string) => {
     if (status === 'connected') {

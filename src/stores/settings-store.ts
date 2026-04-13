@@ -59,6 +59,15 @@ export const useSettingsStore = create<SettingsState>()(
               ...authProviderConfigs['tsh'],
             });
           }
+          // Migrate renamed Teleport GitHub connector
+          // Read from store (not stale `state`) to pick up any config just written above.
+          const tshConfig = useSettingsStore.getState().authProviderConfigs['tsh'];
+          if (tshConfig?.authType === 'github') {
+            state.setAuthProviderConfig('tsh', {
+              ...tshConfig,
+              authType: 'teleport-github-connector',
+            });
+          }
         };
       },
     }
