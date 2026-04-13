@@ -1,4 +1,5 @@
 import { getCoreV1Api } from './client-factory';
+import { isTeleportContext, isTshSessionValid } from './tsh-session-guard';
 
 interface StatusEntry {
   status: 'connected' | 'error' | 'disconnected';
@@ -26,6 +27,19 @@ export function isStatusStale(contextName: string): boolean {
 }
 
 export async function checkClusterStatus(contextName: string): Promise<StatusEntry> {
+  // Guard: skip the k8s API call (and its exec auth plugin) for Teleport
+  // contexts when the session is expired — this prevents tsh from opening
+  // a browser for auto-relogin on every health-check cycle.
+  if (isTeleportContext(contextName) && !isTshSessionValid()) {
+    const entry: StatusEntry = {
+      status: 'disconnected',
+      error: 'Teleport session expired',
+      checkedAt: Date.now(),
+    };
+    statusCache.set(contextName, entry);
+    return entry;
+  }
+
   try {
     const api = getCoreV1Api(contextName);
     await Promise.race([

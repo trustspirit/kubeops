@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useClusters } from '@/hooks/use-clusters';
 import { useClustersFiltering } from '@/hooks/use-clusters-filtering';
@@ -37,11 +37,12 @@ export default function ClustersPage() {
   const [providerStatuses, setProviderStatuses] = useState<Record<string, { authenticated: boolean; user?: string }>>({});
   const [loginLoadingProvider, setLoginLoadingProvider] = useState<string | null>(null);
 
-  // Fetch provider statuses on mount and when providers change
-  useEffect(() => {
-    if (providers.length === 0) return;
-    const available = providers.filter(p => p.available);
-    Promise.all(
+  // Fetch provider statuses and refresh periodically so the UI reflects
+  // external session changes (e.g. tsh session expiring or renewed outside the app).
+  const refreshProviderStatuses = useCallback(async (providerList: typeof providers) => {
+    const available = providerList.filter(p => p.available);
+    if (available.length === 0) return;
+    const results = await Promise.all(
       available.map(async (p) => {
         try {
           const config = useSettingsStore.getState().authProviderConfigs[p.id] || {};
@@ -53,12 +54,24 @@ export default function ClustersPage() {
           return { id: p.id, status: { authenticated: false } };
         }
       })
-    ).then((results) => {
-      const statuses: Record<string, { authenticated: boolean; user?: string }> = {};
-      for (const r of results) statuses[r.id] = r.status;
-      setProviderStatuses(statuses);
-    });
-  }, [providers]);
+    );
+    const statuses: Record<string, { authenticated: boolean; user?: string }> = {};
+    for (const r of results) statuses[r.id] = r.status;
+    setProviderStatuses(statuses);
+  }, []);
+
+  // Initial fetch + periodic refresh (every 60 s)
+  const providersRef = useRef(providers);
+  providersRef.current = providers;
+
+  useEffect(() => {
+    if (providers.length === 0) return;
+    refreshProviderStatuses(providersRef.current);
+
+    const id = setInterval(() => refreshProviderStatuses(providersRef.current), 60_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providers.length, refreshProviderStatuses]);
 
   const { filtered, allTags, grouped, hasGroups } = useClustersFiltering({
     clusters,
@@ -82,18 +95,17 @@ export default function ClustersPage() {
     try {
       await providerLogin(providerId);
       toast.success(`${providerId} login successful`);
+      // Re-fetch provider statuses so the header reflects the new session
+      refreshProviderStatuses(providersRef.current);
       // Trigger cluster list refresh with visible loading (best-effort)
       manualRefresh().catch(() => {});
-      const statusRes = await fetch(`/api/auth/${providerId}/status`);
-      const status = await statusRes.json();
-      setProviderStatuses((prev) => ({ ...prev, [providerId]: status }));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       toast.error(`Login failed: ${message}`);
     } finally {
       setLoginLoadingProvider(null);
     }
-  }, [providerLogin, manualRefresh]);
+  }, [providerLogin, manualRefresh, refreshProviderStatuses]);
 
   const handleClusterClick = useCallback(async (contextName: string, clusterField: string, status: string) => {
     if (status === 'connected') {

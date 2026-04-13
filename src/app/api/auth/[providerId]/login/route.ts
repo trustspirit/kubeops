@@ -3,6 +3,7 @@ import '@/lib/auth/providers';
 import { getProvider } from '@/lib/auth/registry';
 import { clearClientCache } from '@/lib/k8s/client-factory';
 import { validateConfig } from '@/lib/auth/validate-config';
+import { invalidateTshSessionCache, clearTeleportContextCache } from '@/lib/k8s/tsh-session-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,6 +30,12 @@ export async function POST(
 
   if (result.success) {
     clearClientCache();
+    // After successful auth, clear cached session state so that the next
+    // health-check cycle re-evaluates Teleport contexts immediately.
+    if (providerId === 'tsh') {
+      invalidateTshSessionCache();
+      clearTeleportContextCache();
+    }
   }
 
   return NextResponse.json(result, { status: result.success ? 200 : 400 });
