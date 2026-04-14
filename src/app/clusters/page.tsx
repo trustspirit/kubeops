@@ -268,7 +268,7 @@ export default function ClustersPage() {
             <LayoutDashboard className="h-4 w-4" />
             <span className="text-xs">Overview</span>
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRefresh} disabled={refreshing || isCheckingStatus} title="Refresh cluster list">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRefresh} disabled={refreshing} title="Refresh cluster list">
             <RotateCw className={`h-4 w-4 ${refreshing || isCheckingStatus ? 'animate-spin' : ''}`} />
           </Button>
           <UpdateIndicator />

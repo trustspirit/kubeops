@@ -97,7 +97,10 @@ export default function ClusterOverviewPage() {
   const nsLabel = isAllNs ? 'All Namespaces' : namespace;
 
   // Core data (always fetch immediately)
-  const { data: health, error: healthError } = useSWR(`/api/clusters/${clusterId}/health`);
+  const { data: health, error: healthError, isValidating: healthValidating } = useSWR(`/api/clusters/${clusterId}/health`, {
+    errorRetryCount: 3,
+    errorRetryInterval: 2000,
+  });
   const { data: nodesData } = useSWR(`/api/clusters/${clusterId}/nodes`);
   const { data: podsData } = useSWR(`/api/clusters/${clusterId}/resources/${namespace}/pods`);
 
@@ -112,7 +115,9 @@ export default function ClusterOverviewPage() {
   const { data: configmapData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/configmaps` : null);
   const { data: secretData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/secrets` : null);
 
-  if (healthError) return <ErrorDisplay error={healthError} />;
+  // Don't show error while SWR is still retrying — Teleport exec plugin
+  // often fails on the first call (empty key file) but succeeds on retry.
+  if (healthError && !healthValidating && !health) return <ErrorDisplay error={healthError} />;
 
   const nodes = nodesData?.items || [];
   const pods = podsData?.items || [];
