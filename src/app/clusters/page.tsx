@@ -22,6 +22,9 @@ import { ClusterTagEditor } from '@/components/clusters/cluster-tag-editor';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
+// Module-level flag: survive component remount so auto-login runs only once per session
+let autoLoginDone = false;
+
 export default function ClustersPage() {
   const router = useRouter();
   const { clusters, isLoading, error, isCheckingStatus, checkedClusters, refreshingClusters, refreshClusterStatus, manualRefresh, mutate } = useClusters();
@@ -94,19 +97,17 @@ export default function ClustersPage() {
   }, [providerLogin, manualRefresh, refreshProviderStatuses]);
 
   // Initial fetch + periodic refresh (every 60 s).
-  // Auto-login only on first app startup; after that, expired sessions
+  // Auto-login only once per app session; after that, expired sessions
   // just update the UI and the user clicks Login manually.
-  const autoLoginDone = useRef(false);
-
   useEffect(() => {
     if (providers.length === 0) return;
 
     (async () => {
       const statuses = await refreshProviderStatuses(providersRef.current);
 
-      // Auto-login once on app startup for unauthenticated providers
-      if (!autoLoginDone.current && statuses) {
-        autoLoginDone.current = true;
+      // Auto-login once per session for unauthenticated providers
+      if (!autoLoginDone && statuses) {
+        autoLoginDone = true;
         const available = providersRef.current.filter(p => p.available);
         for (const p of available) {
           if (!statuses[p.id]?.authenticated) {

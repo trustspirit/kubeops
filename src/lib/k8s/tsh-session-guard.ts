@@ -54,8 +54,9 @@ export function clearTeleportContextCache(): void {
 // Teleport session validity (cached with TTL)
 // ---------------------------------------------------------------------------
 
-let sessionCache: { valid: boolean; checkedAt: number } | null = null;
+let sessionCache: { valid: boolean; checkedAt: number; lastSuccessAt: number } | null = null;
 const SESSION_CACHE_TTL = 30_000; // 30 s — matches the cluster SWR refresh
+const MAX_STALE_PRESERVE = 90_000; // 90 s — max time to trust a stale 'valid: true' on consecutive failures
 
 /**
  * Checks whether the current Teleport session is valid by running
@@ -74,7 +75,8 @@ export function isTshSessionValid(): boolean {
 
   const path = findCli('tsh');
   if (!path) {
-    sessionCache = { valid: false, checkedAt: Date.now() };
+    const now = Date.now();
+    sessionCache = { valid: false, checkedAt: now, lastSuccessAt: now };
     return false;
   }
 
@@ -89,14 +91,20 @@ export function isTshSessionValid(): boolean {
       const expiry = new Date(active.valid_until).getTime();
       if (expiry > 0 && expiry < Date.now()) valid = false;
     }
-    sessionCache = { valid, checkedAt: Date.now() };
+    const now = Date.now();
+    sessionCache = { valid, checkedAt: now, lastSuccessAt: now };
     return valid;
   } catch {
     // On failure, preserve previous state — don't flip a valid session to invalid
     // just because tsh was temporarily slow or busy.
-    // Update checkedAt to avoid retry storms when tsh is consistently slow.
+    // But limit how long we trust a stale 'true' — after MAX_STALE_PRESERVE from
+    // last successful check, fall back to false to prevent infinite stale state.
     if (sessionCache) {
       sessionCache = { ...sessionCache, checkedAt: Date.now() };
+      if (sessionCache.valid && Date.now() - sessionCache.lastSuccessAt > MAX_STALE_PRESERVE) {
+        sessionCache = { valid: false, checkedAt: Date.now(), lastSuccessAt: sessionCache.lastSuccessAt };
+        return false;
+      }
       return sessionCache.valid;
     }
     return false;

@@ -27,15 +27,16 @@ export function isStatusStale(contextName: string): boolean {
 }
 
 export async function checkClusterStatus(contextName: string): Promise<StatusEntry> {
-  // Guard: skip the k8s API call (and its exec auth plugin) for Teleport
-  // contexts when the session is expired — this prevents tsh from opening
-  // a browser for auto-relogin on every health-check cycle.
-  if (isTeleportContext(contextName) && !isTshSessionValid()) {
-    const entry: StatusEntry = {
-      status: 'disconnected',
-      error: 'Teleport session expired',
-      checkedAt: Date.now(),
-    };
+  // Teleport clusters: NEVER invoke the K8s API during background health checks.
+  // Even with a valid session, the exec plugin (tsh kube credentials) can trigger
+  // browser-based per-cluster re-authorization in Teleport 14+, opening a new
+  // browser tab on every health-check cycle for every cluster.
+  // Instead, use tsh session validity as a proxy for cluster reachability.
+  if (isTeleportContext(contextName)) {
+    const valid = isTshSessionValid();
+    const entry: StatusEntry = valid
+      ? { status: 'connected', checkedAt: Date.now() }
+      : { status: 'disconnected', error: 'Teleport session expired', checkedAt: Date.now() };
     statusCache.set(contextName, entry);
     return entry;
   }
