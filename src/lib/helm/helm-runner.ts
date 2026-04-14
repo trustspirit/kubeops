@@ -76,7 +76,7 @@ export function isValidHelmName(name: string): boolean {
 
 /** Validate a Kubernetes namespace name (DNS-1123 label) */
 export function isValidNamespace(ns: string): boolean {
-  return /^[a-z0-9][a-z0-9-]{0,62}$/.test(ns);
+  return /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(ns);
 }
 
 /** Validate a chart reference (repo/chart, OCI URL, or local path — must not start with -) */

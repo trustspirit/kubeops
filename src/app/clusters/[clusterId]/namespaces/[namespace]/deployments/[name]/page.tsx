@@ -148,7 +148,7 @@ export default function DeploymentDetailPage() {
       mutate();
     } catch (err: unknown) {
       toast.error(`Restart failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally { setRestarting(false); }
+    } finally { setRestarting(false); setRestartOpen(false); }
   };
 
   const handleDelete = async () => {

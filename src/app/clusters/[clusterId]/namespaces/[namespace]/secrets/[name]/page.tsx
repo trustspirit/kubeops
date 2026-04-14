@@ -160,7 +160,11 @@ export default function SecretDetailPage() {
             Secret data values are hidden in YAML view. Use the Data tab to reveal individual values.
           </div>
           <pre className="rounded-md border bg-muted p-4 overflow-auto max-h-[600px] text-xs font-mono whitespace-pre">
-            {yaml.dump({ ...secret, data: Object.fromEntries(Object.keys(data).map(k => [k, '••••••••'])) }, { lineWidth: -1 })}
+            {yaml.dump({
+              ...secret,
+              data: Object.fromEntries(Object.keys(data).map(k => [k, '••••••••'])),
+              ...(secret.stringData ? { stringData: Object.fromEntries(Object.keys(secret.stringData as Record<string, unknown>).map(k => [k, '••••••••'])) } : {}),
+            }, { lineWidth: -1 })}
           </pre>
         </TabsContent>
       </Tabs>
