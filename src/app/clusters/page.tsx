@@ -223,37 +223,47 @@ export default function ClustersPage() {
           <h1 className="text-lg font-bold tracking-tight">KubeOps</h1>
         </div>
         <div className="flex items-center gap-2 no-drag-region">
-          {providers.filter(p => p.available).map((provider) => (
+          {providers.filter(p => p.available).map((provider) => {
+            const status = providerStatuses[provider.id];
+            const isChecking = status === undefined;
+            const isLoggingIn = loginLoadingProvider === provider.id;
+            const isAuthenticated = status?.authenticated === true;
+            return (
             <Tooltip key={provider.id}>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className={`h-8 gap-1.5 ${providerStatuses[provider.id]?.authenticated ? 'text-green-500' : ''}`}
+                  className={`h-8 gap-1.5 ${isAuthenticated ? 'text-green-500' : ''}`}
                   onClick={() => handleProviderLogin(provider.id)}
-                  disabled={loginLoadingProvider === provider.id}
+                  disabled={isLoggingIn || isChecking}
                 >
-                  {loginLoadingProvider === provider.id ? (
+                  {isLoggingIn || isChecking ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : providerStatuses[provider.id]?.authenticated ? (
+                  ) : isAuthenticated ? (
                     <CircleCheck className="h-4 w-4" />
                   ) : (
                     <LogIn className="h-4 w-4" />
                   )}
                   <span className="text-xs">
-                    {providerStatuses[provider.id]?.authenticated
-                      ? providerStatuses[provider.id].user?.split('@')[0]
+                    {isChecking
+                      ? provider.name
+                      : isAuthenticated
+                      ? status.user?.split('@')[0]
                       : provider.name}
                   </span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {providerStatuses[provider.id]?.authenticated
-                  ? `Logged in as ${providerStatuses[provider.id].user}`
+                {isChecking
+                  ? `Checking ${provider.name} status...`
+                  : isAuthenticated
+                  ? `Logged in as ${status.user}`
                   : `Login with ${provider.name}`}
               </TooltipContent>
             </Tooltip>
-          ))}
+            );
+          })}
           <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => router.push('/clusters/overview')} title="Multi-Cluster Overview">
             <LayoutDashboard className="h-4 w-4" />
             <span className="text-xs">Overview</span>
