@@ -136,13 +136,15 @@ export default function ClustersPage() {
   });
 
   const handleRefresh = useCallback(async () => {
+    if (refreshing || isCheckingStatus) return; // Already in progress
     setRefreshing(true);
     try {
       await manualRefresh();
     } finally {
-      setRefreshing(false);
+      // Keep refreshing=true briefly so the spinner is visible
+      setTimeout(() => setRefreshing(false), 400);
     }
-  }, [manualRefresh]);
+  }, [refreshing, isCheckingStatus, manualRefresh]);
 
   const handleClusterClick = useCallback(async (contextName: string, clusterField: string, status: string) => {
     if (status === 'connected') {
@@ -268,7 +270,7 @@ export default function ClustersPage() {
             <LayoutDashboard className="h-4 w-4" />
             <span className="text-xs">Overview</span>
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRefresh} disabled={refreshing} title="Refresh cluster list">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRefresh} title="Refresh cluster list">
             <RotateCw className={`h-4 w-4 ${refreshing || isCheckingStatus ? 'animate-spin' : ''}`} />
           </Button>
           <UpdateIndicator />
