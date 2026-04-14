@@ -35,8 +35,11 @@ export default function StatefulSetDetailPage() {
   const [scaleOpen, setScaleOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [restartOpen, setRestartOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [deletePodName, setDeletePodName] = useState<string | null>(null);
+  const [deletingPod, setDeletingPod] = useState(false);
   const { addTab } = usePanelStore();
 
   const decodedClusterId = decodeURIComponent(clusterId);
@@ -88,7 +91,25 @@ export default function StatefulSetDetailPage() {
       mutate();
     } catch (err: unknown) {
       toast.error(`Restart failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally { setRestarting(false); }
+    } finally {
+      setRestarting(false);
+      setRestartOpen(false);
+    }
+  };
+
+  const handleDeletePod = async () => {
+    if (!deletePodName) return;
+    setDeletingPod(true);
+    try {
+      await apiClient.delete(`/api/clusters/${clusterId}/resources/${namespace}/pods/${deletePodName}`);
+      toast.success(`${deletePodName} deleted`);
+      mutate();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setDeletingPod(false);
+      setDeletePodName(null);
+    }
   };
 
   const handleDelete = async () => {
@@ -122,7 +143,7 @@ export default function StatefulSetDetailPage() {
           <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)}>
             <GitCompare className="h-4 w-4 mr-1" />Compare
           </Button>
-          <Button variant="outline" size="sm" onClick={handleRestart} disabled={restarting}>
+          <Button variant="outline" size="sm" onClick={() => setRestartOpen(true)} disabled={restarting}>
             <RotateCcw className={`h-4 w-4 mr-1 ${restarting ? 'animate-spin' : ''}`} />
             {restarting ? 'Restarting...' : 'Restart'}
           </Button>
@@ -273,13 +294,7 @@ export default function StatefulSetDetailPage() {
                               <Button variant="ghost" size="icon" className="h-7 w-7" title="Exec" onClick={() => firstContainer && addTab({ id: `exec-${pName}-${firstContainer}`, type: 'exec', title: `Exec: ${pName}`, clusterId, namespace, podName: pName, container: firstContainer })}>
                                 <Terminal className="h-3.5 w-3.5" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" title="Delete Pod" onClick={async () => {
-                                if (!confirm(`Delete pod ${pName}?`)) return;
-                                try {
-                                  await apiClient.delete(`/api/clusters/${clusterId}/resources/${namespace}/pods/${pName}`);
-                                  toast.success(`${pName} deleted`);
-                                } catch (err: unknown) { toast.error(err instanceof Error ? err.message : 'Unknown error'); }
-                              }}>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" title="Delete Pod" onClick={() => setDeletePodName(pName ?? null)}>
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </div>
@@ -305,6 +320,8 @@ export default function StatefulSetDetailPage() {
 
       <ScaleDialog open={scaleOpen} onOpenChange={setScaleOpen} clusterId={decodedClusterId} namespace={namespace} resourceType="statefulsets" name={name} currentReplicas={spec.replicas || 0} onScaled={() => mutate()} />
       <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title={`Delete ${name}?`} description={`This will permanently delete the statefulset "${name}".`} confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} loading={deleting} />
+      <ConfirmDialog open={restartOpen} onOpenChange={setRestartOpen} title={`Restart ${name}?`} description={`This will perform a rolling restart of all pods in "${name}".`} confirmLabel="Restart" onConfirm={handleRestart} loading={restarting} />
+      <ConfirmDialog open={!!deletePodName} onOpenChange={(open) => { if (!open) setDeletePodName(null); }} title={`Delete pod ${deletePodName}?`} description={`This will permanently delete the pod "${deletePodName}".`} confirmLabel="Delete" variant="destructive" onConfirm={handleDeletePod} loading={deletingPod} />
       <ResourceDiffDialog open={compareOpen} onOpenChange={setCompareOpen} sourceClusterId={clusterId} sourceNamespace={namespace} resourceType="statefulsets" resourceName={name} sourceResource={sts} />
     </div>
   );

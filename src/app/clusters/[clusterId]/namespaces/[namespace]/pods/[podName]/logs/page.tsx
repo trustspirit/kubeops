@@ -65,7 +65,7 @@ export default function PodLogsPage() {
     converterRef.current = new AnsiToHtml({ fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true });
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/logs/${encodeURIComponent(decodeURIComponent(clusterId))}/${namespace}/${podName}?container=${container}&follow=${follow}&timestamps=true&tailLines=500`;
+    const wsUrl = `${protocol}//${window.location.host}/ws/logs/${encodeURIComponent(decodeURIComponent(clusterId))}/${namespace}/${podName}?container=${container}&follow=true&timestamps=true&tailLines=500`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -91,7 +91,7 @@ export default function PodLogsPage() {
       ws.close();
       setLogs('');
     };
-  }, [container, clusterId, namespace, podName, follow]);
+  }, [container, clusterId, namespace, podName]);
 
   // ANSI conversion + search highlighting
   const [baseHtml, setBaseHtml] = useState('Connecting...');

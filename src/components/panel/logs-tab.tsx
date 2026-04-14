@@ -181,6 +181,7 @@ export function LogsTab({ tab }: LogsTabProps) {
 
   const handlePodSwitch = (newPodName: string) => {
     if (newPodName === podName) return;
+    setFollow(true);
     updateTab(tab.id, {
       podName: newPodName,
       title: `logs: ${newPodName}/${container}`,
@@ -189,6 +190,7 @@ export function LogsTab({ tab }: LogsTabProps) {
 
   const handleContainerSwitch = (newContainer: string) => {
     if (newContainer === container) return;
+    setFollow(true);
     updateTab(tab.id, {
       container: newContainer,
       title: `logs: ${podName}/${newContainer}`,

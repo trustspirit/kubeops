@@ -44,11 +44,14 @@ export default function PodExecPage() {
     let term: any;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let fitAddon: any;
+    let disposed = false;
 
     async function init() {
       const { Terminal } = await import('@xterm/xterm');
       const { FitAddon } = await import('@xterm/addon-fit');
       await import('@xterm/xterm/css/xterm.css');
+
+      if (disposed) return;
 
       term = new Terminal({
         cursorBlink: true,
@@ -129,6 +132,7 @@ export default function PodExecPage() {
     const cleanup = init();
 
     return () => {
+      disposed = true;
       cleanup.then(fn => fn?.());
       wsRef.current?.close();
       termRef.current?.dispose();

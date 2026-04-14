@@ -41,6 +41,7 @@ export function ResourceActions({
 }: ResourceActionsProps) {
   const [scaleOpen, setScaleOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [restartOpen, setRestartOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [nodeDebugOpen, setNodeDebugOpen] = useState(false);
@@ -78,6 +79,7 @@ export function ResourceActions({
       toast.error(`Restart failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setRestarting(false);
+      setRestartOpen(false);
     }
   }, [restarting, encodedClusterId, namespace, resourceType, name, onMutate]);
 
@@ -173,9 +175,9 @@ export function ResourceActions({
             </>
           )}
           {canRestart && (
-            <DropdownMenuItem onClick={handleRestart} disabled={restarting}>
+            <DropdownMenuItem onClick={() => setRestartOpen(true)}>
               <RotateCcw className="h-4 w-4 mr-2" />
-              {restarting ? 'Restarting...' : 'Restart'}
+              Restart
             </DropdownMenuItem>
           )}
           {canScale && (
@@ -212,6 +214,18 @@ export function ResourceActions({
           name={name}
           currentReplicas={currentReplicas}
           onScaled={onMutate}
+        />
+      )}
+
+      {canRestart && restartOpen && (
+        <ConfirmDialog
+          open={restartOpen}
+          onOpenChange={setRestartOpen}
+          title={`Restart ${name}?`}
+          description="This will perform a rolling restart of all pods."
+          confirmLabel="Restart"
+          onConfirm={handleRestart}
+          loading={restarting}
         />
       )}
 

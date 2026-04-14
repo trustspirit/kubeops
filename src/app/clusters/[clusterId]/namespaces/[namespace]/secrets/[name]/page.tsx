@@ -156,8 +156,11 @@ export default function SecretDetailPage() {
         </TabsContent>
 
         <TabsContent value="yaml" className="mt-4">
+          <div className="rounded-md border bg-amber-500/10 border-amber-500/20 px-3 py-2 mb-2 text-xs text-amber-600 dark:text-amber-400">
+            Secret data values are hidden in YAML view. Use the Data tab to reveal individual values.
+          </div>
           <pre className="rounded-md border bg-muted p-4 overflow-auto max-h-[600px] text-xs font-mono whitespace-pre">
-            {yaml.dump(secret, { lineWidth: -1 })}
+            {yaml.dump({ ...secret, data: Object.fromEntries(Object.keys(data).map(k => [k, '••••••••'])) }, { lineWidth: -1 })}
           </pre>
         </TabsContent>
       </Tabs>

@@ -33,7 +33,7 @@ export const ClusterCard = memo(function ClusterCard({ name, cluster, server, st
       role="button"
       tabIndex={0}
       onClick={() => !isLogging && onClick()}
-      onKeyDown={(e) => e.key === 'Enter' && !isLogging && onClick()}
+      onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !isLogging) { e.preventDefault(); onClick(); } }}
       className={cn(
         'group relative flex flex-col gap-2 rounded-lg border p-4 hover:bg-accent/50 transition-colors cursor-pointer',
         isLogging && 'opacity-60 pointer-events-none',

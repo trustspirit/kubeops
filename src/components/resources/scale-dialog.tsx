@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { KubeResource } from '@/types/resource';
 import {
   Dialog,
@@ -38,6 +38,9 @@ export function ScaleDialog({
 }: ScaleDialogProps) {
   const [replicas, setReplicas] = useState(currentReplicas);
   const [loading, setLoading] = useState(false);
+
+  // Sync replicas with prop when dialog opens or external value changes
+  useEffect(() => { setReplicas(currentReplicas); }, [currentReplicas]);
 
   const handleScale = async () => {
     setLoading(true);

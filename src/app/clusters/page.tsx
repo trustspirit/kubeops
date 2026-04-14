@@ -235,8 +235,8 @@ export default function ClustersPage() {
                   variant="ghost"
                   size="sm"
                   className={`h-8 gap-1.5 ${isAuthenticated ? 'text-green-500' : ''}`}
-                  onClick={() => handleProviderLogin(provider.id)}
-                  disabled={isLoggingIn || isChecking}
+                  onClick={() => !isAuthenticated && handleProviderLogin(provider.id)}
+                  disabled={isLoggingIn || isChecking || isAuthenticated}
                 >
                   {isLoggingIn || isChecking ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -452,7 +452,7 @@ export default function ClustersPage() {
                     ))
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                      {filtered.map((cluster) => (
+                      {filtered.filter((c) => showFavoritesOnly || !getClusterMeta(c.name).favorite || grouped.favorites.length === 0).map((cluster) => (
                         <ClusterCard
                           key={cluster.name}
                           name={cluster.name}
@@ -468,6 +468,14 @@ export default function ClustersPage() {
                           parseClusterName={parseClusterName}
                         />
                       ))}
+                    </div>
+                  )}
+                  {filtered.length === 0 && (
+                    <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                      {showFavoritesOnly ? 'No favorites yet — click the star icon on a cluster to add it.'
+                        : tagFilter ? `No clusters tagged "${tagFilter}".`
+                        : search ? `No clusters matching "${search}".`
+                        : 'No clusters found.'}
                     </div>
                   )}
                 </div>
@@ -487,7 +495,7 @@ export default function ClustersPage() {
                         role="button"
                         tabIndex={0}
                         onClick={() => !isKubeLogging && handleClusterClick(cluster.name, cluster.cluster, cluster.status)}
-                        onKeyDown={(e) => e.key === 'Enter' && !isKubeLogging && handleClusterClick(cluster.name, cluster.cluster, cluster.status)}
+                        onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !isKubeLogging) { e.preventDefault(); handleClusterClick(cluster.name, cluster.cluster, cluster.status); } }}
                         className={`flex items-center gap-4 px-4 py-3 hover:bg-accent/50 transition-colors group cursor-pointer ${isKubeLogging ? 'opacity-60 pointer-events-none' : ''}`}
                       >
                         {showPending ? (
@@ -584,7 +592,10 @@ export default function ClustersPage() {
                   })}
                   {filtered.length === 0 && (
                     <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                      No clusters matching &ldquo;{search}&rdquo;
+                      {showFavoritesOnly ? 'No favorites yet — click the star icon on a cluster to add it.'
+                        : tagFilter ? `No clusters tagged "${tagFilter}".`
+                        : search ? `No clusters matching "${search}".`
+                        : 'No clusters found.'}
                     </div>
                   )}
                 </div>

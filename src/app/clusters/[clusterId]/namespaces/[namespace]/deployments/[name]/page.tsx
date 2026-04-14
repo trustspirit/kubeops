@@ -36,8 +36,11 @@ export default function DeploymentDetailPage() {
   const [scaleOpen, setScaleOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [restartOpen, setRestartOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [deletePodName, setDeletePodName] = useState<string | null>(null);
+  const [deletingPod, setDeletingPod] = useState(false);
   const { addTab } = usePanelStore();
 
   const decodedClusterId = decodeURIComponent(clusterId);
@@ -180,7 +183,7 @@ export default function DeploymentDetailPage() {
           <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)}>
             <GitCompare className="h-4 w-4 mr-1" />Compare
           </Button>
-          <Button variant="outline" size="sm" onClick={handleRestart} disabled={restarting}>
+          <Button variant="outline" size="sm" onClick={() => setRestartOpen(true)} disabled={restarting}>
             <RotateCcw className={`h-4 w-4 mr-1 ${restarting ? 'animate-spin' : ''}`} />
             {restarting ? 'Restarting...' : 'Restart'}
           </Button>
@@ -359,13 +362,7 @@ export default function DeploymentDetailPage() {
                               <Button variant="ghost" size="icon" className="h-7 w-7" title="Exec" onClick={() => firstContainer && addTab({ id: `exec-${pName}-${firstContainer}`, type: 'exec', title: `Exec: ${pName}`, clusterId, namespace, podName: pName, container: firstContainer })}>
                                 <Terminal className="h-3.5 w-3.5" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" title="Delete Pod" onClick={async () => {
-                                if (!confirm(`Delete pod ${pName}?`)) return;
-                                try {
-                                  await apiClient.delete(`/api/clusters/${clusterId}/resources/${namespace}/pods/${pName}`);
-                                  toast.success(`${pName} deleted`);
-                                } catch (err: unknown) { toast.error(err instanceof Error ? err.message : 'Unknown error'); }
-                              }}>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" title="Delete Pod" onClick={() => setDeletePodName(pName ?? null)}>
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </div>
@@ -464,6 +461,29 @@ export default function DeploymentDetailPage() {
 
       <ScaleDialog open={scaleOpen} onOpenChange={setScaleOpen} clusterId={decodedClusterId} namespace={namespace} resourceType="deployments" name={name} currentReplicas={spec.replicas || 0} onScaled={() => mutate()} />
       <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title={`Delete ${name}?`} description={`This will permanently delete the deployment "${name}".`} confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} loading={deleting} />
+      <ConfirmDialog open={restartOpen} onOpenChange={setRestartOpen} title={`Restart ${name}?`} description={`This will perform a rolling restart of the deployment "${name}".`} confirmLabel="Restart" onConfirm={handleRestart} loading={restarting} />
+      <ConfirmDialog
+        open={deletePodName !== null}
+        onOpenChange={(open) => { if (!open) setDeletePodName(null); }}
+        title={`Delete pod ${deletePodName}?`}
+        description={`This will permanently delete the pod "${deletePodName}". The deployment will create a replacement.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        loading={deletingPod}
+        onConfirm={async () => {
+          setDeletingPod(true);
+          try {
+            await apiClient.delete(`/api/clusters/${clusterId}/resources/${namespace}/pods/${deletePodName}`);
+            toast.success(`${deletePodName} deleted`);
+            mutate();
+          } catch (err: unknown) {
+            toast.error(err instanceof Error ? err.message : 'Unknown error');
+          } finally {
+            setDeletingPod(false);
+            setDeletePodName(null);
+          }
+        }}
+      />
       <ResourceDiffDialog open={compareOpen} onOpenChange={setCompareOpen} sourceClusterId={clusterId} sourceNamespace={namespace} resourceType="deployments" resourceName={name} sourceResource={dep} />
     </div>
   );

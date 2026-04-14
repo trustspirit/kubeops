@@ -25,6 +25,8 @@ export function TerminalTab({ tab, active }: TerminalTabProps) {
     }
   }, []);
 
+  const [reinitKey, setReinitKey] = useState(0);
+
   useEffect(() => {
     if (!container || !terminalRef.current || initDone.current) return;
     initDone.current = true;
@@ -150,7 +152,8 @@ export function TerminalTab({ tab, active }: TerminalTabProps) {
       termRef.current?.dispose();
       termRef.current = null;
     };
-  }, [container, clusterId, namespace, podName]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [container, clusterId, namespace, podName, reinitKey]);
 
   // Pause/resume WebSocket when tab is hidden for >5 minutes to save resources
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -164,11 +167,10 @@ export function TerminalTab({ tab, active }: TerminalTabProps) {
         idleTimerRef.current = null;
       }
       if (idleClosedRef.current) {
-        // WebSocket was closed due to idle — user needs to re-open the tab
+        // WebSocket was closed due to idle — trigger re-initialization
         idleClosedRef.current = false;
         initDone.current = false;
-        // Force re-init by simulating a remount would be complex;
-        // instead just show a "reconnect" message if disconnected
+        setReinitKey((k) => k + 1);
       }
       setTimeout(() => {
         try { fitRef.current?.fit(); } catch { /* ignore */ }
