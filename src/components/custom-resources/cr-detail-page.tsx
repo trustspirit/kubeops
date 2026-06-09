@@ -14,6 +14,8 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useState } from 'react';
+import { isExternalSecretResource } from '@/lib/external-secret-force-sync';
+import { ExternalSecretForceSyncButton } from '@/components/custom-resources/external-secret-force-sync-button';
 
 export function CrDetailPage() {
   const params = useParams();
@@ -36,7 +38,7 @@ export function CrDetailPage() {
     namespace,
   });
 
-  const nsParam = namespace ? `?namespace=${namespace}` : '';
+  const nsParam = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
   const yamlApiUrl = `/api/clusters/${clusterId}/crds/${group}/${version}/${plural}/${name}${nsParam}`;
 
   if (isLoading) return <LoadingSkeleton />;
@@ -47,6 +49,7 @@ export function CrDetailPage() {
   const metadata = resource.metadata || {};
   const labels = metadata.labels || {};
   const annotations = metadata.annotations || {};
+  const isExternalSecret = isExternalSecretResource({ group, plural, kind: resource.kind });
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -75,6 +78,13 @@ export function CrDetailPage() {
             {metadata.namespace && ` in ${metadata.namespace}`}
           </p>
         </div>
+        {isExternalSecret && (
+          <ExternalSecretForceSyncButton
+            apiUrl={yamlApiUrl}
+            name={metadata.name}
+            onSynced={() => mutate()}
+          />
+        )}
         <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
           <Trash2 className="h-4 w-4 mr-1" />
           Delete

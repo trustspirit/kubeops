@@ -155,6 +155,36 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
   }
 }
 
+export async function PATCH(req: NextRequest, { params }: RouteParams) {
+  const { clusterId, path } = await params;
+  const contextName = decodeURIComponent(clusterId);
+  const [group, version, plural, name] = path;
+
+  if (!group || !version || !plural || !name) {
+    return NextResponse.json({ error: 'Path must be: group/version/plural/name' }, { status: 400 });
+  }
+
+  const namespace = req.nextUrl.searchParams.get('namespace') || undefined;
+
+  try {
+    const body = await req.json();
+    const apiPath = buildApiPath(group, version, plural, namespace, name);
+    const { status, data } = await makeK8sRequest(contextName, 'PATCH', apiPath, body);
+
+    if (status >= 200 && status < 300) {
+      return NextResponse.json(data);
+    }
+    return NextResponse.json(
+      { error: data?.message || 'Patch failed' },
+      { status }
+    );
+  } catch (error: unknown) {
+    const { status, message } = extractK8sError(error);
+    console.error(`[K8s API] PATCH CR ${group}/${version}/${plural}/${name}: ${status} ${message}`);
+    return NextResponse.json({ error: message }, { status });
+  }
+}
+
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const { clusterId, path } = await params;
   const contextName = decodeURIComponent(clusterId);

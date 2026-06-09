@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCustomResourceList } from '@/hooks/use-custom-resource-list';
@@ -15,6 +15,8 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { ColumnDef, CellContext } from '@tanstack/react-table';
 import type { KubeResource } from '@/types/resource';
+import { isExternalSecretResource } from '@/lib/external-secret-force-sync';
+import { ExternalSecretForceSyncButton } from '@/components/custom-resources/external-secret-force-sync-button';
 
 function resolveJsonPath(obj: KubeResource, jsonPath: string): unknown {
   // Convert JSONPath like ".spec.replicas" to object access
@@ -27,7 +29,15 @@ function resolveJsonPath(obj: KubeResource, jsonPath: string): unknown {
   return current;
 }
 
-function buildColumns(crd: CrdItem | undefined, isNamespaced: boolean, clusterId: string, group: string, version: string, plural: string): ColumnDef<KubeResource>[] {
+function buildColumns(
+  crd: CrdItem | undefined,
+  isNamespaced: boolean,
+  clusterId: string,
+  group: string,
+  version: string,
+  plural: string,
+  onMutate: () => void,
+): ColumnDef<KubeResource>[] {
   const cols: ColumnDef<KubeResource>[] = [];
 
   // Name column (clickable)
@@ -96,6 +106,30 @@ function buildColumns(crd: CrdItem | undefined, isNamespaced: boolean, clusterId
     ),
   });
 
+  if (isExternalSecretResource({ group, plural, kind: crd?.kind })) {
+    cols.push({
+      id: 'actions',
+      enableSorting: false,
+      header: '',
+      cell: ({ row }: CellContext<KubeResource, unknown>) => {
+        const name = row.original.metadata?.name;
+        if (!name) return null;
+
+        const ns = row.original.metadata?.namespace;
+        const nsParam = ns ? `?namespace=${encodeURIComponent(ns)}` : '';
+        const apiUrl = `/api/clusters/${clusterId}/crds/${group}/${version}/${plural}/${name}${nsParam}`;
+        return (
+          <ExternalSecretForceSyncButton
+            apiUrl={apiUrl}
+            name={name}
+            onSynced={onMutate}
+            compact
+          />
+        );
+      },
+    });
+  }
+
   return cols;
 }
 
@@ -131,10 +165,11 @@ export function CrListPage() {
     plural,
     namespace: effectiveNamespace,
   });
+  const handleMutate = useCallback(() => mutate(), [mutate]);
 
   const columns = useMemo(
-    () => buildColumns(crd, isNamespaced, clusterId, group, version, plural),
-    [crd, isNamespaced, clusterId, group, version, plural]
+    () => buildColumns(crd, isNamespaced, clusterId, group, version, plural, handleMutate),
+    [crd, isNamespaced, clusterId, group, version, plural, handleMutate]
   );
 
   if (isLoading) return <ListSkeleton />;
