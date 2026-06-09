@@ -152,7 +152,6 @@ export function TerminalTab({ tab, active }: TerminalTabProps) {
       termRef.current?.dispose();
       termRef.current = null;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [container, clusterId, namespace, podName, reinitKey]);
 
   // Pause/resume WebSocket when tab is hidden for >5 minutes to save resources

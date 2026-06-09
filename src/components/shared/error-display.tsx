@@ -13,7 +13,7 @@ interface ErrorDisplayProps {
 }
 
 export function ErrorDisplay({ error, onRetry, clusterId }: ErrorDisplayProps) {
-  const { providerId } = useDetectProvider(clusterId || null);
+  const { providerId, kubeCluster } = useDetectProvider(clusterId || null);
   const { login } = useProviderLogin();
   const [loading, setLoading] = useState(false);
 
@@ -29,7 +29,7 @@ export function ErrorDisplay({ error, onRetry, clusterId }: ErrorDisplayProps) {
       // Only send tsh-specific action keys to tsh provider
       if (providerId === 'tsh') {
         const extraConfig: Record<string, string> = clusterId
-          ? { action: 'kube-login', cluster: decodeURIComponent(clusterId) }
+          ? { action: 'kube-login', cluster: kubeCluster || decodeURIComponent(clusterId) }
           : { action: 'proxy-login' };
         await login(providerId, extraConfig);
       } else {

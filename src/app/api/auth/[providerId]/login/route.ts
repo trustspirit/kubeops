@@ -40,7 +40,25 @@ export async function POST(
       invalidateTshSessionCache();
       clearTeleportContextCache();
     }
+
+    // Enrich the response with the freshly-authenticated session info so the
+    // client can persist it (user, expiry) without a second round-trip. Best-
+    // effort: if getStatus throws (slow CLI), still return success.
+    try {
+      const status = await provider.getStatus(config);
+      return NextResponse.json(
+        {
+          ...result,
+          authenticated: status.authenticated,
+          user: status.user,
+          expiresAt: status.expiresAt ? status.expiresAt.toISOString() : undefined,
+        },
+        { status: 200 }
+      );
+    } catch {
+      return NextResponse.json({ ...result, authenticated: true }, { status: 200 });
+    }
   }
 
-  return NextResponse.json(result, { status: result.success ? 200 : 400 });
+  return NextResponse.json(result, { status: 400 });
 }

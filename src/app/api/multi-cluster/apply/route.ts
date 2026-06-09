@@ -24,6 +24,31 @@ interface ApplyResult {
   message?: string;
 }
 
+const CLUSTER_SCOPED_KINDS = new Set([
+  'APIService',
+  'CertificateSigningRequest',
+  'ClusterRole',
+  'ClusterRoleBinding',
+  'ComponentStatus',
+  'CustomResourceDefinition',
+  'MutatingWebhookConfiguration',
+  'Namespace',
+  'Node',
+  'PersistentVolume',
+  'PodSecurityPolicy',
+  'PriorityClass',
+  'RuntimeClass',
+  'StorageClass',
+  'ValidatingAdmissionPolicy',
+  'ValidatingAdmissionPolicyBinding',
+  'ValidatingWebhookConfiguration',
+  'VolumeAttachment',
+]);
+
+function isClusterScopedResource(resource: k8s.KubernetesObject): boolean {
+  return CLUSTER_SCOPED_KINDS.has(resource.kind || '');
+}
+
 function extractK8sError(error: unknown): string {
   const err = error as { body?: string | { message?: string }; message?: string };
   let body = err?.body;
@@ -47,7 +72,11 @@ async function applyToTarget(
     // Create a deep copy and set the namespace
     const resourceCopy = JSON.parse(JSON.stringify(resource));
     if (resourceCopy.metadata) {
-      resourceCopy.metadata.namespace = target.namespace;
+      if (isClusterScopedResource(resourceCopy)) {
+        delete resourceCopy.metadata.namespace;
+      } else {
+        resourceCopy.metadata.namespace = target.namespace;
+      }
       // Remove resourceVersion for apply to avoid conflicts
       if (action === 'apply') {
         delete resourceCopy.metadata.resourceVersion;

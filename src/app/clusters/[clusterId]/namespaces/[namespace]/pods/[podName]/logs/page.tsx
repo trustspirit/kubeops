@@ -100,9 +100,10 @@ export default function PodLogsPage() {
     setBaseHtml(converterRef.current.toHtml(logs));
   }, [logs]);
 
+  const { query, highlightHtml, open: openSearch } = search;
   const logsHtml = useMemo(
-    () => (search.query ? search.highlightHtml(baseHtml) : baseHtml),
-    [baseHtml, search.query, search.highlightHtml]
+    () => (query ? highlightHtml(baseHtml) : baseHtml),
+    [baseHtml, query, highlightHtml]
   );
 
   useEffect(() => {
@@ -116,13 +117,13 @@ export default function PodLogsPage() {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault();
-        search.open();
+        openSearch();
         setTimeout(() => searchInputRef.current?.focus(), 0);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [search.open]);
+  }, [openSearch]);
 
   const handleDownload = () => {
     const blob = new Blob([logs], { type: 'text/plain' });
@@ -168,7 +169,7 @@ export default function PodLogsPage() {
             variant="outline"
             size="sm"
             onClick={() => {
-              search.open();
+              openSearch();
               setTimeout(() => searchInputRef.current?.focus(), 0);
             }}
           >
@@ -188,7 +189,8 @@ export default function PodLogsPage() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
-                e.shiftKey ? search.goToPrev() : search.goToNext();
+                if (e.shiftKey) search.goToPrev();
+                else search.goToNext();
               }
               if (e.key === 'Escape') {
                 e.preventDefault();

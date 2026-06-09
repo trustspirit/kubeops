@@ -13,7 +13,7 @@ export const oidcProvider: AuthProvider = {
     return { available: true, path, version };
   },
 
-  async getStatus(_config: Record<string, string>): Promise<AuthProviderStatus> {
+  async getStatus(): Promise<AuthProviderStatus> {
     // OIDC token validity is best checked by attempting a cluster API call.
     // The provider itself cannot determine status without cluster context.
     return { authenticated: false };

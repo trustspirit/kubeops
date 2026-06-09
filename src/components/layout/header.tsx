@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { ThemeToggle } from './theme-toggle';
 import { ClusterSelector } from '@/components/clusters/cluster-selector';
 import { NamespaceSelector } from '@/components/namespaces/namespace-selector';
@@ -13,6 +13,14 @@ import { toast } from 'sonner';
 
 const RELEASES_URL = 'https://github.com/trustspirit/kubeops/releases/latest';
 
+function useMounted() {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+}
+
 function isInstallError(message?: string | null): boolean {
   if (!message) return false;
   const lower = message.toLowerCase();
@@ -20,8 +28,7 @@ function isInstallError(message?: string | null): boolean {
 }
 
 export function UpdateIndicator() {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
+  const mounted = useMounted();
 
   const {
     phase, version, percent, errorMessage, isAvailable,

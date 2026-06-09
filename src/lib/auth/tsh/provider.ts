@@ -20,7 +20,7 @@ export const tshProvider: AuthProvider = {
     return { available: true, path, version };
   },
 
-  async getStatus(_config: Record<string, string>): Promise<AuthProviderStatus> {
+  async getStatus(): Promise<AuthProviderStatus> {
     const path = findCli('tsh');
     if (!path) {
       lastKnownStatus = { authenticated: false };

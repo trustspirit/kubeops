@@ -5,17 +5,33 @@ function getAwsPath(): string | null {
   return findCli('aws');
 }
 
+// Preserve last successful status per (provider, profile) so a transient
+// CLI failure (timeout, network blip) does not flip the UI — and the
+// persisted client cache — to authenticated:false and then trigger a
+// spurious auto-login on the next cold start. Mirrors the tsh provider
+// strategy; TTL caps the staleness if creds actually got revoked externally.
+const STATUS_PRESERVE_TTL = 90_000;
+type CachedStatus = { status: AuthProviderStatus; at: number };
+const lastKnownStatus = new Map<string, CachedStatus>();
+
 async function checkAwsStatus(awsPath: string, profile?: string): Promise<AuthProviderStatus> {
+  const cacheKey = profile || '__default__';
   try {
     const args = ['sts', 'get-caller-identity', '--output', 'json'];
     if (profile) args.push('--profile', profile);
     const output = runCli(awsPath, args, 5_000);
     const data = JSON.parse(output);
-    return {
+    const status: AuthProviderStatus = {
       authenticated: true,
       user: data.Arn?.split('/').pop() || data.UserId,
     };
+    lastKnownStatus.set(cacheKey, { status, at: Date.now() });
+    return status;
   } catch {
+    const prev = lastKnownStatus.get(cacheKey);
+    if (prev && Date.now() - prev.at < STATUS_PRESERVE_TTL) {
+      return prev.status;
+    }
     return { authenticated: false };
   }
 }

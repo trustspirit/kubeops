@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useClusters } from '@/hooks/use-clusters';
 import { useClustersFiltering } from '@/hooks/use-clusters-filtering';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useAuthStatusStore } from '@/stores/auth-status-store';
 import { useClusterCatalogStore } from '@/stores/cluster-catalog-store';
+import { ensureTshKubeLogin, markTshKubeLoginDone } from '@/lib/auth/tsh-kube-login-cache';
 import { parseClusterName } from '@/lib/cluster-names';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -37,7 +39,27 @@ export default function ClustersPage() {
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const { providers } = useAuthProviders();
   const { login: providerLogin } = useProviderLogin();
-  const [providerStatuses, setProviderStatuses] = useState<Record<string, { authenticated: boolean; user?: string }>>({});
+  // Seed from persisted store so the header immediately reflects the last-known
+  // authenticated state on app launch (avoids flicker + spurious auto-login).
+  const cachedStatuses = useAuthStatusStore((s) => s.providerStatuses);
+  const persistProviderStatuses = useAuthStatusStore((s) => s.setProviderStatuses);
+  const clearProviderStatus = useAuthStatusStore((s) => s.clearProviderStatus);
+  const isLikelyAuthenticated = useAuthStatusStore((s) => s.isLikelyAuthenticated);
+  const [providerStatuses, setProviderStatuses] = useState<Record<string, { authenticated: boolean; user?: string }>>(() => {
+    const init: Record<string, { authenticated: boolean; user?: string }> = {};
+    for (const [id, s] of Object.entries(cachedStatuses)) {
+      // Drop persisted entries whose recorded expiry has already passed —
+      // otherwise the header would optimistically render a green check for
+      // ~1 SWR cycle before the status poll corrects it.
+      if (!s.authenticated) continue;
+      if (s.expiresAt) {
+        const expMs = Date.parse(s.expiresAt);
+        if (!Number.isNaN(expMs) && expMs <= Date.now()) continue;
+      }
+      init[id] = { authenticated: s.authenticated, user: s.user };
+    }
+    return init;
+  });
   const [loginLoadingProvider, setLoginLoadingProvider] = useState<string | null>(null);
 
   // Fetch provider statuses and refresh periodically so the UI reflects
@@ -57,9 +79,14 @@ export default function ClustersPage() {
           const queryParams = new URLSearchParams(config).toString();
           const res = await fetch(`/api/auth/${p.id}/status${queryParams ? `?${queryParams}` : ''}`);
           const status = await res.json();
-          return { id: p.id, status: { authenticated: status.authenticated || status.loggedIn || false, user: status.user || status.username }, ok: true };
+          return {
+            id: p.id,
+            status: { authenticated: status.authenticated || status.loggedIn || false, user: status.user || status.username },
+            expiresAt: status.expiresAt as string | undefined,
+            ok: true,
+          };
         } catch {
-          return { id: p.id, status: { authenticated: false }, ok: false };
+          return { id: p.id, status: { authenticated: false }, expiresAt: undefined, ok: false };
         }
       })
     );
@@ -67,14 +94,26 @@ export default function ClustersPage() {
     // Cannot rely on setState updater return value (React 18 batches updates).
     const prev = providerStatusesRef.current;
     const merged: Record<string, { authenticated: boolean; user?: string }> = { ...prev };
+    const toPersist: Record<string, { authenticated: boolean; user?: string; expiresAt?: string }> = {};
     for (const r of results) {
       if (r.ok) {
         merged[r.id] = r.status;
+        if (r.status.authenticated) {
+          toPersist[r.id] = { ...r.status, expiresAt: r.expiresAt };
+        } else {
+          // The API returned a definitive unauthenticated status. Clear the
+          // persisted optimistic snapshot so a later cold start does not show
+          // a stale green login state or skip the intended auto-login path.
+          clearProviderStatus(r.id);
+        }
       }
     }
     setProviderStatuses(merged);
+    if (Object.keys(toPersist).length > 0) {
+      persistProviderStatuses(toPersist);
+    }
     return merged;
-  }, []);
+  }, [persistProviderStatuses, clearProviderStatus]);
 
   const providersRef = useRef(providers);
   providersRef.current = providers;
@@ -99,6 +138,10 @@ export default function ClustersPage() {
   // Initial fetch + periodic refresh (every 60 s).
   // Auto-login only once per app session; after that, expired sessions
   // just update the UI and the user clicks Login manually.
+  // We also skip auto-login entirely when the persisted store says the
+  // provider was authenticated recently — the CLI session on disk almost
+  // certainly survived the restart, and re-running login would needlessly
+  // open a browser window on every app launch.
   useEffect(() => {
     if (providers.length === 0) return;
 
@@ -110,14 +153,17 @@ export default function ClustersPage() {
         autoLoginDone = true;
         const available = providersRef.current.filter(p => p.available);
         for (const p of available) {
-          if (!statuses[p.id]?.authenticated) {
-            const config = useSettingsStore.getState().authProviderConfigs[p.id] || {};
-            // Skip auto-login for providers that need manual configuration first
-            if (p.id === 'tsh' && !config.proxyUrl) continue;
-            if ((p.id === 'aws-sso' || p.id === 'aws-iam') && !config.profile) continue;
-            handleProviderLogin(p.id);
-            break; // one at a time — avoid multiple browser windows
-          }
+          if (statuses[p.id]?.authenticated) continue;
+          // Persisted cache says we were authenticated recently — let the user
+          // log in manually if it really is expired, rather than auto-popping
+          // a browser window on every cold start.
+          if (isLikelyAuthenticated(p.id)) continue;
+          const config = useSettingsStore.getState().authProviderConfigs[p.id] || {};
+          // Skip auto-login for providers that need manual configuration first
+          if (p.id === 'tsh' && !config.proxyUrl) continue;
+          if ((p.id === 'aws-sso' || p.id === 'aws-iam') && !config.profile) continue;
+          handleProviderLogin(p.id);
+          break; // one at a time — avoid multiple browser windows
         }
       }
     })();
@@ -148,6 +194,26 @@ export default function ClustersPage() {
 
   const handleClusterClick = useCallback(async (contextName: string, clusterField: string, status: string) => {
     if (status === 'connected') {
+      // For Teleport: a `connected` status from the background poller only
+      // confirms the proxy session (`tsh status`) is valid — it does NOT
+      // guarantee that `tsh kube login <cluster>` has ever run for THIS
+      // cluster, or that the per-cluster cert is still alive. Without this
+      // step the next page would call the K8s API and fail with an auth
+      // error even though the cluster card looked green.
+      // `ensureTshKubeLogin` is idempotent and short-circuits via an
+      // in-session cache, so repeat clicks have near-zero overhead.
+      try {
+        setKubeLoggingIn(contextName);
+        await ensureTshKubeLogin(contextName);
+      } catch (err: unknown) {
+        const { realName } = parseClusterName(contextName, clusterField);
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        toast.error('Cluster login failed', { description: `${realName}: ${message}` });
+        setKubeLoggingIn(null);
+        return;
+      } finally {
+        setKubeLoggingIn(null);
+      }
       router.push(`/clusters/${encodeURIComponent(contextName)}`);
       return;
     }
@@ -169,24 +235,25 @@ export default function ClustersPage() {
       }
 
       // Build provider-appropriate login config
-      const savedConfig = useSettingsStore.getState().authProviderConfigs[detectedProvider] || {};
       // For Teleport: use --kube-cluster from exec args (authoritative), fallback to parseClusterName
       const tshKubeCluster = detection?.kubeCluster || realName;
-      const loginConfig: Record<string, string> = detectedProvider === 'tsh'
-        ? { ...savedConfig, action: 'kube-login', cluster: tshKubeCluster }
-        : { ...savedConfig };
+      const extraConfig: Record<string, string> = detectedProvider === 'tsh'
+        ? { action: 'kube-login', cluster: tshKubeCluster }
+        : {};
 
-      const res = await fetch(`/api/auth/${detectedProvider}/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(loginConfig),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        toast.error('Cluster login failed', { description: `${realName}: ${data.error || 'Unknown error'}` });
+      try {
+        // Route through useProviderLogin so the persisted auth-status store
+        // gets updated as a side effect (single chokepoint for "I just
+        // authenticated" state) instead of having each call site remember
+        // to refresh the store separately.
+        await providerLogin(detectedProvider, extraConfig);
+      } catch (loginErr: unknown) {
+        const message = loginErr instanceof Error ? loginErr.message : 'Unknown error';
+        toast.error('Cluster login failed', { description: `${realName}: ${message}` });
         return;
       }
       toast.success('Cluster login successful', { description: realName });
+      if (detectedProvider === 'tsh') markTshKubeLoginDone(contextName);
       // Optimistically mark as connected
       await mutate(
         (current) => {
@@ -206,7 +273,7 @@ export default function ClustersPage() {
     } finally {
       setKubeLoggingIn(null);
     }
-  }, [router, mutate]);
+  }, [router, mutate, providerLogin]);
 
   const toggleGroup = (group: string) => {
     setCollapsedGroups((prev) => {

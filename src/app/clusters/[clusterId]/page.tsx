@@ -117,7 +117,7 @@ export default function ClusterOverviewPage() {
 
   // Don't show error while SWR is still retrying — Teleport exec plugin
   // often fails on the first call (empty key file) but succeeds on retry.
-  if (healthError && !healthValidating && !health) return <ErrorDisplay error={healthError} />;
+  if (healthError && !healthValidating && !health) return <ErrorDisplay error={healthError} clusterId={decodedClusterId} />;
 
   const nodes = nodesData?.items || [];
   const pods = podsData?.items || [];

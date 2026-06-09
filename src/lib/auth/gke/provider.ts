@@ -1,6 +1,13 @@
 import type { AuthProvider, AuthProviderAvailability, AuthProviderStatus, AuthConfigField } from '../types';
 import { findCli, getCliVersion, runCli, extractCliError } from '../cli-utils';
 
+// Preserve last successful status so a transient `gcloud` failure doesn't
+// flip the persisted client cache to authenticated:false and trigger a
+// spurious auto-login on next cold start. TTL caps the staleness.
+const STATUS_PRESERVE_TTL = 90_000;
+let lastKnownStatus: AuthProviderStatus | null = null;
+let lastKnownStatusAt = 0;
+
 export const gkeProvider: AuthProvider = {
   id: 'gke',
   name: 'Google GKE',
@@ -13,12 +20,15 @@ export const gkeProvider: AuthProvider = {
     return { available: true, path, version };
   },
 
-  async getStatus(_config: Record<string, string>): Promise<AuthProviderStatus> {
+  async getStatus(): Promise<AuthProviderStatus> {
     const path = findCli('gcloud');
     if (!path) return { authenticated: false };
     try {
       runCli(path, ['auth', 'print-access-token'], 5_000);
     } catch {
+      if (lastKnownStatus && Date.now() - lastKnownStatusAt < STATUS_PRESERVE_TTL) {
+        return lastKnownStatus;
+      }
       return { authenticated: false };
     }
     // Account lookup is best-effort — don't fail auth status if only this fails
@@ -26,7 +36,17 @@ export const gkeProvider: AuthProvider = {
     try {
       account = runCli(path, ['config', 'get-value', 'account'], 5_000).trim() || undefined;
     } catch { /* non-fatal */ }
-    return { authenticated: true, user: account };
+    // gcloud access tokens are short-lived (~1h). Approximate expiry so the
+    // persisted-cache freshness check can flip to "needs re-login" sooner
+    // than the 12h default window.
+    const status: AuthProviderStatus = {
+      authenticated: true,
+      user: account,
+      expiresAt: new Date(Date.now() + 55 * 60_000),
+    };
+    lastKnownStatus = status;
+    lastKnownStatusAt = Date.now();
+    return status;
   },
 
   async login(config: Record<string, string>) {

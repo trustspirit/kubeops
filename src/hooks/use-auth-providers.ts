@@ -1,5 +1,6 @@
 import useSWR from 'swr';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useAuthStatusStore } from '@/stores/auth-status-store';
 import { useCallback } from 'react';
 
 interface ProviderInfo {
@@ -68,11 +69,14 @@ export function useDetectProvider(clusterId: string | null) {
   return {
     providerId: override || data?.providerId || null,
     confidence: override ? 'override' as const : data?.confidence,
+    kubeCluster: override ? undefined : data?.kubeCluster,
     isLoading: !override && isLoading,
   };
 }
 
 export function useProviderLogin() {
+  const setProviderStatus = useAuthStatusStore((s) => s.setProviderStatus);
+
   const login = useCallback(async (
     providerId: string,
     extraConfig?: Record<string, string>
@@ -90,8 +94,21 @@ export function useProviderLogin() {
     if (!res.ok || !data.success) {
       throw new Error(data.error || 'Login failed');
     }
+    // Write-through to the persisted auth-status store so that every login
+    // surface (header button, ErrorDisplay, direct hook callers, …) keeps
+    // the cached session info up to date across app restarts — without each
+    // caller having to remember to call refreshProviderStatuses afterwards.
+    // The login route enriches its response with {authenticated, user,
+    // expiresAt} via the provider's getStatus() call.
+    if (data.authenticated || data.user || data.expiresAt) {
+      setProviderStatus(providerId, {
+        authenticated: data.authenticated ?? true,
+        user: data.user,
+        expiresAt: data.expiresAt,
+      });
+    }
     return data;
-  }, []);
+  }, [setProviderStatus]);
 
   return { login };
 }

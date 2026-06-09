@@ -39,7 +39,8 @@ export const useSettingsStore = create<SettingsState>()(
         })),
       removeClusterProviderOverride: (clusterId) =>
         set((state) => {
-          const { [clusterId]: _, ...rest } = state.clusterProviderOverrides;
+          const rest = { ...state.clusterProviderOverrides };
+          delete rest[clusterId];
           return { clusterProviderOverrides: rest };
         }),
     }),

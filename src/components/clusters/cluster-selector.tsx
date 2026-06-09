@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useClusters } from '@/hooks/use-clusters';
+import { ensureTshKubeLogin } from '@/lib/auth/tsh-kube-login-cache';
 import {
   Select,
   SelectContent,
@@ -9,15 +11,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Server } from 'lucide-react';
+import { Server, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 export function ClusterSelector() {
   const router = useRouter();
   const params = useParams();
   const clusterId = params?.clusterId as string;
   const { clusters, isLoading } = useClusters();
+  const [switching, setSwitching] = useState(false);
 
-  const handleChange = (value: string) => {
+  const handleChange = async (value: string) => {
+    // For Teleport, the cluster list status reflects only the proxy session,
+    // not per-cluster credentials. Ensure `tsh kube login <cluster>` has run
+    // before navigating, otherwise the destination page may immediately fail
+    // with an auth error. Idempotent + cached for non-tsh providers.
+    setSwitching(true);
+    try {
+      await ensureTshKubeLogin(value);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      toast.error('Cluster login failed', { description: `${value}: ${message}` });
+      setSwitching(false);
+      return;
+    }
+    setSwitching(false);
     router.push(`/clusters/${encodeURIComponent(value)}`);
   };
 
@@ -33,10 +51,10 @@ export function ClusterSelector() {
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-xs text-muted-foreground shrink-0">Cluster</span>
-      <Select value={clusterId ? decodeURIComponent(clusterId) : undefined} onValueChange={handleChange}>
+      <Select value={clusterId ? decodeURIComponent(clusterId) : undefined} onValueChange={handleChange} disabled={switching}>
         <SelectTrigger className="w-[360px] h-8 overflow-hidden">
           <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-            <Server className="h-3.5 w-3.5 shrink-0" />
+            {switching ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <Server className="h-3.5 w-3.5 shrink-0" />}
             <span className="truncate"><SelectValue placeholder="Select cluster" /></span>
           </div>
         </SelectTrigger>

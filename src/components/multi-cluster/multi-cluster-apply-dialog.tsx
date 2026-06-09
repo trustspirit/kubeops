@@ -36,6 +36,7 @@ import { useClusters } from '@/hooks/use-clusters';
 import { useNamespaces } from '@/hooks/use-namespaces';
 import { useClusterCatalogStore } from '@/stores/cluster-catalog-store';
 import { apiClient } from '@/lib/api-client';
+import { ensureTshKubeLogin } from '@/lib/auth/tsh-kube-login-cache';
 import { cn } from '@/lib/utils';
 import * as yaml from 'js-yaml';
 
@@ -60,6 +61,10 @@ interface MultiClusterApplyDialogProps {
 }
 
 const STEPS = ['YAML', 'Targets', 'Validate', 'Apply'] as const;
+
+function targetKey(target: ApplyTarget): string {
+  return `${target.clusterId}\u0000${target.namespace}`;
+}
 
 // === Namespace selector for a single cluster ===
 
@@ -162,6 +167,11 @@ export function MultiClusterApplyDialog({
     }));
   }, [selectedTargets]);
 
+  useEffect(() => {
+    setValidationResults([]);
+    setApplyResults([]);
+  }, [targets, yamlValue]);
+
   // === Step handlers ===
 
   const validateYaml = useCallback((): boolean => {
@@ -230,20 +240,54 @@ export function MultiClusterApplyDialog({
     });
   }, []);
 
+  // Preflight: ensure every selected target has a valid per-cluster credential.
+  // For Teleport clusters the server-side `kubectl apply` will fail with an
+  // auth error if `tsh kube login <cluster>` has never run; doing this here
+  // surfaces the failure per-target instead of as a single opaque API error.
+  // No-op (cheap detect call) for non-tsh providers; cached for repeat clicks.
+  const preflightAuth = useCallback(async (): Promise<ApplyResult[]> => {
+    const failures: ApplyResult[] = [];
+    await Promise.all(
+      targets.map(async (t) => {
+        try {
+          await ensureTshKubeLogin(t.clusterId);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'tsh kube login failed';
+          failures.push({
+            clusterId: t.clusterId,
+            namespace: t.namespace,
+            status: 'error',
+            message,
+          });
+        }
+      })
+    );
+    return failures;
+  }, [targets]);
+
   const handleValidate = useCallback(async () => {
     setValidating(true);
     setValidationResults([]);
     try {
+      const authFailures = await preflightAuth();
+      const authFailureKeys = new Set(authFailures.map((f) => targetKey(f)));
+      const runnableTargets = targets.filter((t) => !authFailureKeys.has(targetKey(t)));
+      if (authFailures.length === targets.length) {
+        setValidationResults(authFailures);
+        return;
+      }
       const response = await apiClient.post<{
         results: ApplyResult[];
         summary: { succeeded: number; failed: number; total: number };
       }>('/api/multi-cluster/apply', {
-        targets,
+        targets: runnableTargets,
         yaml: yamlValue,
         action: 'apply',
         dryRun: true,
       });
-      setValidationResults(response.results);
+      // Merge any auth-failed targets into the response so they're visible
+      // alongside the successful validations.
+      setValidationResults([...authFailures, ...response.results]);
     } catch (err: unknown) {
       const errObj = err as { message?: string };
       setValidationResults(
@@ -257,22 +301,29 @@ export function MultiClusterApplyDialog({
     } finally {
       setValidating(false);
     }
-  }, [targets, yamlValue]);
+  }, [targets, yamlValue, preflightAuth]);
 
   const handleApply = useCallback(async () => {
     setApplying(true);
     setApplyResults([]);
     try {
+      const authFailures = await preflightAuth();
+      const authFailureKeys = new Set(authFailures.map((f) => targetKey(f)));
+      const runnableTargets = targets.filter((t) => !authFailureKeys.has(targetKey(t)));
+      if (authFailures.length === targets.length) {
+        setApplyResults(authFailures);
+        return;
+      }
       const response = await apiClient.post<{
         results: ApplyResult[];
         summary: { succeeded: number; failed: number; total: number };
       }>('/api/multi-cluster/apply', {
-        targets,
+        targets: runnableTargets,
         yaml: yamlValue,
         action: 'apply',
         dryRun: false,
       });
-      setApplyResults(response.results);
+      setApplyResults([...authFailures, ...response.results]);
     } catch (err: unknown) {
       const errObj = err as { message?: string };
       setApplyResults(
@@ -286,13 +337,20 @@ export function MultiClusterApplyDialog({
     } finally {
       setApplying(false);
     }
-  }, [targets, yamlValue]);
+  }, [targets, yamlValue, preflightAuth]);
 
   const applySummary = useMemo(() => {
     const succeeded = applyResults.filter((r) => r.status === 'success').length;
     const failed = applyResults.filter((r) => r.status === 'error').length;
     return { succeeded, failed, total: applyResults.length };
   }, [applyResults]);
+
+  const canProceedToApply = useMemo(() => {
+    return (
+      validationResults.length === targets.length &&
+      validationResults.every((r) => r.status === 'success')
+    );
+  }, [targets.length, validationResults]);
 
   // === Render ===
 
@@ -550,6 +608,12 @@ export function MultiClusterApplyDialog({
                   </p>
                 </div>
               )}
+
+              {validationResults.length > 0 && !canProceedToApply && (
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+                  Resolve validation errors before applying.
+                </div>
+              )}
             </div>
           )}
 
@@ -675,7 +739,8 @@ export function MultiClusterApplyDialog({
                 onClick={handleNext}
                 disabled={
                   (currentStep === 0 && !yamlValue.trim()) ||
-                  (currentStep === 1 && targets.length === 0)
+                  (currentStep === 1 && targets.length === 0) ||
+                  (currentStep === 2 && !canProceedToApply)
                 }
                 className="gap-1"
               >

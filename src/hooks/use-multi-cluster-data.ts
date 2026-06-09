@@ -1,6 +1,7 @@
 import useSWR from 'swr';
 import { ClusterInfo } from '@/types/cluster';
 import { apiClient } from '@/lib/api-client';
+import { ensureTshKubeLogin } from '@/lib/auth/tsh-kube-login-cache';
 import type { KubeList, KubePod, KubeEvent, ContainerStatus } from '@/types/resource';
 
 export interface ClusterHealthData {
@@ -18,6 +19,27 @@ async function fetchMultiClusterData(clusters: ClusterInfo[]): Promise<ClusterHe
 
   const results = await Promise.allSettled(
     connected.map(async (cluster) => {
+      // For Teleport clusters the parent `connected` status only reflects the
+      // proxy session, not per-cluster credentials. Without this, the two
+      // /api/clusters/.../resources/... fetches below would return 401 for any
+      // tsh cluster whose per-cluster cert was never issued (or expired), and
+      // the overview would show confusing "error" cards even though the
+      // cluster list looks fine. Cached + idempotent → cheap on repeat ticks.
+      try {
+        await ensureTshKubeLogin(cluster.name, cluster.authProvider);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'tsh kube login failed';
+        return {
+          name: cluster.name,
+          status: 'error' as const,
+          podCount: 0,
+          runningPods: 0,
+          failingPods: 0,
+          warningEvents: 0,
+          error: message,
+        } as ClusterHealthData;
+      }
+
       const encodedName = encodeURIComponent(cluster.name);
       const [podsRes, eventsRes] = await Promise.allSettled([
         apiClient.get<KubeList<KubePod>>(`/api/clusters/${encodedName}/resources/_all/pods`),
