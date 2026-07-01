@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AgeDisplay } from '@/components/shared/age-display';
-import { ArrowLeft, Terminal, ScrollText, Trash2, KeyRound, GitCompare, Bug } from 'lucide-react';
+import { ArrowLeft, Terminal, ScrollText, Trash2, KeyRound, GitCompare, Bug, Ship } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { usePanelStore } from '@/stores/panel-store';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -27,6 +27,7 @@ import { ResourceTreeView } from '@/components/shared/resource-tree';
 import { useResourceTree } from '@/hooks/use-resource-tree';
 import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
 import type { KubeOwnerReference, ContainerSpec, ContainerStatus } from '@/types/resource';
+import { findHelmReleaseRef } from '@/lib/helm/sync-latest';
 
 function PodResourceTree({ clusterId, namespace, rootKind, rootName, focusPodName }: {
   clusterId: string;
@@ -96,6 +97,25 @@ export default function PodDetailPage() {
     }
     return null;
   }, [ownerRef, ownerRS]);
+
+  const rootResourceType = treeRoot?.rootKind === 'Deployment'
+    ? 'deployments'
+    : treeRoot?.rootKind === 'StatefulSet'
+      ? 'statefulsets'
+      : '';
+
+  const { data: rootOwnerResource } = useResourceDetail({
+    clusterId: decodedClusterId,
+    namespace,
+    resourceType: rootResourceType,
+    name: treeRoot?.rootName || '',
+    enabled: Boolean(rootResourceType && treeRoot?.rootName),
+  });
+
+  const helmReleaseRef = useMemo(
+    () => findHelmReleaseRef(pod, [ownerRS, rootOwnerResource]),
+    [pod, ownerRS, rootOwnerResource],
+  );
 
   // Watch for restarts on this single pod
   usePodRestartWatcher(decodedClusterId, pod ? [pod] : undefined);
@@ -179,6 +199,15 @@ export default function PodDetailPage() {
           <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)}>
             <GitCompare className="h-4 w-4 mr-1" />Compare
           </Button>
+          {helmReleaseRef && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/clusters/${clusterId}/helm/${encodeURIComponent(helmReleaseRef.name)}?namespace=${encodeURIComponent(helmReleaseRef.namespace)}`)}
+            >
+              <Ship className="h-4 w-4 mr-1" />Helm Release
+            </Button>
+          )}
           <PodWatchButton clusterId={decodedClusterId} namespace={namespace} podName={podName} />
           <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
             <Trash2 className="h-4 w-4 mr-1" />Delete

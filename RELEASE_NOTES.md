@@ -1,3 +1,13 @@
+# v0.4.6 — Helm Sync Latest
+
+## What's New
+
+- Added Helm release sync actions that upgrade a release to the latest chart version from configured Helm repositories.
+- Added release-level sync entry points from the Helm list and detail pages.
+- Added Pod-to-Helm-release navigation when Helm metadata can identify the owning release.
+- Added a Cluster overview shortcut to Helm releases.
+- Skips Helm upgrade when the release is already on the latest detected chart version.
+
 # v0.3.0 — Multi-Provider Authentication
 
 ## Highlights

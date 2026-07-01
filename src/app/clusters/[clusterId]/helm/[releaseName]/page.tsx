@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { HelmUpgradeDialog } from '@/components/helm/helm-upgrade-dialog';
 import { HelmRollbackDialog } from '@/components/helm/helm-rollback-dialog';
+import { HelmSyncLatestDialog } from '@/components/helm/helm-sync-latest-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,6 +22,7 @@ import {
   Trash2,
   ArrowUpCircle,
   RotateCcw,
+  RefreshCw,
   Ship,
   Clock,
   FileText,
@@ -39,6 +41,7 @@ export default function HelmReleaseDetailPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [syncLatestOpen, setSyncLatestOpen] = useState(false);
   const [rollbackOpen, setRollbackOpen] = useState(false);
   const [rollbackRevision, setRollbackRevision] = useState(0);
   const [showAllValues, setShowAllValues] = useState(false);
@@ -133,6 +136,10 @@ export default function HelmReleaseDetailPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setSyncLatestOpen(true)}>
+            <RefreshCw className="h-4 w-4 mr-1" />
+            Sync Latest
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setUpgradeOpen(true)}>
             <ArrowUpCircle className="h-4 w-4 mr-1" />
             Upgrade
@@ -322,6 +329,17 @@ export default function HelmReleaseDetailPage() {
         namespace={namespace}
         currentChart={currentChart}
         onUpgraded={refreshAll}
+      />
+
+      <HelmSyncLatestDialog
+        open={syncLatestOpen}
+        onOpenChange={setSyncLatestOpen}
+        clusterId={decodedClusterId}
+        releaseName={decodedReleaseName}
+        namespace={namespace}
+        currentChart={currentChart}
+        currentVersion={chartMeta.version}
+        onSynced={refreshAll}
       />
 
       <HelmRollbackDialog

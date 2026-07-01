@@ -8,17 +8,20 @@ import { ListSkeleton } from '@/components/shared/loading-skeleton';
 import { ErrorDisplay } from '@/components/shared/error-display';
 import { helmReleaseColumns } from '@/components/resources/resource-columns';
 import { HelmInstallDialog } from '@/components/helm/helm-install-dialog';
+import { HelmSyncLatestDialog } from '@/components/helm/helm-sync-latest-dialog';
 import { Button } from '@/components/ui/button';
-import { Ship, Plus, AlertTriangle } from 'lucide-react';
+import { Ship, Plus, AlertTriangle, RefreshCw } from 'lucide-react';
 import { ColumnDef, CellContext } from '@tanstack/react-table';
 import { useState } from 'react';
 import type { HelmRelease } from '@/types/helm';
+import { parseHelmListChart } from '@/lib/helm/sync-latest';
 
 export default function HelmReleasesPage() {
   const params = useParams();
   const clusterId = params.clusterId as string;
   const decodedClusterId = decodeURIComponent(clusterId);
   const [installOpen, setInstallOpen] = useState(false);
+  const [syncRelease, setSyncRelease] = useState<HelmRelease | null>(null);
 
   const { data, error, isLoading, mutate } = useHelmReleases({
     clusterId: decodedClusterId,
@@ -55,26 +58,45 @@ export default function HelmReleasesPage() {
   const releases = data?.releases || [];
 
   // Make name column clickable to the detail page
-  const clickableColumns: ColumnDef<HelmRelease>[] = helmReleaseColumns.map((col) => {
-    if (col.id === 'name') {
-      return {
-        ...col,
-        cell: ({ row }: CellContext<HelmRelease, unknown>) => {
-          const name = row.original.name;
-          const ns = row.original.namespace;
-          return (
-            <Link
-              href={`/clusters/${clusterId}/helm/${encodeURIComponent(name)}?namespace=${encodeURIComponent(ns)}`}
-              className="font-medium text-primary hover:underline"
-            >
-              {name}
-            </Link>
-          );
-        },
-      };
-    }
-    return col;
-  });
+  const clickableColumns: ColumnDef<HelmRelease>[] = [
+    ...helmReleaseColumns.map((col) => {
+      if (col.id === 'name') {
+        return {
+          ...col,
+          cell: ({ row }: CellContext<HelmRelease, unknown>) => {
+            const name = row.original.name;
+            const ns = row.original.namespace;
+            return (
+              <Link
+                href={`/clusters/${clusterId}/helm/${encodeURIComponent(name)}?namespace=${encodeURIComponent(ns)}`}
+                className="font-medium text-primary hover:underline"
+              >
+                {name}
+              </Link>
+            );
+          },
+        };
+      }
+      return col;
+    }),
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }: CellContext<HelmRelease, unknown>) => (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={() => setSyncRelease(row.original)}
+        >
+          <RefreshCw className="h-3.5 w-3.5 mr-1" />
+          Sync
+        </Button>
+      ),
+    },
+  ];
+
+  const syncChart = syncRelease ? parseHelmListChart(syncRelease.chart) : null;
 
   return (
     <div className="flex flex-col gap-4 p-6">
@@ -106,6 +128,19 @@ export default function HelmReleasesPage() {
         clusterId={decodedClusterId}
         onInstalled={() => mutate()}
       />
+
+      {syncRelease && syncChart && (
+        <HelmSyncLatestDialog
+          open={Boolean(syncRelease)}
+          onOpenChange={(open) => !open && setSyncRelease(null)}
+          clusterId={decodedClusterId}
+          releaseName={syncRelease.name}
+          namespace={syncRelease.namespace}
+          currentChart={syncChart.name}
+          currentVersion={syncChart.version}
+          onSynced={() => mutate()}
+        />
+      )}
     </div>
   );
 }

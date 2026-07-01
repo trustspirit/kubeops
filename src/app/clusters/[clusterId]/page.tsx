@@ -5,9 +5,10 @@ import { useParams } from 'next/navigation';
 import useSWR from 'swr';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { ErrorDisplay } from '@/components/shared/error-display';
-import { Server, Box, Layers, Network, AlertTriangle, RefreshCw, Plug, ExternalLink, Globe, Clock, Gauge } from 'lucide-react';
+import { Server, Box, Layers, Network, AlertTriangle, RefreshCw, Plug, ExternalLink, Globe, Clock, Gauge, Ship } from 'lucide-react';
 import { useNamespaceStore } from '@/stores/namespace-store';
 import Link from 'next/link';
 import { PortForwardBtn } from '@/components/shared/port-forward-btn';
@@ -243,15 +244,23 @@ export default function ClusterOverviewPage() {
   return (
     <div className="flex flex-col gap-6 p-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold">{decodedClusterId}</h1>
-        <div className="flex items-center gap-2 mt-1">
-          <StatusBadge status={health?.status === 'connected' ? 'Connected' : 'Error'} />
-          <span className="text-sm text-muted-foreground">{nsLabel}</span>
-          <span className="text-xs text-muted-foreground ml-2">
-            {configmaps.length} ConfigMaps / {secrets.length} Secrets
-          </span>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">{decodedClusterId}</h1>
+          <div className="flex items-center gap-2 mt-1">
+            <StatusBadge status={health?.status === 'connected' ? 'Connected' : 'Error'} />
+            <span className="text-sm text-muted-foreground">{nsLabel}</span>
+            <span className="text-xs text-muted-foreground ml-2">
+              {configmaps.length} ConfigMaps / {secrets.length} Secrets
+            </span>
+          </div>
         </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/clusters/${clusterId}/helm`}>
+            <Ship className="h-4 w-4 mr-1" />
+            Helm Releases
+          </Link>
+        </Button>
       </div>
 
       {/* Workload Health Summary */}
