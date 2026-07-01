@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AgeDisplay } from '@/components/shared/age-display';
-import { ArrowLeft, Terminal, ScrollText, Trash2, KeyRound, GitCompare, Bug, Ship } from 'lucide-react';
+import { ArrowLeft, Terminal, ScrollText, Trash2, KeyRound, GitCompare, Bug, Ship, GitBranch } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { usePanelStore } from '@/stores/panel-store';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -26,8 +26,18 @@ import { usePodRestartWatcher } from '@/hooks/use-pod-watcher';
 import { ResourceTreeView } from '@/components/shared/resource-tree';
 import { useResourceTree } from '@/hooks/use-resource-tree';
 import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
+import { useCustomResourceList } from '@/hooks/use-custom-resource-list';
 import type { KubeOwnerReference, ContainerSpec, ContainerStatus } from '@/types/resource';
 import { findHelmReleaseRef } from '@/lib/helm/sync-latest';
+import {
+  ARGOCD_APPLICATIONS_PLURAL,
+  ARGOCD_GROUP,
+  ARGOCD_VERSION,
+  findArgoCDApplicationRefForResource,
+  getArgoCDAppHref,
+  getArgoCDAppNameCandidates,
+  type ArgoCDApplication,
+} from '@/lib/argocd/helpers';
 
 function PodResourceTree({ clusterId, namespace, rootKind, rootName, focusPodName }: {
   clusterId: string;
@@ -115,6 +125,22 @@ export default function PodDetailPage() {
   const helmReleaseRef = useMemo(
     () => findHelmReleaseRef(pod, [ownerRS, rootOwnerResource]),
     [pod, ownerRS, rootOwnerResource],
+  );
+  const argoCDAppNameCandidates = useMemo(() => getArgoCDAppNameCandidates(pod), [pod]);
+  const { data: argoCDAppsData } = useCustomResourceList({
+    clusterId: argoCDAppNameCandidates.length > 0 ? decodedClusterId : null,
+    group: ARGOCD_GROUP,
+    version: ARGOCD_VERSION,
+    plural: ARGOCD_APPLICATIONS_PLURAL,
+    refreshInterval: 30000,
+    enabled: argoCDAppNameCandidates.length > 0,
+  });
+  const argoCDAppRef = useMemo(
+    () => findArgoCDApplicationRefForResource(
+      pod,
+      (argoCDAppsData?.items || []) as ArgoCDApplication[],
+    ),
+    [pod, argoCDAppsData],
   );
 
   // Watch for restarts on this single pod
@@ -206,6 +232,15 @@ export default function PodDetailPage() {
               onClick={() => router.push(`/clusters/${clusterId}/helm/${encodeURIComponent(helmReleaseRef.name)}?namespace=${encodeURIComponent(helmReleaseRef.namespace)}`)}
             >
               <Ship className="h-4 w-4 mr-1" />Helm Release
+            </Button>
+          )}
+          {argoCDAppRef && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(getArgoCDAppHref(clusterId, argoCDAppRef.name, argoCDAppRef.namespace))}
+            >
+              <GitBranch className="h-4 w-4 mr-1" />ArgoCD App
             </Button>
           )}
           <PodWatchButton clusterId={decodedClusterId} namespace={namespace} podName={podName} />

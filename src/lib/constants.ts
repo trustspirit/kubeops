@@ -24,6 +24,7 @@ import {
   Puzzle,
   ShieldQuestion,
   Ship,
+  GitBranch,
   ArrowUpDown,
   Gauge,
   SlidersHorizontal,
@@ -49,6 +50,7 @@ export const SIDEBAR_SECTIONS: NavSection[] = [
     items: [
       { label: 'Overview', resourceType: '', icon: LayoutDashboard, clusterScoped: true },
       { label: 'App Map', resourceType: 'app-map', icon: Workflow, clusterScoped: true },
+      { label: 'ArgoCD Apps', resourceType: 'argocd', icon: GitBranch, clusterScoped: true },
       { label: 'Nodes', resourceType: 'nodes', icon: Server, clusterScoped: true },
       { label: 'Persistent Volumes', resourceType: 'pvs', icon: HardDrive, clusterScoped: true },
       { label: 'Cluster Roles', resourceType: 'clusterroles', icon: Shield, clusterScoped: true },
@@ -149,6 +151,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'custom-resources': 'Custom Resources',
   'rbac': 'RBAC Summary',
   'helm': 'Helm Releases',
+  'argocd': 'ArgoCD Apps',
   horizontalpodautoscalers: 'Horizontal Pod Autoscalers',
   resourcequotas: 'Resource Quotas',
   limitranges: 'Limit Ranges',
