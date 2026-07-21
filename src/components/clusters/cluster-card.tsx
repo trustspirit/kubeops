@@ -27,7 +27,7 @@ export const ClusterCard = memo(function ClusterCard({ name, cluster, server, st
   const { getClusterMeta, toggleFavorite } = useClusterCatalogStore();
   const meta = getClusterMeta(name);
   const { prefix, realName } = parseClusterName(name, cluster);
-  const showPending = isStatusPending || isRefreshing;
+  const showPending = isLogging || isStatusPending || isRefreshing;
   const errorFeedback = error ? getErrorPresentation(error) : null;
 
   return (
@@ -42,7 +42,7 @@ export const ClusterCard = memo(function ClusterCard({ name, cluster, server, st
         className="absolute inset-0 z-10 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         onClick={onClick}
         disabled={isLogging}
-        aria-label={`Open cluster ${realName}, status ${showPending ? 'checking' : status}`}
+        aria-label={`Open cluster ${realName}, status ${isLogging ? 'signing in' : showPending ? 'checking' : status}`}
       />
       <div className="relative z-20 flex items-start justify-between pointer-events-none">
         <div className="flex items-center gap-2 min-w-0">
@@ -100,7 +100,7 @@ export const ClusterCard = memo(function ClusterCard({ name, cluster, server, st
       <div className="relative z-20 flex items-center gap-2 flex-wrap pointer-events-none">
         {showPending ? (
           <Badge variant="outline" className="text-[10px] bg-muted/50 text-muted-foreground border-muted">
-            checking...
+            {isLogging ? 'signing in…' : 'checking…'}
           </Badge>
         ) : (
           <Badge
@@ -142,7 +142,7 @@ export const ClusterCard = memo(function ClusterCard({ name, cluster, server, st
       )}
       {isLogging && (
         <span className="relative z-20 flex items-center gap-1 text-xs text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" /> Logging in...
+          <Loader2 className="h-3 w-3 animate-spin" /> Waiting for authentication…
         </span>
       )}
     </div>

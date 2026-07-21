@@ -1,3 +1,5 @@
+import type { KubeOwnerReference } from './resource';
+
 export type WatchEventType = 'ADDED' | 'MODIFIED' | 'DELETED' | 'ERROR' | 'BOOKMARK';
 
 export interface WatchEventObject {
@@ -12,7 +14,7 @@ export interface WatchEventObject {
     deletionTimestamp?: string;
     labels?: Record<string, string>;
     annotations?: Record<string, string>;
-    ownerReferences?: Array<{ uid: string; kind: string; name: string; apiVersion: string }>;
+    ownerReferences?: KubeOwnerReference[];
     [key: string]: unknown;
   };
   spec?: Record<string, unknown>;

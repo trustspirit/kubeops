@@ -15,12 +15,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Server, ArrowRight, Search, Settings, RotateCw, LogIn, Loader2, CircleCheck, LayoutGrid, LayoutDashboard, List, Star, Tag, ChevronDown, ChevronRight } from 'lucide-react';
-import { useAuthProviders, useProviderLogin } from '@/hooks/use-auth-providers';
+import { useAuthProviders, useProviderLogin, useProviderLoginOperations } from '@/hooks/use-auth-providers';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { UpdateIndicator } from '@/components/layout/header';
 import { SettingsDialog } from '@/components/settings/settings-dialog';
 import { ClusterCard } from '@/components/clusters/cluster-card';
 import { ClusterTagEditor } from '@/components/clusters/cluster-tag-editor';
+import { FreshnessIndicator } from '@/components/shared/freshness-indicator';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { getErrorPresentation } from '@/lib/error-presentation';
@@ -38,8 +39,10 @@ export default function ClustersPage() {
   const [kubeLoggingIn, setKubeLoggingIn] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const clusterProviderOverrides = useSettingsStore((state) => state.clusterProviderOverrides);
   const { providers } = useAuthProviders();
   const { login: providerLogin } = useProviderLogin();
+  const loginOperations = useProviderLoginOperations();
   // Seed from persisted store so the header immediately reflects the last-known
   // authenticated state on app launch (avoids flicker + spurious auto-login).
   const cachedStatuses = useAuthStatusStore((s) => s.providerStatuses);
@@ -61,8 +64,6 @@ export default function ClustersPage() {
     }
     return init;
   });
-  const [loginLoadingProvider, setLoginLoadingProvider] = useState<string | null>(null);
-
   // Fetch provider statuses and refresh periodically so the UI reflects
   // external session changes (e.g. tsh session expiring or renewed outside the app).
   // On check failure (timeout, network error), preserve the previous status
@@ -120,19 +121,16 @@ export default function ClustersPage() {
   providersRef.current = providers;
 
   const handleProviderLogin = useCallback(async (providerId: string) => {
-    setLoginLoadingProvider(providerId);
     try {
       await providerLogin(providerId);
-      toast.success(`${providerId} login successful`);
+      toast.success(`${providerId} login successful`, { id: `auth-${providerId}` });
       // Re-fetch provider statuses so the header reflects the new session
       refreshProviderStatuses(providersRef.current);
       // Trigger cluster list refresh with visible loading (best-effort)
       manualRefresh().catch(() => {});
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      toast.error(`Login failed: ${message}`);
-    } finally {
-      setLoginLoadingProvider(null);
+      toast.error(`Login failed: ${message}`, { id: `auth-${providerId}` });
     }
   }, [providerLogin, manualRefresh, refreshProviderStatuses]);
 
@@ -247,13 +245,13 @@ export default function ClustersPage() {
         // gets updated as a side effect (single chokepoint for "I just
         // authenticated" state) instead of having each call site remember
         // to refresh the store separately.
-        await providerLogin(detectedProvider, extraConfig);
+        await providerLogin(detectedProvider, extraConfig, { clusterId: contextName });
       } catch (loginErr: unknown) {
         const message = loginErr instanceof Error ? loginErr.message : 'Unknown error';
         toast.error('Cluster login failed', { description: `${realName}: ${message}` });
         return;
       }
-      toast.success('Cluster login successful', { description: realName });
+      toast.success('Cluster login successful', { id: `auth-${detectedProvider}`, description: realName });
       if (detectedProvider === 'tsh') markTshKubeLoginDone(contextName);
       // Optimistically mark as connected
       await mutate(
@@ -285,6 +283,18 @@ export default function ClustersPage() {
     });
   };
 
+  const isClusterAuthenticating = useCallback((cluster: { name: string; error?: string; authProvider?: string }) => {
+    if (kubeLoggingIn === cluster.name) return true;
+    if (loginOperations.some((operation) => operation.scope === 'cluster' && operation.clusterId === cluster.name)) {
+      return true;
+    }
+    if (!cluster.error || !getErrorPresentation(cluster.error).canLogin) return false;
+    const providerId = clusterProviderOverrides[cluster.name] || cluster.authProvider;
+    return loginOperations.some((operation) =>
+      operation.scope === 'provider' && (!providerId || operation.providerId === providerId),
+    );
+  }, [clusterProviderOverrides, kubeLoggingIn, loginOperations]);
+
   return (
     <div className="flex h-screen flex-col">
       {/* Header bar */}
@@ -296,7 +306,9 @@ export default function ClustersPage() {
           {providers.filter(p => p.available).map((provider) => {
             const status = providerStatuses[provider.id];
             const isChecking = status === undefined;
-            const isLoggingIn = loginLoadingProvider === provider.id;
+            const isLoggingIn = loginOperations.some((operation) =>
+              operation.scope === 'provider' && operation.providerId === provider.id,
+            );
             const isAuthenticated = status?.authenticated === true;
             return (
             <Tooltip key={provider.id}>
@@ -461,11 +473,7 @@ export default function ClustersPage() {
                       Checking status...
                     </span>
                   )}
-                  {lastStatusUpdateAt && (
-                    <span className="text-xs" title={new Date(lastStatusUpdateAt).toLocaleString()}>
-                      Updated {new Date(lastStatusUpdateAt).toLocaleTimeString()}
-                    </span>
-                  )}
+                  <FreshnessIndicator lastUpdatedAt={lastStatusUpdateAt} className="text-xs" />
                   {filtered.length} of {clusters.length} clusters
                 </span>
               </div>
@@ -488,7 +496,7 @@ export default function ClustersPage() {
                             server={cluster.server}
                             status={cluster.status}
                             error={cluster.error}
-                            isLogging={kubeLoggingIn === cluster.name}
+                            isLogging={isClusterAuthenticating(cluster)}
                             isStatusPending={isCheckingStatus && !checkedClusters.has(cluster.name)}
                             isRefreshing={refreshingClusters.has(cluster.name)}
                             onRefreshStatus={() => refreshClusterStatus(cluster.name)}
@@ -522,7 +530,7 @@ export default function ClustersPage() {
                                 server={cluster.server}
                                 status={cluster.status}
                                 error={cluster.error}
-                                isLogging={kubeLoggingIn === cluster.name}
+                                isLogging={isClusterAuthenticating(cluster)}
                                 isStatusPending={isCheckingStatus && !checkedClusters.has(cluster.name)}
                                 isRefreshing={refreshingClusters.has(cluster.name)}
                                 onRefreshStatus={() => refreshClusterStatus(cluster.name)}
@@ -544,7 +552,7 @@ export default function ClustersPage() {
                           server={cluster.server}
                           status={cluster.status}
                           error={cluster.error}
-                          isLogging={kubeLoggingIn === cluster.name}
+                          isLogging={isClusterAuthenticating(cluster)}
                           isStatusPending={isCheckingStatus && !checkedClusters.has(cluster.name)}
                           isRefreshing={refreshingClusters.has(cluster.name)}
                           onRefreshStatus={() => refreshClusterStatus(cluster.name)}
@@ -567,12 +575,12 @@ export default function ClustersPage() {
                 /* List View */
                 <div className="flex flex-col rounded-md border divide-y">
                   {filtered.map((cluster) => {
-                    const isKubeLogging = kubeLoggingIn === cluster.name;
+                    const isKubeLogging = isClusterAuthenticating(cluster);
                     const { prefix, realName } = parseClusterName(cluster.name, cluster.cluster);
                     const meta = getClusterMeta(cluster.name);
                     const isStatusPending = isCheckingStatus && !checkedClusters.has(cluster.name);
                     const isRefreshingSingle = refreshingClusters.has(cluster.name);
-                    const showPending = isStatusPending || isRefreshingSingle;
+                    const showPending = isKubeLogging || isStatusPending || isRefreshingSingle;
                     const errorFeedback = cluster.error ? getErrorPresentation(cluster.error) : null;
                     return (
                       <div
@@ -584,7 +592,7 @@ export default function ClustersPage() {
                           className="absolute inset-0 z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                           onClick={() => handleClusterClick(cluster.name, cluster.cluster, cluster.status)}
                           disabled={isKubeLogging}
-                          aria-label={`Open cluster ${realName}, status ${showPending ? 'checking' : cluster.status}`}
+                          aria-label={`Open cluster ${realName}, status ${isKubeLogging ? 'signing in' : showPending ? 'checking' : cluster.status}`}
                         />
                         {showPending ? (
                           <Loader2 className="relative z-20 h-3 w-3 animate-spin shrink-0 text-muted-foreground pointer-events-none" />
@@ -608,7 +616,7 @@ export default function ClustersPage() {
                             </span>
                             {showPending ? (
                               <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-muted">
-                                checking...
+                                {isKubeLogging ? 'signing in…' : 'checking…'}
                               </Badge>
                             ) : (
                               <Badge
@@ -631,7 +639,7 @@ export default function ClustersPage() {
                             {isKubeLogging && (
                               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Loader2 className="h-3 w-3 animate-spin" />
-                                Logging in...
+                                Waiting for authentication…
                               </span>
                             )}
                           </div>
@@ -639,7 +647,7 @@ export default function ClustersPage() {
                             {cluster.server && (
                               <span className="text-xs text-muted-foreground truncate">{cluster.server}</span>
                             )}
-                            {errorFeedback && (
+                            {errorFeedback && !showPending && (
                               <span className="text-xs text-destructive truncate" title={errorFeedback.details}>
                                 {errorFeedback.title}: {errorFeedback.summary}
                               </span>

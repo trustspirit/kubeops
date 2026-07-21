@@ -7,6 +7,7 @@ import { useResourceTree } from '@/hooks/use-resource-tree';
 import { ResourceTreeView } from '@/components/shared/resource-tree';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
 import { WatchStatusIndicator } from '@/components/shared/watch-status-indicator';
+import { FreshnessIndicator } from '@/components/shared/freshness-indicator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -95,9 +96,7 @@ export default function AppMapPage() {
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           <WatchStatusIndicator />
-          <span>
-            {lastUpdatedAt ? `Updated ${new Date(lastUpdatedAt).toLocaleTimeString()}` : 'Not updated yet'}
-          </span>
+          <FreshnessIndicator lastUpdatedAt={lastUpdatedAt} />
           <Button
             variant="outline"
             size="sm"

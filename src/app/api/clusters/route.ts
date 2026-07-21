@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getContexts, getClusterServer } from '@/lib/k8s/kubeconfig-manager';
 import { ClusterInfo } from '@/lib/k8s/types';
 import { getCachedStatus, isStatusStale, refreshStatusesInBackground } from '@/lib/k8s/cluster-status-cache';
+import { detectProvider } from '@/lib/auth/provider-detector';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,7 @@ export async function GET() {
         server: getClusterServer(ctx.name),
         status: cached?.status ?? 'disconnected',
         error: cached?.error,
+        authProvider: detectProvider(ctx.name).providerId || undefined,
       };
     });
 

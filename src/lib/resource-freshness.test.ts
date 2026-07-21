@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   OVERVIEW_LIVE_SWR_OPTIONS,
   OVERVIEW_SLOW_SWR_OPTIONS,
+  getResourceFreshness,
   isResourceListCacheKey,
 } from './resource-freshness';
 
@@ -47,5 +48,34 @@ describe('isResourceListCacheKey', () => {
       isResourceListCacheKey('/api/clusters/prod/resources/default/pods', 'dev', 'pods'),
       false,
     );
+  });
+});
+
+describe('getResourceFreshness', () => {
+  const now = Date.parse('2026-07-21T12:00:00.000Z');
+
+  it('distinguishes data that has not loaded yet', () => {
+    assert.deepEqual(getResourceFreshness(null, now), {
+      label: 'Not updated yet',
+      isStale: false,
+    });
+  });
+
+  it('shows a concise relative age for recent data', () => {
+    assert.deepEqual(getResourceFreshness(now - 45_000, now), {
+      label: 'Updated 45s ago',
+      isStale: false,
+    });
+    assert.deepEqual(getResourceFreshness(now - 90_000, now), {
+      label: 'Updated 1m ago',
+      isStale: false,
+    });
+  });
+
+  it('marks data stale after the configured freshness window', () => {
+    assert.deepEqual(getResourceFreshness(now - 3 * 60_000, now, 2 * 60_000), {
+      label: 'Updated 3m ago',
+      isStale: true,
+    });
   });
 });

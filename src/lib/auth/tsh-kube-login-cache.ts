@@ -119,7 +119,7 @@ export async function ensureTshKubeLogin(contextName: string, knownProviderId?: 
     ...savedConfig,
     action: 'kube-login',
     cluster: kubeCluster,
-  });
+  }, { clusterId: contextName });
   lastKubeLoginAtByTarget.set(kubeCluster, Date.now());
   contextLoginTarget.set(contextName, kubeCluster);
   markTshKubeLoginDone(contextName);

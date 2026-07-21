@@ -16,6 +16,7 @@ import { useNamespaceStore } from '@/stores/namespace-store';
 import type { KubeResource } from '@/types/resource';
 import { getKubeResourceRowId } from '@/lib/resource-sync';
 import { WatchStatusIndicator } from '@/components/shared/watch-status-indicator';
+import { FreshnessIndicator } from '@/components/shared/freshness-indicator';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { getErrorPresentation } from '@/lib/error-presentation';
@@ -119,11 +120,7 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
         <h1 className="text-2xl font-bold">{label}</h1>
         <div className="flex flex-wrap items-center justify-end gap-3" aria-live="polite">
           <WatchStatusIndicator />
-          {lastUpdatedAt && (
-            <span className="text-xs text-muted-foreground" title={new Date(lastUpdatedAt).toLocaleString()}>
-              Updated {new Date(lastUpdatedAt).toLocaleTimeString()}
-            </span>
-          )}
+          <FreshnessIndicator lastUpdatedAt={lastUpdatedAt} className="text-xs" />
           <Button
             variant="outline"
             size="sm"

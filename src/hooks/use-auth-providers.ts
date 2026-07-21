@@ -1,8 +1,12 @@
 import useSWR from 'swr';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useAuthStatusStore } from '@/stores/auth-status-store';
-import { useCallback } from 'react';
-import { requestProviderLogin } from '@/lib/auth/provider-login-request';
+import { useCallback, useSyncExternalStore } from 'react';
+import {
+  getProviderLoginOperations,
+  requestProviderLogin,
+  subscribeProviderLoginOperations,
+} from '@/lib/auth/provider-login-request';
 
 interface ProviderInfo {
   id: string;
@@ -80,13 +84,14 @@ export function useProviderLogin() {
 
   const login = useCallback(async (
     providerId: string,
-    extraConfig?: Record<string, string>
+    extraConfig?: Record<string, string>,
+    options?: { clusterId?: string },
   ) => {
     // Read latest config from store to avoid stale closure
     const savedConfig = useSettingsStore.getState().authProviderConfigs[providerId] || {};
     const config = { ...savedConfig, ...extraConfig };
 
-    const data = await requestProviderLogin(providerId, config);
+    const data = await requestProviderLogin(providerId, config, options);
     // Write-through to the persisted auth-status store so that every login
     // surface (header button, ErrorDisplay, direct hook callers, …) keeps
     // the cached session info up to date across app restarts — without each
@@ -104,4 +109,12 @@ export function useProviderLogin() {
   }, [setProviderStatus]);
 
   return { login };
+}
+
+export function useProviderLoginOperations() {
+  return useSyncExternalStore(
+    subscribeProviderLoginOperations,
+    getProviderLoginOperations,
+    getProviderLoginOperations,
+  );
 }
