@@ -104,6 +104,7 @@ async function macOSManualInstall() {
   fs.mkdirSync(tempDir, { recursive: true });
 
   // Extract zip using execFile (safe — no shell interpolation)
+  sendUpdateStatus({ status: 'installing', stage: 'extracting' });
   await new Promise((resolve, reject) => {
     execFile('/usr/bin/ditto', ['-xk', zipPath, tempDir], (err) => {
       if (err) reject(new Error(`Unzip failed: ${err.message}`));
@@ -152,6 +153,7 @@ async function macOSManualInstall() {
   );
   child.unref();
 
+  sendUpdateStatus({ status: 'installing', stage: 'restarting' });
   app.quit();
 }
 
@@ -249,6 +251,7 @@ function setupUpdaterIPC() {
   });
 
   ipcMain.handle('updater:install', async () => {
+    sendUpdateStatus({ status: 'installing', stage: 'preparing' });
     if (process.platform === 'darwin') {
       try {
         await macOSManualInstall();
@@ -260,6 +263,7 @@ function setupUpdaterIPC() {
         throw err;
       }
     } else {
+      sendUpdateStatus({ status: 'installing', stage: 'restarting' });
       autoUpdater.quitAndInstall(false, true);
     }
   });

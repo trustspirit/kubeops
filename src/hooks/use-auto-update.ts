@@ -1,27 +1,23 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useReducer } from 'react';
 import type { UpdateStatus } from '@/types/electron';
+import {
+  initialUpdateState,
+  reduceUpdateState,
+} from '@/lib/update-state';
 
-export type UpdatePhase =
-  | 'idle'
-  | 'checking'
-  | 'available'
-  | 'not-available'
-  | 'downloading'
-  | 'downloaded'
-  | 'error';
+export type { UpdatePhase } from '@/lib/update-state';
 
 export function useAutoUpdate() {
-  const [phase, setPhase] = useState<UpdatePhase>('idle');
-  const [version, setVersion] = useState<string | null>(null);
-  const [percent, setPercent] = useState(0);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [state, dispatch] = useReducer(reduceUpdateState, initialUpdateState);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const { phase, version, percent, errorMessage, installStage } = state;
 
   const api = typeof window !== 'undefined' ? window.electronUpdater : undefined;
   const isAvailable = !!api;
   const apiRef = useRef(api);
+  const installPromiseRef = useRef<Promise<void> | null>(null);
   useEffect(() => { apiRef.current = api; });
 
   useEffect(() => {
@@ -33,87 +29,70 @@ export function useAutoUpdate() {
     if (!apiRef.current) return;
 
     const unsubscribe = apiRef.current.onUpdateStatus((status: UpdateStatus) => {
-      switch (status.status) {
-        case 'checking':
-          setPhase('checking');
-          break;
-        case 'available':
-          setPhase('available');
-          setVersion(status.version ?? null);
-          break;
-        case 'not-available':
-          setPhase('not-available');
-          setTimeout(() => setPhase('idle'), 3000);
-          break;
-        case 'downloading':
-          setPhase('downloading');
-          setPercent(status.percent ?? 0);
-          break;
-        case 'downloaded':
-          setPhase('downloaded');
-          setVersion(status.version ?? null);
-          break;
-        case 'error':
-          setPhase('error');
-          setErrorMessage(status.message ?? 'Unknown error');
-          break;
-      }
+      dispatch({ type: 'status-received', status });
     });
 
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    if (phase !== 'not-available') return;
+    const timer = setTimeout(() => dispatch({ type: 'dismissed' }), 3000);
+    return () => clearTimeout(timer);
+  }, [phase]);
+
   // checkForUpdates uses IPC return value as primary, event listener as fallback
   const checkForUpdates = useCallback(() => {
     if (!apiRef.current) return;
-    setPhase('checking');
-    setErrorMessage(null);
+    dispatch({ type: 'check-requested' });
     apiRef.current.checkForUpdates()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .then((info: any) => {
         if (!info) {
-          // No update info returned — treat as up-to-date
-          setPhase((prev) => {
-            if (prev === 'checking') {
-              setTimeout(() => setPhase('idle'), 3000);
-              return 'not-available';
-            }
-            return prev;
-          });
+          dispatch({ type: 'status-received', status: { status: 'not-available' } });
           return;
         }
-        // IPC returned updateInfo — update is available
-        setPhase((prev) => {
-          // Only update if event listener hasn't already handled it
-          if (prev === 'checking') return 'available';
-          return prev;
-        });
-        if (info.version) setVersion(info.version);
+        dispatch({ type: 'check-completed', version: info.version });
       })
       .catch((err: unknown) => {
-        setPhase('error');
-        setErrorMessage(err instanceof Error ? err.message : 'Update check failed');
+        dispatch({
+          type: 'operation-failed',
+          message: err instanceof Error ? err.message : 'Update check failed',
+        });
       });
   }, []);
 
   const downloadUpdate = useCallback(() => {
     if (!apiRef.current) return;
-    setPercent(0);
-    setPhase('downloading');
+    dispatch({ type: 'download-requested' });
     apiRef.current.downloadUpdate().catch((err: unknown) => {
-      setPhase('error');
-      setErrorMessage(err instanceof Error ? err.message : 'Download failed');
+      dispatch({
+        type: 'operation-failed',
+        message: err instanceof Error ? err.message : 'Download failed',
+      });
     });
   }, []);
 
-  const quitAndInstall = useCallback(() => {
-    if (!apiRef.current) return;
-    apiRef.current.quitAndInstall().catch(() => {});
+  const quitAndInstall = useCallback(async () => {
+    if (!apiRef.current || installPromiseRef.current) return;
+    dispatch({ type: 'install-requested' });
+    const promise = apiRef.current.quitAndInstall();
+    installPromiseRef.current = promise;
+    try {
+      await promise;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      dispatch({
+        type: 'operation-failed',
+        message: `Install failed: ${message}`,
+      });
+    } finally {
+      installPromiseRef.current = null;
+    }
   }, []);
 
   const dismiss = useCallback(() => {
-    setPhase('idle');
-    setErrorMessage(null);
+    dispatch({ type: 'dismissed' });
   }, []);
 
   return {
@@ -121,6 +100,7 @@ export function useAutoUpdate() {
     version,
     percent,
     errorMessage,
+    installStage,
     isAvailable,
     appVersion,
     checkForUpdates,

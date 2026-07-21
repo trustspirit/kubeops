@@ -84,13 +84,14 @@ export interface ResourceNodeData {
   clusterId?: string;
   createdAt?: string;
   appLabel?: string;
+  showNamespace?: boolean;
   onInfoClick?: (data: ResourceNodeData) => void;
   [key: string]: unknown;
 }
 
 function ResourceNodeComponent({ data }: NodeProps) {
   const router = useRouter();
-  const { kind, name, health, status, info, href, createdAt, onInfoClick } = data as unknown as ResourceNodeData;
+  const { kind, name, health, status, info, href, namespace, showNamespace, createdAt, onInfoClick } = data as unknown as ResourceNodeData;
   useAgeTick(ageTickInterval(createdAt as string | undefined));
   const age = compactAge(createdAt as string | undefined);
   const Icon = KIND_ICONS[kind] || Box;
@@ -136,7 +137,7 @@ function ResourceNodeComponent({ data }: NodeProps) {
         <div className="flex flex-col min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="text-[10px] font-medium uppercase text-muted-foreground tracking-wide">
-              {kind}
+              {kind}{showNamespace && namespace ? ` · ${namespace}` : ''}
             </span>
             <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} />
             {status && (

@@ -1,7 +1,13 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useResourceList } from './use-resource-list';
 import type { ResourceNodeData } from '@/components/shared/resource-node';
 import type { KubeResource, KubeOwnerReference } from '@/types/resource';
+import {
+  getResourceBasePath,
+  getResourceNamespace,
+  getResourceNodeId,
+  resourcesShareNamespace,
+} from '@/lib/resource-tree-identity';
 
 export interface TreeNode {
   id: string;
@@ -170,29 +176,39 @@ function labelsMatch(selector: Record<string, string> | undefined, labels: Recor
 export function useResourceTree({ clusterId, namespace, rootKind, rootName, appFilter }: UseResourceTreeOptions) {
   const enabled = !!clusterId && !!namespace;
 
-  const { data: podsData, isLoading: podsLoading } = useResourceList({
+  const { data: podsData, error: podsError, isLoading: podsLoading, isValidating: podsValidating, lastUpdatedAt: podsUpdatedAt, mutate: mutatePods } = useResourceList({
     clusterId, namespace, resourceType: 'pods', enabled,
   });
-  const { data: deploymentsData, isLoading: depsLoading } = useResourceList({
+  const { data: deploymentsData, error: depsError, isLoading: depsLoading, isValidating: depsValidating, lastUpdatedAt: depsUpdatedAt, mutate: mutateDeps } = useResourceList({
     clusterId, namespace, resourceType: 'deployments', enabled,
   });
-  const { data: rsData, isLoading: rsLoading } = useResourceList({
+  const { data: rsData, error: rsError, isLoading: rsLoading, isValidating: rsValidating, lastUpdatedAt: rsUpdatedAt, mutate: mutateRs } = useResourceList({
     clusterId, namespace, resourceType: 'replicasets', enabled,
   });
-  const { data: stsData, isLoading: stsLoading } = useResourceList({
+  const { data: stsData, error: stsError, isLoading: stsLoading, isValidating: stsValidating, lastUpdatedAt: stsUpdatedAt, mutate: mutateSts } = useResourceList({
     clusterId, namespace, resourceType: 'statefulsets', enabled,
   });
-  const { data: dsData, isLoading: dsLoading } = useResourceList({
+  const { data: dsData, error: dsError, isLoading: dsLoading, isValidating: dsValidating, lastUpdatedAt: dsUpdatedAt, mutate: mutateDs } = useResourceList({
     clusterId, namespace, resourceType: 'daemonsets', enabled,
   });
-  const { data: servicesData, isLoading: svcLoading } = useResourceList({
+  const { data: servicesData, error: svcError, isLoading: svcLoading, isValidating: svcValidating, lastUpdatedAt: svcUpdatedAt, mutate: mutateServices } = useResourceList({
     clusterId, namespace, resourceType: 'services', enabled,
   });
-  const { data: ingressData, isLoading: ingLoading } = useResourceList({
+  const { data: ingressData, error: ingError, isLoading: ingLoading, isValidating: ingValidating, lastUpdatedAt: ingUpdatedAt, mutate: mutateIngresses } = useResourceList({
     clusterId, namespace, resourceType: 'ingresses', enabled,
   });
 
   const isLoading = podsLoading || depsLoading || rsLoading || stsLoading || dsLoading || svcLoading || ingLoading;
+  const isRefreshing = podsValidating || depsValidating || rsValidating || stsValidating || dsValidating || svcValidating || ingValidating;
+  const error = podsError || depsError || rsError || stsError || dsError || svcError || ingError;
+  const updatedTimes = [podsUpdatedAt, depsUpdatedAt, rsUpdatedAt, stsUpdatedAt, dsUpdatedAt, svcUpdatedAt, ingUpdatedAt]
+    .filter((value): value is number => value !== null);
+  const lastUpdatedAt = updatedTimes.length > 0 ? Math.max(...updatedTimes) : null;
+  const refresh = useCallback(async () => {
+    await Promise.allSettled([
+      mutatePods(), mutateDeps(), mutateRs(), mutateSts(), mutateDs(), mutateServices(), mutateIngresses(),
+    ]);
+  }, [mutatePods, mutateDeps, mutateRs, mutateSts, mutateDs, mutateServices, mutateIngresses]);
 
   // Create stable dependency keys based on resource UIDs + resourceVersion to
   // recompute topology when resources are added/removed OR their status changes
@@ -255,9 +271,6 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
     const services: KubeResource[] = servicesData?.items || [];
     const ingresses: KubeResource[] = ingressData?.items || [];
 
-    const clusterIdEnc = encodeURIComponent(clusterId);
-    const basePath = `/clusters/${clusterIdEnc}/namespaces/${namespace}`;
-
     // App label filter: collect UIDs of matching workloads to include their children
     const filteredWorkloadUids = new Set<string>();
     if (appFilter) {
@@ -272,10 +285,18 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
       }
     }
 
-    const addNode = (id: string, data: ResourceNodeData) => {
+    const addNode = (id: string, data: ResourceNodeData, resource: KubeResource) => {
       if (nodeIds.has(id)) return;
       nodeIds.add(id);
-      nodes.push({ id, data: { ...data, namespace, clusterId } });
+      nodes.push({
+        id,
+        data: {
+          ...data,
+          namespace: getResourceNamespace(resource, namespace),
+          showNamespace: namespace === '_all',
+          clusterId,
+        },
+      });
     };
 
     const addEdge = (source: string, target: string, animated = false) => {
@@ -292,7 +313,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
       if (rootKind === 'Deployment') {
         const dep = deployments.find(d => d.metadata?.name === rootName);
         if (!dep) return { nodes, edges };
-        const depId = `Deployment/${rootName}`;
+        const depId = getResourceNodeId('Deployment', dep, namespace);
         uidToNodeId[uid(dep)] = depId;
         addNode(depId, {
           kind: 'Deployment',
@@ -300,17 +321,17 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
           health: workloadHealth(dep),
           status: workloadStatus(dep),
           info: `${dep.status?.readyReplicas || 0}/${dep.spec?.replicas || 0} ready`,
-          href: `${basePath}/deployments/${rootName}`,
+          href: `${getResourceBasePath(clusterId, dep, namespace)}/deployments/${rootName}`,
           createdAt: dep.metadata?.creationTimestamp,
           appLabel: getAppLabel(dep),
-        });
+        }, dep);
 
         // ReplicaSets owned by this deployment
         const ownedRS = replicaSets.filter(rs =>
           rs.metadata?.ownerReferences?.some((ref: KubeOwnerReference) => ref.uid === dep.metadata?.uid)
         );
         for (const rs of ownedRS) {
-          const rsId = `ReplicaSet/${rs.metadata?.name}`;
+          const rsId = getResourceNodeId('ReplicaSet', rs, namespace);
           uidToNodeId[uid(rs)] = rsId;
           addNode(rsId, {
             kind: 'ReplicaSet',
@@ -318,9 +339,9 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
             health: rsHealth(rs),
             status: rsStatus(rs),
             info: `${rs.status?.readyReplicas || 0}/${rs.spec?.replicas || 0} ready`,
-            href: `${basePath}/replicasets/${rs.metadata?.name}`,
+            href: `${getResourceBasePath(clusterId, rs, namespace)}/replicasets/${rs.metadata?.name}`,
             createdAt: rs.metadata?.creationTimestamp,
-          });
+          }, rs);
           addEdge(depId, rsId);
 
           // Pods owned by this RS
@@ -328,23 +349,23 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
             p.metadata?.ownerReferences?.some((ref: KubeOwnerReference) => ref.uid === rs.metadata?.uid)
           );
           for (const pod of rsPods) {
-            const podId = `Pod/${pod.metadata?.name}`;
+            const podId = getResourceNodeId('Pod', pod, namespace);
             addNode(podId, {
               kind: 'Pod',
               name: pod.metadata?.name,
               health: podHealth(pod),
               status: podStatus(pod),
               info: podInfo(pod),
-              href: `${basePath}/pods/${pod.metadata?.name}`,
+              href: `${getResourceBasePath(clusterId, pod, namespace)}/pods/${pod.metadata?.name}`,
               createdAt: pod.metadata?.creationTimestamp,
-            });
+            }, pod);
             addEdge(rsId, podId);
           }
         }
       } else if (rootKind === 'StatefulSet') {
         const sts = statefulSets.find(s => s.metadata?.name === rootName);
         if (!sts) return { nodes, edges };
-        const stsId = `StatefulSet/${rootName}`;
+        const stsId = getResourceNodeId('StatefulSet', sts, namespace);
         uidToNodeId[uid(sts)] = stsId;
         addNode(stsId, {
           kind: 'StatefulSet',
@@ -352,26 +373,26 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
           health: workloadHealth(sts),
           status: workloadStatus(sts),
           info: `${sts.status?.readyReplicas || 0}/${sts.spec?.replicas || 0} ready`,
-          href: `${basePath}/statefulsets/${rootName}`,
+          href: `${getResourceBasePath(clusterId, sts, namespace)}/statefulsets/${rootName}`,
           createdAt: sts.metadata?.creationTimestamp,
           appLabel: getAppLabel(sts),
-        });
+        }, sts);
 
         // Pods owned by this STS
         const stsPods = pods.filter(p =>
           p.metadata?.ownerReferences?.some((ref: KubeOwnerReference) => ref.uid === sts.metadata?.uid)
         );
         for (const pod of stsPods) {
-          const podId = `Pod/${pod.metadata?.name}`;
+          const podId = getResourceNodeId('Pod', pod, namespace);
           addNode(podId, {
             kind: 'Pod',
             name: pod.metadata?.name,
             health: podHealth(pod),
             status: podStatus(pod),
             info: podInfo(pod),
-            href: `${basePath}/pods/${pod.metadata?.name}`,
+            href: `${getResourceBasePath(clusterId, pod, namespace)}/pods/${pod.metadata?.name}`,
             createdAt: pod.metadata?.creationTimestamp,
-          });
+          }, pod);
           addEdge(stsId, podId);
         }
       }
@@ -383,7 +404,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
     // 1. Deployments
     for (const dep of deployments) {
       if (appFilter && getAppLabel(dep) !== appFilter) continue;
-      const depId = `Deployment/${dep.metadata?.name}`;
+      const depId = getResourceNodeId('Deployment', dep, namespace);
       uidToNodeId[uid(dep)] = depId;
       addNode(depId, {
         kind: 'Deployment',
@@ -391,16 +412,16 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
         health: workloadHealth(dep),
         status: workloadStatus(dep),
         info: `${dep.status?.readyReplicas || 0}/${dep.spec?.replicas || 0} ready`,
-        href: `${basePath}/deployments/${dep.metadata?.name}`,
+        href: `${getResourceBasePath(clusterId, dep, namespace)}/deployments/${dep.metadata?.name}`,
         createdAt: dep.metadata?.creationTimestamp,
         appLabel: getAppLabel(dep),
-      });
+      }, dep);
     }
 
     // 2. StatefulSets
     for (const sts of statefulSets) {
       if (appFilter && getAppLabel(sts) !== appFilter) continue;
-      const stsId = `StatefulSet/${sts.metadata?.name}`;
+      const stsId = getResourceNodeId('StatefulSet', sts, namespace);
       uidToNodeId[uid(sts)] = stsId;
       addNode(stsId, {
         kind: 'StatefulSet',
@@ -408,16 +429,16 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
         health: workloadHealth(sts),
         status: workloadStatus(sts),
         info: `${sts.status?.readyReplicas || 0}/${sts.spec?.replicas || 0} ready`,
-        href: `${basePath}/statefulsets/${sts.metadata?.name}`,
+        href: `${getResourceBasePath(clusterId, sts, namespace)}/statefulsets/${sts.metadata?.name}`,
         createdAt: sts.metadata?.creationTimestamp,
         appLabel: getAppLabel(sts),
-      });
+      }, sts);
     }
 
     // 3. DaemonSets
     for (const ds of daemonSets) {
       if (appFilter && getAppLabel(ds) !== appFilter) continue;
-      const dsId = `DaemonSet/${ds.metadata?.name}`;
+      const dsId = getResourceNodeId('DaemonSet', ds, namespace);
       uidToNodeId[uid(ds)] = dsId;
       addNode(dsId, {
         kind: 'DaemonSet',
@@ -425,15 +446,15 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
         health: workloadHealth(ds),
         status: workloadStatus(ds),
         info: `${ds.status?.numberReady || 0}/${ds.status?.desiredNumberScheduled || 0} ready`,
-        href: `${basePath}/daemonsets/${ds.metadata?.name}`,
+        href: `${getResourceBasePath(clusterId, ds, namespace)}/daemonsets/${ds.metadata?.name}`,
         createdAt: ds.metadata?.creationTimestamp,
         appLabel: getAppLabel(ds),
-      });
+      }, ds);
     }
 
     // 4. ReplicaSets (only those with > 0 replicas or owned by a known deployment)
     for (const rs of replicaSets) {
-      const rsId = `ReplicaSet/${rs.metadata?.name}`;
+      const rsId = getResourceNodeId('ReplicaSet', rs, namespace);
       uidToNodeId[uid(rs)] = rsId;
       const ownerRef = rs.metadata?.ownerReferences?.find((ref: KubeOwnerReference) => ref.kind === 'Deployment');
       // Skip RS with 0 desired replicas in full map to reduce noise
@@ -447,9 +468,9 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
         health: rsHealth(rs),
         status: rsStatus(rs),
         info: `${rs.status?.readyReplicas || 0}/${rs.spec?.replicas || 0} ready`,
-        href: `${basePath}/replicasets/${rs.metadata?.name}`,
+        href: `${getResourceBasePath(clusterId, rs, namespace)}/replicasets/${rs.metadata?.name}`,
         createdAt: rs.metadata?.creationTimestamp,
-      });
+      }, rs);
       if (ownerRef && uidToNodeId[ownerRef.uid]) {
         addEdge(uidToNodeId[ownerRef.uid], rsId);
       }
@@ -458,7 +479,7 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
     // Build set of included RS UIDs for pod filtering
     const includedRsUids = new Set<string>();
     for (const rs of replicaSets) {
-      if (nodeIds.has(`ReplicaSet/${rs.metadata?.name}`)) {
+      if (nodeIds.has(getResourceNodeId('ReplicaSet', rs, namespace))) {
         if (rs.metadata?.uid) includedRsUids.add(rs.metadata.uid);
       }
     }
@@ -475,16 +496,16 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
           if (getAppLabel(pod) !== appFilter) continue;
         }
       }
-      const podId = `Pod/${pod.metadata?.name}`;
+      const podId = getResourceNodeId('Pod', pod, namespace);
       addNode(podId, {
         kind: 'Pod',
         name: pod.metadata?.name,
         health: podHealth(pod),
         status: podStatus(pod),
         info: podInfo(pod),
-        href: `${basePath}/pods/${pod.metadata?.name}`,
+        href: `${getResourceBasePath(clusterId, pod, namespace)}/pods/${pod.metadata?.name}`,
         createdAt: pod.metadata?.creationTimestamp,
-      });
+      }, pod);
       if (ownerRef && uidToNodeId[ownerRef.uid]) {
         addEdge(uidToNodeId[ownerRef.uid], podId);
       }
@@ -500,7 +521,11 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
         let matchesFiltered = false;
         if (selector) {
           for (const pod of pods) {
-            if (labelsMatch(selector, pod.metadata?.labels) && nodeIds.has(`Pod/${pod.metadata?.name}`)) {
+            if (
+              resourcesShareNamespace(svc, pod, namespace)
+              && labelsMatch(selector, pod.metadata?.labels)
+              && nodeIds.has(getResourceNodeId('Pod', pod, namespace))
+            ) {
               matchesFiltered = true;
               break;
             }
@@ -509,22 +534,22 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
         if (!matchesFiltered) continue;
       }
       const svcPorts = (svcSpec.ports || []) as Array<{ port: number }>;
-      const svcId = `Service/${svc.metadata?.name}`;
+      const svcId = getResourceNodeId('Service', svc, namespace);
       addNode(svcId, {
         kind: 'Service',
         name: svc.metadata?.name,
         health: serviceHealth(),
         status: serviceStatus(),
         info: `${svcSpec.type || 'ClusterIP'}${svcPorts[0] ? ` :${svcPorts[0].port}` : ''}`,
-        href: `${basePath}/services/${svc.metadata?.name}`,
+        href: `${getResourceBasePath(clusterId, svc, namespace)}/services/${svc.metadata?.name}`,
         createdAt: svc.metadata?.creationTimestamp,
         appLabel: getAppLabel(svc),
-      });
+      }, svc);
       const selector = svcSpec.selector as Record<string, string> | undefined;
       if (selector) {
         const matchedWorkloads = new Set<string>();
         for (const pod of pods) {
-          if (labelsMatch(selector, pod.metadata?.labels)) {
+          if (resourcesShareNamespace(svc, pod, namespace) && labelsMatch(selector, pod.metadata?.labels)) {
             const podOwnerRef = pod.metadata?.ownerReferences?.[0];
             if (podOwnerRef && uidToNodeId[podOwnerRef.uid]) {
               const ownerId = uidToNodeId[podOwnerRef.uid];
@@ -566,23 +591,29 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
         linkedServices.add(defaultBackend.service.name);
       }
       if (appFilter) {
-        const hasIncludedSvc = Array.from(linkedServices).some(svcName => nodeIds.has(`Service/${svcName}`));
+        const hasIncludedSvc = Array.from(linkedServices).some((svcName) => {
+          const service = services.find((candidate) =>
+            candidate.metadata?.name === svcName && resourcesShareNamespace(ing, candidate, namespace));
+          return service ? nodeIds.has(getResourceNodeId('Service', service, namespace)) : false;
+        });
         if (!hasIncludedSvc) continue;
       }
-      const ingId = `Ingress/${ing.metadata?.name}`;
+      const ingId = getResourceNodeId('Ingress', ing, namespace);
       addNode(ingId, {
         kind: 'Ingress',
         name: ing.metadata?.name,
         health: ingressHealth(ing),
         status: ingressStatus(ing),
         info: ingRules.map((r) => r.host).filter(Boolean).join(', ') || undefined,
-        href: `${basePath}/ingresses/${ing.metadata?.name}`,
+        href: `${getResourceBasePath(clusterId, ing, namespace)}/ingresses/${ing.metadata?.name}`,
         createdAt: ing.metadata?.creationTimestamp,
-      });
+      }, ing);
       for (const svcName of linkedServices) {
-        const svcId = `Service/${svcName}`;
-        if (nodeIds.has(svcId)) {
-          addEdge(ingId, svcId);
+        const service = services.find((candidate) =>
+          candidate.metadata?.name === svcName && resourcesShareNamespace(ing, candidate, namespace));
+        if (service) {
+          const svcId = getResourceNodeId('Service', service, namespace);
+          if (nodeIds.has(svcId)) addEdge(ingId, svcId);
         }
       }
     }
@@ -592,5 +623,5 @@ export function useResourceTree({ clusterId, namespace, rootKind, rootName, appF
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [podKey, deploymentKey, rsKey, stsKey, dsKey, serviceKey, ingressKey, clusterId, namespace, rootKind, rootName, appFilter]);
 
-  return { nodes, edges, isLoading, appLabels };
+  return { nodes, edges, isLoading, isRefreshing, error, lastUpdatedAt, refresh, appLabels };
 }

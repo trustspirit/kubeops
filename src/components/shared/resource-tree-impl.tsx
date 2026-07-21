@@ -21,6 +21,7 @@ import dagre from 'dagre';
 import { ResourceNode, type ResourceNodeData } from './resource-node';
 import { ResourceInfoDrawer } from './resource-info-drawer';
 import type { TreeNode, TreeEdge } from '@/hooks/use-resource-tree';
+import { getConnectedComponentIds } from '@/lib/app-map-view';
 
 import '@xyflow/react/dist/style.css';
 
@@ -129,6 +130,7 @@ function ResourceTreeViewInner({
   const { fitView } = useReactFlow();
   const { resolvedTheme } = useTheme();
   const colorMode: ColorMode = resolvedTheme === 'dark' ? 'dark' : 'light';
+  const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
 
   // Inject onInfoClick into each node's data
   const nodesWithCallback = useMemo(
@@ -141,10 +143,28 @@ function ResourceTreeViewInner({
   );
 
   const isDark = resolvedTheme === 'dark';
-  const { nodes: layoutedNodes, edges: layoutedEdges } = useMemo(
-    () => getLayoutedElements(nodesWithCallback, treeEdges, direction, isDark),
-    [nodesWithCallback, treeEdges, direction, isDark]
+  const topologyKey = useMemo(
+    () => JSON.stringify({
+      nodes: treeNodes.map((node) => node.id).sort(),
+      edges: treeEdges.map((edge) => `${edge.id}:${edge.animated ? 1 : 0}`).sort(),
+    }),
+    [treeNodes, treeEdges],
   );
+  const layoutedTopology = useMemo(() => {
+    const stableNodes = [...nodesWithCallback].sort((a, b) => a.id.localeCompare(b.id));
+    const stableEdges = [...treeEdges].sort((a, b) => a.id.localeCompare(b.id));
+    return getLayoutedElements(stableNodes, stableEdges, direction, isDark);
+    // Node status and metadata intentionally do not trigger a topology layout.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topologyKey, direction, isDark]);
+  const layoutedNodes = useMemo(() => {
+    const dataById = new Map(nodesWithCallback.map((node) => [node.id, node.data]));
+    return layoutedTopology.nodes.map((node) => ({
+      ...node,
+      data: dataById.get(node.id) ?? node.data,
+    }));
+  }, [layoutedTopology.nodes, nodesWithCallback]);
+  const layoutedEdges = layoutedTopology.edges;
 
   const [nodes, setNodes, onNodesChange] = useNodesState(layoutedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(layoutedEdges);
@@ -165,6 +185,44 @@ function ResourceTreeViewInner({
       return () => clearTimeout(timer);
     }
   }, [layoutedNodes, layoutedEdges, setNodes, setEdges, fitView]);
+
+  useEffect(() => {
+    if (highlightedNodeId && !treeNodes.some((node) => node.id === highlightedNodeId)) {
+      setHighlightedNodeId(null);
+    }
+  }, [highlightedNodeId, treeNodes]);
+
+  const highlightedIds = useMemo(
+    () => highlightedNodeId ? getConnectedComponentIds(highlightedNodeId, treeEdges) : null,
+    [highlightedNodeId, treeEdges],
+  );
+  const visibleNodes = useMemo(
+    () => nodes.map((node) => ({
+      ...node,
+      style: {
+        ...node.style,
+        opacity: highlightedIds && !highlightedIds.has(node.id) ? 0.18 : 1,
+        transition: 'opacity 160ms ease',
+      },
+    })),
+    [nodes, highlightedIds],
+  );
+  const visibleEdges = useMemo(
+    () => edges.map((edge) => {
+      const active = !highlightedIds
+        || (highlightedIds.has(edge.source) && highlightedIds.has(edge.target));
+      return {
+        ...edge,
+        style: {
+          ...edge.style,
+          opacity: active ? (highlightedIds ? 0.95 : edge.style?.opacity) : 0.06,
+          strokeWidth: active && highlightedIds ? 2.25 : edge.style?.strokeWidth,
+          transition: 'opacity 160ms ease',
+        },
+      };
+    }),
+    [edges, highlightedIds],
+  );
 
   const proOptions = useMemo(() => ({ hideAttribution: true }), []);
 
@@ -206,8 +264,8 @@ function ResourceTreeViewInner({
   return (
     <div className={`rounded-lg border overflow-hidden ${className || ''}`} style={{ height }}>
       <ReactFlow
-        nodes={nodes}
-        edges={edges}
+        nodes={visibleNodes}
+        edges={visibleEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
@@ -222,7 +280,11 @@ function ResourceTreeViewInner({
         preventScrolling={zoomOnScroll}
         nodesDraggable={false}
         nodesConnectable={false}
-        elementsSelectable={false}
+        elementsSelectable
+        onNodeClick={(_, node) => {
+          setHighlightedNodeId((current) => current === node.id ? null : node.id);
+        }}
+        onPaneClick={() => setHighlightedNodeId(null)}
       >
         <Background gap={16} size={1} />
         <Controls showInteractive={false} className="!shadow-md" />

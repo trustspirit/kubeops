@@ -1,5 +1,5 @@
 export interface UpdateStatus {
-  status: 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+  status: 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'installing' | 'error';
   version?: string;
   releaseNotes?: string;
   releaseDate?: string;
@@ -8,6 +8,7 @@ export interface UpdateStatus {
   transferred?: number;
   total?: number;
   message?: string;
+  stage?: 'preparing' | 'extracting' | 'restarting';
 }
 
 export interface ElectronUpdaterAPI {

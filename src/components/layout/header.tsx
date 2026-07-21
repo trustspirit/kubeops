@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Search, Settings, Download, Sparkles, Loader2, RotateCcw, ExternalLink } from 'lucide-react';
 import { SettingsDialog } from '@/components/settings/settings-dialog';
 import { useAutoUpdate, type UpdatePhase } from '@/hooks/use-auto-update';
+import { getInstallStageCopy } from '@/lib/update-state';
 import { toast } from 'sonner';
 
 const RELEASES_URL = 'https://github.com/trustspirit/kubeops/releases/latest';
@@ -24,6 +25,12 @@ function useMounted() {
 function isInstallError(message?: string | null): boolean {
   if (!message) return false;
   const lower = message.toLowerCase();
+  return lower.includes('install failed') || lower.includes('code signature') || lower.includes('codesign') || lower.includes('shipit');
+}
+
+function isLegacyInstallError(message?: string | null): boolean {
+  if (!message) return false;
+  const lower = message.toLowerCase();
   return lower.includes('code signature') || lower.includes('codesign') || lower.includes('shipit');
 }
 
@@ -31,7 +38,7 @@ export function UpdateIndicator() {
   const mounted = useMounted();
 
   const {
-    phase, version, percent, errorMessage, isAvailable,
+    phase, version, percent, errorMessage, installStage, isAvailable,
     checkForUpdates, downloadUpdate, quitAndInstall,
   } = useAutoUpdate();
   const prevPhaseRef = useRef<UpdatePhase>(phase);
@@ -44,20 +51,36 @@ export function UpdateIndicator() {
     switch (phase) {
       case 'available':
         toast.info(`Update ${version} is available`, {
+          id: 'app-update',
           description: 'Click the download icon in the header to download.',
           duration: 8000,
         });
         break;
       case 'downloaded':
         toast.success(`Update ${version} is ready to install`, {
+          id: 'app-update',
           description: 'Click "Restart & Update" to apply.',
           duration: Infinity,
-          action: { label: 'Restart & Update', onClick: () => quitAndInstall() },
+          action: { label: 'Restart & Update', onClick: () => void quitAndInstall() },
+        });
+        break;
+      case 'installing':
+        toast.loading(getInstallStageCopy(installStage), {
+          id: 'app-update',
+          description: installStage === 'restarting'
+            ? 'KubeOps will reopen automatically.'
+            : 'The app will restart automatically when installation is complete.',
+          duration: Infinity,
         });
         break;
       case 'error':
         if (isInstallError(errorMessage)) {
-          toast.error('Auto-update is not supported on this version', {
+          toast.error(
+            isLegacyInstallError(errorMessage)
+              ? 'Auto-update is not supported on this version'
+              : 'Update installation failed',
+            {
+            id: 'app-update',
             description: 'Please download the latest version manually.',
             duration: Infinity,
             action: {
@@ -67,6 +90,7 @@ export function UpdateIndicator() {
           });
         } else {
           toast.error('Update check failed', {
+            id: 'app-update',
             description: errorMessage,
             duration: 5000,
           });
@@ -78,7 +102,7 @@ export function UpdateIndicator() {
         }
         break;
     }
-  }, [phase, version, errorMessage, quitAndInstall]);
+  }, [phase, version, errorMessage, installStage, quitAndInstall]);
 
   if (!mounted || !isAvailable) return null;
 
@@ -141,12 +165,26 @@ export function UpdateIndicator() {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-green-500" onClick={quitAndInstall}>
+          <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-green-500" onClick={() => void quitAndInstall()}>
             <RotateCcw className="h-4 w-4" />
             <span className="text-xs">Restart &amp; Update</span>
           </Button>
         </TooltipTrigger>
         <TooltipContent>Restart to install {version}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  if (phase === 'installing') {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-blue-500" disabled>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-xs">{getInstallStageCopy(installStage)}</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>The app will restart automatically.</TooltipContent>
       </Tooltip>
     );
   }
