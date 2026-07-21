@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { AgeDisplay } from '@/components/shared/age-display';
-import { ExternalLink, Terminal, AlertTriangle, CircleCheck } from 'lucide-react';
+import { ExternalLink, Terminal, AlertTriangle, CircleCheck, Copy } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { usePanelStore } from '@/stores/panel-store';
 import type { ResourceNodeData } from './resource-node';
@@ -50,13 +50,15 @@ export function ResourceInfoDrawer({ node, open, onOpenChange }: ResourceInfoDra
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[440px] sm:max-w-[440px] p-0 flex flex-col">
+      <SheetContent side="right" className="w-[min(92vw,560px)] min-w-[360px] max-w-[92vw] resize-x overflow-hidden p-0 flex flex-col">
         <SheetHeader className="px-4 pt-4 pb-2 border-b">
-          <div className="flex items-center gap-2">
-            <SheetTitle className="text-base truncate">{name}</SheetTitle>
+          <div className="flex items-start gap-2 pr-8">
+            <SheetTitle className="min-w-0 flex-1 break-all text-left text-base leading-5">{name}</SheetTitle>
             <Badge variant="secondary" className="text-[10px] shrink-0">{kind}</Badge>
           </div>
-          <SheetDescription className="text-xs">
+          <SheetDescription className="text-left text-xs break-all">
+            {clusterId && <span title={clusterId}>{clusterId}</span>}
+            {clusterId && namespace && <span> · </span>}
             {namespace && <span>{namespace}</span>}
             {health && (
               <>
@@ -156,7 +158,7 @@ function DrawerOverview({
       ? `/api/clusters/${clusterIdEnc}/resources/${namespace}/${resourceType}/${name}`
       : null;
 
-  const { data, isLoading } = useSWR(apiUrl, { refreshInterval: 10000 });
+  const { data, error, isLoading, mutate } = useSWR(apiUrl, { refreshInterval: 10000 });
 
   if (isLoading) {
     return (
@@ -177,6 +179,13 @@ function DrawerOverview({
 
   return (
     <div className="space-y-4 pt-2">
+      {error && data && (
+        <div className="flex items-center gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-2 text-xs" role="status">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-yellow-600" />
+          <span className="flex-1">Refresh failed. Showing cached details.</span>
+          <Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => void mutate()}>Retry</Button>
+        </div>
+      )}
       {/* Metadata */}
       <Section title="Metadata">
         <Row label="Name" value={metadata.name} mono />
@@ -205,7 +214,7 @@ function DrawerOverview({
         <Section title="Labels">
           <div className="flex flex-wrap gap-1">
             {Object.entries(metadata.labels).map(([k, v]) => (
-              <Badge key={k} variant="secondary" className="text-[10px] font-mono">
+              <Badge key={k} variant="secondary" className="h-auto max-w-full whitespace-normal break-all text-left text-[10px] font-mono">
                 {k}={v as string}
               </Badge>
             ))}
@@ -533,11 +542,24 @@ function Row({
   small?: boolean;
 }) {
   return (
-    <div className="flex justify-between gap-2 text-xs">
+    <div className="flex items-start justify-between gap-2 text-xs">
       <span className="text-muted-foreground shrink-0">{label}</span>
-      <span className={`text-right truncate ${mono ? 'font-mono' : ''} ${small ? 'text-[10px]' : ''}`} title={String(value)}>
-        {value}
-      </span>
+      <div className="flex min-w-0 items-start justify-end gap-1">
+        <span className={`min-w-0 break-all text-right whitespace-normal ${mono ? 'font-mono' : ''} ${small ? 'text-[10px]' : ''}`} title={String(value)}>
+          {value}
+        </span>
+        {mono && value != null && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="-mt-1 h-6 w-6 shrink-0"
+            aria-label={`Copy ${label}`}
+            onClick={() => void navigator.clipboard.writeText(String(value))}
+          >
+            <Copy className="h-3 w-3" />
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

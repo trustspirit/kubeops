@@ -205,6 +205,12 @@ export function CascadeDeleteDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-md border bg-muted/30 p-3 text-xs">
+          <dt className="text-muted-foreground">Cluster</dt><dd className="truncate font-mono" title={clusterId}>{clusterId}</dd>
+          <dt className="text-muted-foreground">Namespace</dt><dd className="truncate font-mono" title={namespace}>{namespace}</dd>
+          <dt className="text-muted-foreground">Resource</dt><dd className="truncate font-mono" title={`${resourceType}/${name}`}>{resourceType}/{name}</dd>
+        </dl>
+
         <div className="space-y-4 py-2">
           {/* Dependent tree */}
           <div className="space-y-2">

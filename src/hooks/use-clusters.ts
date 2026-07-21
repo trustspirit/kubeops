@@ -17,6 +17,7 @@ export function useClusters() {
   const [checkedClusters, setCheckedClusters] = useState<Set<string>>(new Set());
   // Tracks individual clusters being refreshed
   const [refreshingClusters, setRefreshingClusters] = useState<Set<string>>(new Set());
+  const [lastStatusUpdateAt, setLastStatusUpdateAt] = useState<number | null>(null);
   // Differentiates manual refresh (button click) from background auto-refresh
   const isManualRefreshRef = useRef(false);
   const hasLoadedOnceRef = useRef(false);
@@ -57,6 +58,7 @@ export function useClusters() {
       };
 
       if (update.done) {
+        setLastStatusUpdateAt(Date.now());
         es.close();
         eventSourceRef.current = null;
         if (!silent) setIsCheckingStatus(false);
@@ -64,6 +66,7 @@ export function useClusters() {
       }
 
       if (update.name) {
+        setLastStatusUpdateAt(Date.now());
         if (!silent) {
           setCheckedClusters((prev) => new Set(prev).add(update.name!));
         }
@@ -113,6 +116,7 @@ export function useClusters() {
         return;
       }
       const update = await res.json() as { name: string; status: ClusterInfo['status']; error: string | null };
+      setLastStatusUpdateAt(Date.now());
       mutate(
         (current) => {
           if (!current) return current;
@@ -176,6 +180,7 @@ export function useClusters() {
     isCheckingStatus,
     checkedClusters,
     refreshingClusters,
+    lastStatusUpdateAt,
     refreshClusterStatus,
     manualRefresh,
     mutate,

@@ -24,16 +24,21 @@ function trimLogs(logs: string): string {
 
 interface LogsTabProps {
   tab: PanelTab;
+  active?: boolean;
 }
 
-export function LogsTab({ tab }: LogsTabProps) {
+export function LogsTab({ tab, active = true }: LogsTabProps) {
   const { clusterId, namespace, podName, container } = tab;
   const updateTab = usePanelStore((s) => s.updateTab);
   const [follow, setFollow] = useState(true);
   const [logs, setLogs] = useState('');
   const [connected, setConnected] = useState(false);
+  const [reconnectNonce, setReconnectNonce] = useState(0);
+  const [podRecreated, setPodRecreated] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const hasStreamedRef = useRef(false);
+  const podUidRef = useRef<string | undefined>(undefined);
 
   // Batching: buffer incoming chunks between animation frames
   const bufferRef = useRef('');
@@ -73,6 +78,16 @@ export function LogsTab({ tab }: LogsTabProps) {
     return [...regular, ...init];
   }, [currentPod]);
 
+  const currentPodUid = currentPod?.metadata?.uid;
+  useEffect(() => {
+    if (!currentPodUid) return;
+    if (!podUidRef.current) {
+      podUidRef.current = currentPodUid;
+      return;
+    }
+    if (podUidRef.current !== currentPodUid) setPodRecreated(true);
+  }, [currentPodUid]);
+
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const search = useLogSearch({
@@ -89,14 +104,15 @@ export function LogsTab({ tab }: LogsTabProps) {
   }, []);
 
   useEffect(() => {
-    if (!container) return;
+    if (!container || !active) return;
 
     // Reset converter state for new stream
     converterRef.current = new AnsiToHtml({ fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true });
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const decodedCluster = decodeURIComponent(clusterId);
-    const wsUrl = `${protocol}//${window.location.host}/ws/logs/${encodeURIComponent(decodedCluster)}/${namespace}/${podName}?container=${container}&follow=true&timestamps=true&tailLines=500`;
+    const tailLines = hasStreamedRef.current ? 0 : 500;
+    const wsUrl = `${protocol}//${window.location.host}/ws/logs/${encodeURIComponent(decodedCluster)}/${namespace}/${podName}?container=${container}&follow=true&timestamps=true&tailLines=${tailLines}`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -104,6 +120,7 @@ export function LogsTab({ tab }: LogsTabProps) {
     ws.onopen = () => setConnected(true);
     ws.onmessage = (event) => {
       if (typeof event.data === 'string') {
+        hasStreamedRef.current = true;
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'error') {
@@ -129,9 +146,8 @@ export function LogsTab({ tab }: LogsTabProps) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
       bufferRef.current = '';
-      setLogs('');
     };
-  }, [container, clusterId, namespace, podName, flushBuffer]);
+  }, [container, clusterId, namespace, podName, flushBuffer, active, reconnectNonce]);
 
   // Memoize ANSI conversion — only re-runs when logs change
   const [baseHtml, setBaseHtml] = useState('Connecting...');
@@ -201,6 +217,25 @@ export function LogsTab({ tab }: LogsTabProps) {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-card shrink-0">
+        {podRecreated && (
+          <div className="flex items-center gap-2 rounded bg-yellow-500/10 px-2 py-1 text-xs text-yellow-700 dark:text-yellow-400" role="status">
+            Pod was recreated.
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-5 px-1.5 text-xs"
+              onClick={() => {
+                podUidRef.current = currentPodUid;
+                setPodRecreated(false);
+                setLogs((previous) => `${previous}\n--- following recreated pod ---\n`);
+                hasStreamedRef.current = true;
+                setReconnectNonce((value) => value + 1);
+              }}
+            >
+              Follow new Pod
+            </Button>
+          </div>
+        )}
         <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setFollow(!follow)}>
           {follow ? <Pause className="h-3 w-3 mr-1" /> : <Play className="h-3 w-3 mr-1" />}
           {follow ? 'Pause' : 'Follow'}
@@ -256,6 +291,11 @@ export function LogsTab({ tab }: LogsTabProps) {
         <div className="ml-auto flex items-center gap-1.5">
           <div className={`h-2 w-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
           <span className="text-xs text-muted-foreground">{connected ? 'Streaming' : 'Disconnected'}</span>
+          {!connected && active && (
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setReconnectNonce((value) => value + 1)}>
+              Reconnect
+            </Button>
+          )}
         </div>
       </div>
       {search.isOpen && (

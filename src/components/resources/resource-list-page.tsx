@@ -14,6 +14,11 @@ import { usePodRestartWatcher } from '@/hooks/use-pod-watcher';
 import { ResourceActions } from '@/components/resources/resource-actions';
 import { useNamespaceStore } from '@/stores/namespace-store';
 import type { KubeResource } from '@/types/resource';
+import { getKubeResourceRowId } from '@/lib/resource-sync';
+import { WatchStatusIndicator } from '@/components/shared/watch-status-indicator';
+import { Button } from '@/components/ui/button';
+import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
+import { getErrorPresentation } from '@/lib/error-presentation';
 
 interface ResourceListPageProps {
   resourceType: string;
@@ -30,7 +35,7 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
   const multiNs = !clusterScoped && isMultiNamespace(decodedClusterId);
   const selectedNs = multiNs ? getSelectedNamespaces(decodedClusterId) : [];
 
-  const { data, error, isLoading, mutate } = useResourceList({
+  const { data, error, isLoading, isValidating, lastUpdatedAt, mutate } = useResourceList({
     clusterId: decodedClusterId || null,
     namespace: clusterScoped ? '_' : (multiNs ? '_all' : namespace),
     resourceType,
@@ -98,7 +103,7 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
   }, [baseColumns, namespace, clusterId, clusterScoped, resourceType, decodedClusterId, handleMutate]);
 
   if (isLoading) return <ListSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
+  if (error && !data) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
 
   let items = data?.items || [];
 
@@ -110,12 +115,45 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
 
   return (
     <div className="flex flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <h1 className="text-2xl font-bold">{label}</h1>
+        <div className="flex flex-wrap items-center justify-end gap-3" aria-live="polite">
+          <WatchStatusIndicator />
+          {lastUpdatedAt && (
+            <span className="text-xs text-muted-foreground" title={new Date(lastUpdatedAt).toLocaleString()}>
+              Updated {new Date(lastUpdatedAt).toLocaleTimeString()}
+            </span>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5"
+            onClick={() => void mutate()}
+            disabled={isValidating}
+            aria-label={`Refresh ${label}`}
+          >
+            {isValidating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Refresh
+          </Button>
+        </div>
       </div>
+      {error && data && (() => {
+        const feedback = getErrorPresentation(error.message, error.status);
+        return (
+          <div className="flex items-center gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-sm" role="status">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-600" />
+            <span className="min-w-0 flex-1">
+              <span className="font-medium">Refresh failed.</span>{' '}
+              <span className="text-muted-foreground">Showing the last successful data. {feedback.summary}</span>
+            </span>
+            <Button variant="outline" size="sm" className="h-7" onClick={() => void mutate()}>Retry</Button>
+          </div>
+        );
+      })()}
       <DataTable
         columns={allColumns}
         data={items}
+        getRowId={getKubeResourceRowId}
         searchPlaceholder={`Search ${label.toLowerCase()}...`}
       />
     </div>

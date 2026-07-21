@@ -23,13 +23,14 @@ import { ClusterCard } from '@/components/clusters/cluster-card';
 import { ClusterTagEditor } from '@/components/clusters/cluster-tag-editor';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { getErrorPresentation } from '@/lib/error-presentation';
 
 // Module-level flag: survive component remount so auto-login runs only once per session
 let autoLoginDone = false;
 
 export default function ClustersPage() {
   const router = useRouter();
-  const { clusters, isLoading, error, isCheckingStatus, checkedClusters, refreshingClusters, refreshClusterStatus, manualRefresh, mutate } = useClusters();
+  const { clusters, isLoading, error, isCheckingStatus, checkedClusters, refreshingClusters, lastStatusUpdateAt, refreshClusterStatus, manualRefresh, mutate } = useClusters();
   const { viewMode, setViewMode, showFavoritesOnly, setShowFavoritesOnly, getClusterMeta, toggleFavorite } = useClusterCatalogStore();
   const [search, setSearch] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -337,11 +338,11 @@ export default function ClustersPage() {
             <LayoutDashboard className="h-4 w-4" />
             <span className="text-xs">Overview</span>
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRefresh} title="Refresh cluster list">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRefresh} title="Refresh cluster list" aria-label="Refresh cluster list">
             <RotateCw className={`h-4 w-4 ${refreshing || isCheckingStatus ? 'animate-spin' : ''}`} />
           </Button>
           <UpdateIndicator />
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSettingsOpen(true)}>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSettingsOpen(true)} aria-label="Open settings">
             <Settings className="h-4 w-4" />
           </Button>
           <ThemeToggle />
@@ -367,8 +368,13 @@ export default function ClustersPage() {
           )}
 
           {error && (
-            <div className="rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-              Failed to load clusters: {error.message}
+            <div className="flex items-center gap-3 rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm" role="alert">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-destructive">{getErrorPresentation(error.message).title}</p>
+                <p className="text-muted-foreground">{getErrorPresentation(error.message).summary}</p>
+                <details className="mt-1 text-xs text-muted-foreground"><summary className="cursor-pointer">Technical details</summary><code className="block break-all pt-1">{error.message}</code></details>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => void mutate()}>Retry</Button>
             </div>
           )}
 
@@ -405,12 +411,16 @@ export default function ClustersPage() {
                   <button
                     className={cn('px-2 py-1.5 text-xs flex items-center gap-1 transition-colors', viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
                     onClick={() => setViewMode('list')}
+                    aria-label="List view"
+                    aria-pressed={viewMode === 'list'}
                   >
                     <List className="h-3.5 w-3.5" />
                   </button>
                   <button
                     className={cn('px-2 py-1.5 text-xs flex items-center gap-1 border-l transition-colors', viewMode === 'cards' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
                     onClick={() => setViewMode('cards')}
+                    aria-label="Card view"
+                    aria-pressed={viewMode === 'cards'}
                   >
                     <LayoutGrid className="h-3.5 w-3.5" />
                   </button>
@@ -449,6 +459,11 @@ export default function ClustersPage() {
                     <span className="flex items-center gap-1 text-xs">
                       <Loader2 className="h-3 w-3 animate-spin" />
                       Checking status...
+                    </span>
+                  )}
+                  {lastStatusUpdateAt && (
+                    <span className="text-xs" title={new Date(lastStatusUpdateAt).toLocaleString()}>
+                      Updated {new Date(lastStatusUpdateAt).toLocaleTimeString()}
                     </span>
                   )}
                   {filtered.length} of {clusters.length} clusters
@@ -558,20 +573,24 @@ export default function ClustersPage() {
                     const isStatusPending = isCheckingStatus && !checkedClusters.has(cluster.name);
                     const isRefreshingSingle = refreshingClusters.has(cluster.name);
                     const showPending = isStatusPending || isRefreshingSingle;
+                    const errorFeedback = cluster.error ? getErrorPresentation(cluster.error) : null;
                     return (
                       <div
                         key={cluster.name}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => !isKubeLogging && handleClusterClick(cluster.name, cluster.cluster, cluster.status)}
-                        onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !isKubeLogging) { e.preventDefault(); handleClusterClick(cluster.name, cluster.cluster, cluster.status); } }}
-                        className={`flex items-center gap-4 px-4 py-3 hover:bg-accent/50 transition-colors group cursor-pointer ${isKubeLogging ? 'opacity-60 pointer-events-none' : ''}`}
+                        className={`relative flex items-center gap-4 px-4 py-3 hover:bg-accent/50 transition-colors group cursor-pointer ${isKubeLogging ? 'opacity-60 pointer-events-none' : ''}`}
                       >
+                        <button
+                          type="button"
+                          className="absolute inset-0 z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                          onClick={() => handleClusterClick(cluster.name, cluster.cluster, cluster.status)}
+                          disabled={isKubeLogging}
+                          aria-label={`Open cluster ${realName}, status ${showPending ? 'checking' : cluster.status}`}
+                        />
                         {showPending ? (
-                          <Loader2 className="h-3 w-3 animate-spin shrink-0 text-muted-foreground" />
+                          <Loader2 className="relative z-20 h-3 w-3 animate-spin shrink-0 text-muted-foreground pointer-events-none" />
                         ) : (
                           <div
-                            className={`h-2 w-2 rounded-full shrink-0 ${
+                            className={`relative z-20 h-2 w-2 rounded-full shrink-0 pointer-events-none ${
                               cluster.status === 'connected'
                                 ? 'bg-green-500'
                                 : cluster.status === 'error'
@@ -580,7 +599,7 @@ export default function ClustersPage() {
                             }`}
                           />
                         )}
-                        <div className="flex-1 min-w-0">
+                        <div className="relative z-20 flex-1 min-w-0 pointer-events-none">
                           <div className="flex items-center gap-2">
                             {meta.favorite && <Star className="h-3 w-3 fill-yellow-400 text-yellow-400 shrink-0" />}
                             <span className="font-medium truncate">
@@ -620,12 +639,14 @@ export default function ClustersPage() {
                             {cluster.server && (
                               <span className="text-xs text-muted-foreground truncate">{cluster.server}</span>
                             )}
-                            {cluster.error && (
-                              <span className="text-xs text-destructive truncate">{cluster.error}</span>
+                            {errorFeedback && (
+                              <span className="text-xs text-destructive truncate" title={errorFeedback.details}>
+                                {errorFeedback.title}: {errorFeedback.summary}
+                              </span>
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 shrink-0">
+                        <div className="relative z-20 flex items-center gap-1 shrink-0 pointer-events-auto">
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -633,6 +654,7 @@ export default function ClustersPage() {
                                 size="icon"
                                 className="h-6 w-6"
                                 disabled={showPending}
+                                aria-label={`Refresh ${realName} status`}
                                 onClick={(e) => { e.stopPropagation(); refreshClusterStatus(cluster.name); }}
                               >
                                 <RotateCw className={cn('h-3 w-3 text-muted-foreground', isRefreshingSingle && 'animate-spin')} />
@@ -646,6 +668,7 @@ export default function ClustersPage() {
                                 variant="ghost"
                                 size="icon"
                                 className="h-6 w-6"
+                                aria-label={meta.favorite ? `Remove ${realName} from favorites` : `Add ${realName} to favorites`}
                                 onClick={(e) => { e.stopPropagation(); toggleFavorite(cluster.name); }}
                               >
                                 <Star className={cn('h-3.5 w-3.5', meta.favorite ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />

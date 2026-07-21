@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import type { PodRestartSnapshot, StoredPodRestartSnapshot } from '@/lib/pod-restart-snapshot';
 
 export interface WatchedPod {
   clusterId: string;
@@ -13,13 +14,13 @@ function podKey(pod: WatchedPod) {
 
 interface PodWatcherState {
   watchedPods: WatchedPod[];
-  restartSnapshots: Record<string, number>;
+  restartSnapshots: Record<string, StoredPodRestartSnapshot>;
   notificationsEnabled: boolean;
   addWatch: (pod: WatchedPod) => void;
   removeWatch: (pod: WatchedPod) => void;
   isWatched: (pod: WatchedPod) => boolean;
-  updateSnapshot: (pod: WatchedPod, restartCount: number) => void;
-  getSnapshot: (pod: WatchedPod) => number | undefined;
+  updateSnapshot: (pod: WatchedPod, snapshot: PodRestartSnapshot) => void;
+  getSnapshot: (pod: WatchedPod) => StoredPodRestartSnapshot | undefined;
   setNotificationsEnabled: (enabled: boolean) => void;
 }
 
@@ -49,10 +50,10 @@ export const usePodWatcherStore = create<PodWatcherState>()(
         const key = podKey(pod);
         return get().watchedPods.some((p) => podKey(p) === key);
       },
-      updateSnapshot: (pod, restartCount) => {
+      updateSnapshot: (pod, snapshot) => {
         const key = podKey(pod);
         set((state) => ({
-          restartSnapshots: { ...state.restartSnapshots, [key]: restartCount },
+          restartSnapshots: { ...state.restartSnapshots, [key]: snapshot },
         }));
       },
       getSnapshot: (pod) => {

@@ -68,6 +68,15 @@ export function BottomPanel() {
         <div
           className="h-1 cursor-row-resize hover:bg-primary/20 active:bg-primary/30 flex items-center justify-center shrink-0"
           onMouseDown={handleMouseDown}
+          role="separator"
+          aria-label="Resize bottom panel"
+          aria-orientation="horizontal"
+          aria-valuenow={height}
+          tabIndex={0}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowUp') { event.preventDefault(); setHeight(height + 24); }
+            if (event.key === 'ArrowDown') { event.preventDefault(); setHeight(height - 24); }
+          }}
         >
           <GripHorizontal className="h-3 w-3 text-muted-foreground/50" />
         </div>
@@ -75,32 +84,40 @@ export function BottomPanel() {
 
       {/* Tab bar */}
       <div className="flex items-center border-b bg-card shrink-0 h-[35px]">
-        <div className="flex items-center flex-1 overflow-x-auto min-w-0">
+        <div className="flex items-center flex-1 overflow-x-auto min-w-0" role="tablist" aria-label="Terminal and log tabs">
           {tabs.map((tab) => (
             <div
               key={tab.id}
               className={cn(
-                'flex items-center gap-1.5 px-3 h-[35px] border-r text-xs cursor-pointer hover:bg-accent shrink-0 max-w-[200px]',
+                'flex items-center h-[35px] border-r text-xs shrink-0 max-w-[220px]',
                 activeTabId === tab.id ? 'bg-background' : 'bg-card text-muted-foreground'
               )}
-              onClick={() => { setActiveTab(tab.id); if (!open) setOpen(true); }}
             >
-              {tab.type === 'exec' ? (
-                <Terminal className="h-3 w-3 shrink-0" />
-              ) : (
-                <ScrollText className="h-3 w-3 shrink-0" />
-              )}
-              <span className="truncate">{tab.title}</span>
               <button
-                className="ml-1 rounded hover:bg-muted p-0.5 shrink-0"
-                onClick={(e) => { e.stopPropagation(); removeTab(tab.id); }}
+                type="button"
+                role="tab"
+                aria-selected={activeTabId === tab.id}
+                className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch px-3 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                onClick={() => { setActiveTab(tab.id); if (!open) setOpen(true); }}
+              >
+                {tab.type === 'exec' ? (
+                  <Terminal className="h-3 w-3 shrink-0" />
+                ) : (
+                  <ScrollText className="h-3 w-3 shrink-0" />
+                )}
+                <span className="truncate">{tab.title}</span>
+              </button>
+              <button
+                className="mr-1 rounded hover:bg-muted p-1 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => removeTab(tab.id)}
+                aria-label={`Close ${tab.title}`}
               >
                 <X className="h-3 w-3" />
               </button>
             </div>
           ))}
         </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7 mr-1 shrink-0" onClick={toggle}>
+        <Button variant="ghost" size="icon" className="h-7 w-7 mr-1 shrink-0" onClick={toggle} aria-label={open ? 'Collapse bottom panel' : 'Expand bottom panel'}>
           {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
         </Button>
       </div>
@@ -114,12 +131,13 @@ export function BottomPanel() {
               <TerminalTab tab={tab} active={tab.id === activeTabId} />
             </div>
           ))}
-          {/* Logs tabs mount only when active to avoid idle WebSocket connections */}
-          {activeTab.type === 'logs' && (
-            <div className="h-full">
-              <LogsTab tab={activeTab} />
+          {/* Preserve log buffers and search state while inactive; each tab
+              pauses its WebSocket until it becomes active again. */}
+          {tabs.filter((tab) => tab.type === 'logs').map((tab) => (
+            <div key={tab.id} className={cn('h-full', tab.id === activeTabId ? 'block' : 'hidden')}>
+              <LogsTab tab={tab} active={tab.id === activeTabId} />
             </div>
-          )}
+          ))}
         </div>
       )}
     </div>

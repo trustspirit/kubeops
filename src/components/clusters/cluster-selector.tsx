@@ -72,6 +72,7 @@ export function ClusterSelector() {
                   }`}
                 />
                 <span>{cluster.name}</span>
+                <span className="sr-only">Status: {cluster.status}</span>
               </div>
             </SelectItem>
           ))}

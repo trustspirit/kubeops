@@ -1,8 +1,14 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import useSWR from 'swr';
 import { useWatchContext } from '@/providers/watch-provider';
 import type { WatchEvent } from '@/types/watch';
-import type { KubeResource, KubeList } from '@/types/resource';
+import type { KubeList } from '@/types/resource';
+import {
+  applyResourceWatchEvent,
+  normalizeWatchNamespace,
+  shouldRevalidateAfterWatchTransition,
+  type ResourceWatchConnectionState,
+} from '@/lib/resource-sync';
 
 interface UseResourceListOptions {
   clusterId: string | null;
@@ -25,7 +31,9 @@ export function useResourceList({
   enabled = true,
 }: UseResourceListOptions) {
   const watchCtx = useWatchContext();
-  const isWatchConnected = watchCtx?.connectionState === 'connected';
+  const subscribe = watchCtx?.subscribe;
+  const connectionState = watchCtx?.connectionState ?? 'disconnected';
+  const isWatchConnected = connectionState === 'connected';
 
   // Determine refresh interval:
   // - If explicitly provided, use it
@@ -43,91 +51,80 @@ export function useResourceList({
       ? `/api/clusters/${encodeURIComponent(clusterId)}/resources/${namespace}/${resourceType}`
       : null;
 
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const { data, error, isLoading, isValidating, mutate } = useSWR(key, {
     refreshInterval: effectiveRefreshInterval,
+    onSuccess: () => setLastUpdatedAt(Date.now()),
   });
 
   // Stable ref for mutate so we can use it in the watch callback without re-subscribing
   const mutateRef = useRef(mutate);
   useEffect(() => { mutateRef.current = mutate; });
 
-  // Stable ref for current data
-  const dataRef = useRef(data);
-  useEffect(() => { dataRef.current = data; });
+  const revalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestRevalidation = useCallback(() => {
+    if (revalidateTimerRef.current) return;
+    revalidateTimerRef.current = setTimeout(() => {
+      revalidateTimerRef.current = null;
+      void mutateRef.current().catch(() => {
+        // SWR exposes the error to the consuming page while preserving cached data.
+      });
+    }, 250);
+  }, []);
+
+  useEffect(() => () => {
+    if (revalidateTimerRef.current) clearTimeout(revalidateTimerRef.current);
+  }, []);
 
   const handleWatchEvent = useCallback((event: WatchEvent) => {
-    if (event.type === 'ERROR' || event.type === 'BOOKMARK') return;
-
-    const currentData = dataRef.current;
-    if (!currentData?.items) return;
-
-    const obj = event.object;
-    if (!obj?.metadata?.uid) return;
-
-    const uid = obj.metadata.uid;
+    if (event.type === 'ERROR') {
+      requestRevalidation();
+      return;
+    }
 
     mutateRef.current((prev: KubeList | undefined) => {
-      if (!prev?.items) return prev;
-
-      switch (event.type) {
-        case 'ADDED': {
-          // Only add if not already present
-          const exists = prev.items.some((item: KubeResource) => item.metadata?.uid === uid);
-          if (exists) {
-            // Treat as modification if already present
-            return {
-              ...prev,
-              items: prev.items.map((item: KubeResource) =>
-                item.metadata?.uid === uid ? (obj as KubeResource) : item
-              ),
-            };
-          }
-          return {
-            ...prev,
-            items: [...prev.items, obj as KubeResource],
-          };
-        }
-        case 'MODIFIED': {
-          return {
-            ...prev,
-            items: prev.items.map((item: KubeResource) =>
-              item.metadata?.uid === uid ? (obj as KubeResource) : item
-            ),
-          };
-        }
-        case 'DELETED': {
-          return {
-            ...prev,
-            items: prev.items.filter((item: KubeResource) => item.metadata?.uid !== uid),
-          };
-        }
-        default:
-          return prev;
-      }
+      return applyResourceWatchEvent(prev, event);
     }, { revalidate: false });
-  }, []);
+    setLastUpdatedAt(Date.now());
+  }, [requestRevalidation]);
+
+  const previousConnectionStateRef = useRef<ResourceWatchConnectionState>(connectionState);
+  const hasConnectedRef = useRef(false);
+  useEffect(() => {
+    const previous = previousConnectionStateRef.current;
+    if (shouldRevalidateAfterWatchTransition(previous, connectionState, hasConnectedRef.current)) {
+      requestRevalidation();
+    }
+    if (connectionState === 'connected') hasConnectedRef.current = true;
+    previousConnectionStateRef.current = connectionState;
+  }, [connectionState, requestRevalidation]);
 
   // Subscribe to Watch events after SWR data loads.
   // We use `isLoading` as a proxy for whether initial data has loaded: once isLoading
   // transitions to false, initial data is available. This avoids using `data` directly
   // as a dependency, which would tear down/recreate the subscription on every data update.
   useEffect(() => {
-    if (!watchCtx) return;
+    if (!subscribe) return;
     if (isLoading) return; // Wait for initial data before subscribing
     if (!enabled || !clusterId) return;
 
-    const unsubscribe = watchCtx.subscribe(resourceType, namespace, handleWatchEvent);
+    const unsubscribe = subscribe(
+      resourceType,
+      normalizeWatchNamespace(namespace),
+      handleWatchEvent,
+    );
 
     return () => {
       unsubscribe();
     };
-  }, [watchCtx, isLoading, enabled, clusterId, resourceType, namespace, handleWatchEvent]);
+  }, [subscribe, isLoading, enabled, clusterId, resourceType, namespace, handleWatchEvent]);
 
   return {
     data,
     error,
     isLoading,
     isValidating,
+    lastUpdatedAt,
     mutate,
   };
 }

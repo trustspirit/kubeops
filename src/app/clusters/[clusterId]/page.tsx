@@ -20,6 +20,10 @@ import {
 import { NodeMetricsSummary } from '@/components/shared/metrics-charts';
 import { WorkloadHealthSummary } from '@/components/dashboard/workload-health-summary';
 import type { KubeResource, KubeEvent, ContainerSpec } from '@/types/resource';
+import {
+  OVERVIEW_LIVE_SWR_OPTIONS,
+  OVERVIEW_SLOW_SWR_OPTIONS,
+} from '@/lib/resource-freshness';
 
 interface RechartsPayloadEntry {
   color?: string;
@@ -99,22 +103,23 @@ export default function ClusterOverviewPage() {
 
   // Core data (always fetch immediately)
   const { data: health, error: healthError, isValidating: healthValidating } = useSWR(`/api/clusters/${clusterId}/health`, {
+    ...OVERVIEW_LIVE_SWR_OPTIONS,
     errorRetryCount: 3,
     errorRetryInterval: 2000,
   });
-  const { data: nodesData } = useSWR(`/api/clusters/${clusterId}/nodes`);
-  const { data: podsData } = useSWR(`/api/clusters/${clusterId}/resources/${namespace}/pods`);
+  const { data: nodesData } = useSWR(`/api/clusters/${clusterId}/nodes`, OVERVIEW_LIVE_SWR_OPTIONS);
+  const { data: podsData } = useSWR(`/api/clusters/${clusterId}/resources/${namespace}/pods`, OVERVIEW_LIVE_SWR_OPTIONS);
 
   // Secondary data (fetch after core data is loaded to reduce initial request burst)
   const coreLoaded = !!health && !!nodesData && !!podsData;
-  const { data: deploymentsData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/deployments` : null);
-  const { data: statefulsetData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/statefulsets` : null);
-  const { data: daemonsetData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/daemonsets` : null);
-  const { data: servicesData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/services` : null);
-  const { data: ingressData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/ingresses` : null);
-  const { data: eventsData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/events` : null);
-  const { data: configmapData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/configmaps` : null);
-  const { data: secretData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/secrets` : null);
+  const { data: deploymentsData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/deployments` : null, OVERVIEW_LIVE_SWR_OPTIONS);
+  const { data: statefulsetData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/statefulsets` : null, OVERVIEW_LIVE_SWR_OPTIONS);
+  const { data: daemonsetData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/daemonsets` : null, OVERVIEW_LIVE_SWR_OPTIONS);
+  const { data: servicesData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/services` : null, OVERVIEW_LIVE_SWR_OPTIONS);
+  const { data: ingressData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/ingresses` : null, OVERVIEW_LIVE_SWR_OPTIONS);
+  const { data: eventsData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/events` : null, OVERVIEW_LIVE_SWR_OPTIONS);
+  const { data: configmapData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/configmaps` : null, OVERVIEW_SLOW_SWR_OPTIONS);
+  const { data: secretData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/secrets` : null, OVERVIEW_SLOW_SWR_OPTIONS);
 
   // Don't show error while SWR is still retrying — Teleport exec plugin
   // often fails on the first call (empty key file) but succeeds on retry.

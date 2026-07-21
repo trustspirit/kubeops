@@ -1,3 +1,5 @@
+import { requestProviderLogin } from './provider-login-request';
+
 /**
  * Tracks which Teleport clusters have had `tsh kube login <cluster>` executed
  * during the current app session, so we don't re-run it on every navigation.
@@ -17,6 +19,8 @@
 const TTL_MS = 10 * 60 * 1000; // 10 min — well under the typical tsh kube cert lifetime
 
 const lastKubeLoginAt = new Map<string, number>();
+const lastKubeLoginAtByTarget = new Map<string, number>();
+const contextLoginTarget = new Map<string, string>();
 type ProviderDetection = { providerId: string | null; kubeCluster?: string };
 const providerDetectionCache = new Map<string, { value: ProviderDetection; at: number }>();
 const detectInFlight = new Map<string, Promise<ProviderDetection | null>>();
@@ -33,14 +37,23 @@ export function isTshKubeLoginRecent(contextName: string): boolean {
 
 export function clearTshKubeLoginCache(contextName?: string): void {
   if (contextName) {
+    const target = contextLoginTarget.get(contextName);
     lastKubeLoginAt.delete(contextName);
+    contextLoginTarget.delete(contextName);
+    if (target) lastKubeLoginAtByTarget.delete(target);
     providerDetectionCache.delete(contextName);
     detectInFlight.delete(contextName);
   } else {
     lastKubeLoginAt.clear();
+    lastKubeLoginAtByTarget.clear();
+    contextLoginTarget.clear();
     providerDetectionCache.clear();
     detectInFlight.clear();
   }
+}
+
+function isRecent(at: number | undefined): boolean {
+  return at !== undefined && Date.now() - at < TTL_MS;
 }
 
 async function detectProviderForContext(contextName: string): Promise<ProviderDetection | null> {
@@ -90,19 +103,25 @@ export async function ensureTshKubeLogin(contextName: string, knownProviderId?: 
   // For Teleport: `--kube-cluster` from exec args is authoritative; fallback to context name.
   const kubeCluster: string = detection.kubeCluster || contextName;
 
+  // Several UI surfaces can resolve different kubeconfig contexts to the
+  // same Teleport target. Reuse the successful target login across aliases.
+  if (isRecent(lastKubeLoginAtByTarget.get(kubeCluster))) {
+    markTshKubeLoginDone(contextName);
+    contextLoginTarget.set(contextName, kubeCluster);
+    return 'tsh';
+  }
+
   // Lazy import to avoid circular deps and keep this helper framework-agnostic.
   const { useSettingsStore } = await import('@/stores/settings-store');
   const savedConfig = useSettingsStore.getState().authProviderConfigs['tsh'] || {};
 
-  const res = await fetch('/api/auth/tsh/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...savedConfig, action: 'kube-login', cluster: kubeCluster }),
+  const data = await requestProviderLogin('tsh', {
+    ...savedConfig,
+    action: 'kube-login',
+    cluster: kubeCluster,
   });
-  const data = await res.json();
-  if (!res.ok || !data?.success) {
-    throw new Error(data?.error || `tsh kube login failed for ${kubeCluster}`);
-  }
+  lastKubeLoginAtByTarget.set(kubeCluster, Date.now());
+  contextLoginTarget.set(contextName, kubeCluster);
   markTshKubeLoginDone(contextName);
 
   // Successful per-cluster kube login is strong evidence the tsh proxy

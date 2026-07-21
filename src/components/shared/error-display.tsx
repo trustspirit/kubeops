@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, RefreshCw, LogIn, Loader2 } from 'lucide-react';
+import { AlertTriangle, RefreshCw, LogIn, Loader2, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDetectProvider, useProviderLogin } from '@/hooks/use-auth-providers';
 import { toast } from 'sonner';
+import { getErrorPresentation } from '@/lib/error-presentation';
 
 interface ErrorDisplayProps {
   error: Error & { status?: number };
@@ -17,10 +18,7 @@ export function ErrorDisplay({ error, onRetry, clusterId }: ErrorDisplayProps) {
   const { login } = useProviderLogin();
   const [loading, setLoading] = useState(false);
 
-  const isAuthError = error.message?.includes('credentials') ||
-                      error.message?.includes('certificate') ||
-                      error.message?.includes('unauthorized') ||
-                      error.status === 401;
+  const presentation = getErrorPresentation(error.message, error.status);
 
   const handleLogin = async () => {
     if (!providerId) return;
@@ -49,11 +47,28 @@ export function ErrorDisplay({ error, onRetry, clusterId }: ErrorDisplayProps) {
       <AlertTriangle className="h-12 w-12 text-destructive" />
       <div>
         <h3 className="text-lg font-semibold">
-          {isAuthError ? 'Authentication Required' : 'Error'}
+          {presentation.title}
         </h3>
-        <p className="mt-1 text-sm text-muted-foreground">{error.message}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{presentation.summary}</p>
       </div>
-      {isAuthError && providerId && (
+      {presentation.details && (
+        <details className="w-full max-w-2xl rounded-md border bg-muted/30 p-3 text-left text-xs">
+          <summary className="cursor-pointer text-muted-foreground">Technical details</summary>
+          <div className="mt-2 flex items-start gap-2">
+            <code className="min-w-0 flex-1 whitespace-pre-wrap break-all">{presentation.details}</code>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0"
+              aria-label="Copy technical details"
+              onClick={() => void navigator.clipboard.writeText(presentation.details)}
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </details>
+      )}
+      {presentation.canLogin && providerId && (
         <Button
           variant="outline"
           onClick={handleLogin}

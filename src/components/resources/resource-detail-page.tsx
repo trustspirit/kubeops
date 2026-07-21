@@ -19,6 +19,8 @@ import * as yaml from 'js-yaml';
 import { YamlEditor } from '@/components/shared/yaml-editor';
 import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
 import { MultiClusterApplyDialog } from '@/components/multi-cluster/multi-cluster-apply-dialog';
+import { useSWRConfig } from 'swr';
+import { isResourceListCacheKey } from '@/lib/resource-freshness';
 
 interface ResourceDetailPageProps {
   resourceType: string;
@@ -29,7 +31,9 @@ interface ResourceDetailPageProps {
 export function ResourceDetailPage({ resourceType, clusterScoped, children }: ResourceDetailPageProps) {
   const params = useParams();
   const router = useRouter();
+  const { mutate: mutateCache } = useSWRConfig();
   const clusterId = params.clusterId as string;
+  const decodedClusterId = clusterId ? decodeURIComponent(clusterId) : '';
   const namespace = (params.namespace as string) || '_';
   const name = (params.name as string) || (params.podName as string) || (params.nodeName as string);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -38,7 +42,7 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
   const [multiApplyOpen, setMultiApplyOpen] = useState(false);
 
   const { data, error, isLoading, mutate } = useResourceDetail({
-    clusterId: clusterId ? decodeURIComponent(clusterId) : null,
+    clusterId: decodedClusterId || null,
     namespace: clusterScoped ? '_' : namespace,
     resourceType,
     name,
@@ -74,7 +78,12 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
         ? `/api/clusters/${clusterId}/resources/_/${resourceType}/${name}`
         : `/api/clusters/${clusterId}/resources/${namespace}/${resourceType}/${name}`;
       await apiClient.delete(url);
-      toast.success(`${name} deleted`);
+      void mutateCache(
+        (key) => isResourceListCacheKey(key, decodedClusterId, resourceType),
+      ).catch(() => {
+        // Deletion succeeded; normal polling or Watch recovery will reconcile the list.
+      });
+      toast.success(`${name} deletion requested`);
       router.back();
     } catch (err: unknown) {
       toast.error(`Delete failed: ${err instanceof Error ? err.message : 'Unknown error'}`);

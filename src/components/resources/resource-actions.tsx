@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { MoreHorizontal, RotateCcw, Scaling, Trash2, ScrollText, Terminal, GitCompare, Bug } from 'lucide-react';
+import { MoreHorizontal, RotateCcw, Scaling, Trash2, ScrollText, Terminal, GitCompare, Bug, Loader2 } from 'lucide-react';
 import { ScaleDialog } from '@/components/resources/scale-dialog';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { CascadeDeleteDialog } from '@/components/shared/cascade-delete-dialog';
@@ -43,6 +43,7 @@ export function ResourceActions({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteRequested, setDeleteRequested] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [nodeDebugOpen, setNodeDebugOpen] = useState(false);
   const [podDebugOpen, setPodDebugOpen] = useState(false);
@@ -90,7 +91,8 @@ export function ResourceActions({
       await apiClient.delete(
         `/api/clusters/${encodedClusterId}/resources/${namespace}/${resourceType}/${name}`
       );
-      toast.success(`${name} deleted`);
+      toast.success(`${name} deletion requested`);
+      setDeleteRequested(true);
       onMutate?.();
     } catch (err: unknown) {
       toast.error(`Delete failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -143,8 +145,11 @@ export function ResourceActions({
             size="icon"
             className="h-7 w-7"
             onClick={(e) => e.stopPropagation()}
+            aria-label={`Actions for ${name}`}
+            disabled={deleteRequested}
+            title={deleteRequested ? 'Deletion requested' : undefined}
           >
-            <MoreHorizontal className="h-4 w-4" />
+            {deleteRequested ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
@@ -223,6 +228,7 @@ export function ResourceActions({
           onOpenChange={setRestartOpen}
           title={`Restart ${name}?`}
           description="This will perform a rolling restart of all pods."
+          context={{ cluster: clusterId, namespace, kind: resourceType.slice(0, -1), name }}
           confirmLabel="Restart"
           onConfirm={handleRestart}
           loading={restarting}
@@ -248,6 +254,7 @@ export function ResourceActions({
           onOpenChange={setDeleteOpen}
           title={`Delete ${name}?`}
           description={`This will permanently delete the ${resourceType.slice(0, -1)} "${name}". This action cannot be undone.`}
+          context={{ cluster: clusterId, namespace, kind: resourceType.slice(0, -1), name }}
           confirmLabel="Delete"
           variant="destructive"
           onConfirm={handleDelete}

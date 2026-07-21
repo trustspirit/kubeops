@@ -47,7 +47,7 @@ export function WatchStatusIndicator({ className }: { className?: string }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className={cn('flex items-center gap-1.5 text-xs', className)}>
+        <div className={cn('flex items-center gap-1.5 text-xs', className)} role="status" tabIndex={0} aria-label={config.tooltip}>
           <Icon
             className={cn(
               'h-3.5 w-3.5',

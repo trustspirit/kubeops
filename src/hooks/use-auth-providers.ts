@@ -2,6 +2,7 @@ import useSWR from 'swr';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useAuthStatusStore } from '@/stores/auth-status-store';
 import { useCallback } from 'react';
+import { requestProviderLogin } from '@/lib/auth/provider-login-request';
 
 interface ProviderInfo {
   id: string;
@@ -85,15 +86,7 @@ export function useProviderLogin() {
     const savedConfig = useSettingsStore.getState().authProviderConfigs[providerId] || {};
     const config = { ...savedConfig, ...extraConfig };
 
-    const res = await fetch(`/api/auth/${providerId}/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || 'Login failed');
-    }
+    const data = await requestProviderLogin(providerId, config);
     // Write-through to the persisted auth-status store so that every login
     // surface (header button, ErrorDisplay, direct hook callers, …) keeps
     // the cached session info up to date across app restarts — without each

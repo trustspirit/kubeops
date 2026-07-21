@@ -75,12 +75,18 @@ export function ScaleDialog({
             Current replicas: {currentReplicas}. Set the desired number of replicas.
           </DialogDescription>
         </DialogHeader>
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-md border bg-muted/30 p-3 text-xs">
+          <dt className="text-muted-foreground">Cluster</dt><dd className="truncate font-mono" title={clusterId}>{clusterId}</dd>
+          <dt className="text-muted-foreground">Namespace</dt><dd className="truncate font-mono" title={namespace}>{namespace}</dd>
+          <dt className="text-muted-foreground">Resource</dt><dd className="truncate font-mono" title={`${resourceType}/${name}`}>{resourceType}/{name}</dd>
+        </dl>
         <div className="flex items-center gap-4 py-4">
           <Button
             variant="outline"
             size="icon"
             onClick={() => setReplicas(Math.max(0, replicas - 1))}
             disabled={replicas <= 0}
+            aria-label="Decrease replicas"
           >
             -
           </Button>
@@ -90,11 +96,13 @@ export function ScaleDialog({
             value={replicas}
             onChange={(e) => setReplicas(parseInt(e.target.value) || 0)}
             className="text-center text-lg font-bold w-24"
+            aria-label="Desired replicas"
           />
           <Button
             variant="outline"
             size="icon"
             onClick={() => setReplicas(replicas + 1)}
+            aria-label="Increase replicas"
           >
             +
           </Button>

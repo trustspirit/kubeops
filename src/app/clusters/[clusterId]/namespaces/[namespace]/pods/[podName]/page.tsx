@@ -38,6 +38,8 @@ import {
   getArgoCDAppNameCandidates,
   type ArgoCDApplication,
 } from '@/lib/argocd/helpers';
+import { useSWRConfig } from 'swr';
+import { isResourceListCacheKey } from '@/lib/resource-freshness';
 
 function PodResourceTree({ clusterId, namespace, rootKind, rootName, focusPodName }: {
   clusterId: string;
@@ -64,6 +66,7 @@ function PodResourceTree({ clusterId, namespace, rootKind, rootName, focusPodNam
 export default function PodDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { mutate: mutateCache } = useSWRConfig();
   const clusterId = params.clusterId as string;
   const namespace = params.namespace as string;
   const podName = params.podName as string;
@@ -162,7 +165,12 @@ export default function PodDetailPage() {
     setDeleting(true);
     try {
       await apiClient.delete(`/api/clusters/${clusterId}/resources/${namespace}/pods/${podName}`);
-      toast.success(`${podName} deleted`);
+      void mutateCache(
+        (key) => isResourceListCacheKey(key, decodedClusterId, 'pods'),
+      ).catch(() => {
+        // Deletion succeeded; normal polling or Watch recovery will reconcile the list.
+      });
+      toast.success(`${podName} deletion requested`);
       router.back();
     } catch (err: unknown) {
       toast.error(`Delete failed: ${err instanceof Error ? err.message : 'Unknown error'}`);

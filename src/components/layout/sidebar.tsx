@@ -7,6 +7,8 @@ import { useSidebarStore } from '@/stores/sidebar-store';
 import { useNamespaceStore } from '@/stores/namespace-store';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { isSidebarRouteActive } from '@/lib/sidebar-route';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export function Sidebar() {
   const params = useParams();
@@ -40,7 +42,7 @@ export function Sidebar() {
       )}
     >
       <div className="flex items-center justify-end p-2">
-        <Button variant="ghost" size="icon" onClick={toggleCollapsed} className="h-7 w-7">
+        <Button variant="ghost" size="icon" onClick={toggleCollapsed} className="h-7 w-7" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </Button>
       </div>
@@ -55,10 +57,8 @@ export function Sidebar() {
               )}
               {section.items.map((item) => {
                 const Icon = item.icon;
-                const isActive = item.resourceType
-                  ? pathname.includes(`/${item.resourceType}`)
-                  : pathname === `/clusters/${clusterId}`;
-                return (
+                const isActive = isSidebarRouteActive(pathname, item.resourceType, clusterId);
+                const navButton = (
                   <button
                     key={item.resourceType || 'overview'}
                     onClick={() => handleNavigate(item.resourceType, item.clusterScoped)}
@@ -69,11 +69,19 @@ export function Sidebar() {
                         : 'text-muted-foreground'
                     )}
                     title={collapsed ? item.label : undefined}
+                    aria-current={isActive ? 'page' : undefined}
+                    aria-label={collapsed ? item.label : undefined}
                   >
                     <Icon className="h-4 w-4 shrink-0" />
                     {!collapsed && <span className="truncate">{item.label}</span>}
                   </button>
                 );
+                return collapsed ? (
+                  <Tooltip key={item.resourceType || 'overview'}>
+                    <TooltipTrigger asChild>{navButton}</TooltipTrigger>
+                    <TooltipContent side="right">{item.label}</TooltipContent>
+                  </Tooltip>
+                ) : navButton;
               })}
             </div>
           ))}

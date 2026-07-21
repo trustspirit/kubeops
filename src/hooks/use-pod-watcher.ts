@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { usePodWatcherStore } from '@/stores/pod-watcher-store';
 import { toast } from 'sonner';
+import { evaluatePodRestart } from '@/lib/pod-restart-snapshot';
 
 interface PodLike {
   metadata?: {
     name?: string;
     namespace?: string;
+    uid?: string;
   };
   status?: {
     containerStatuses?: Array<{
@@ -22,7 +24,6 @@ export function usePodRestartWatcher(
 ) {
   const { watchedPods, notificationsEnabled, getSnapshot, updateSnapshot } =
     usePodWatcherStore();
-  const initializedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!pods || pods.length === 0) return;
@@ -30,6 +31,7 @@ export function usePodRestartWatcher(
     for (const pod of pods) {
       const name = pod.metadata?.name;
       const namespace = pod.metadata?.namespace;
+      const uid = pod.metadata?.uid;
       if (!name || !namespace) continue;
 
       const watchKey = { clusterId, namespace, name };
@@ -46,18 +48,15 @@ export function usePodRestartWatcher(
         0
       );
 
-      const snapshotKey = `${clusterId}/${namespace}/${name}`;
       const previousSnapshot = getSnapshot(watchKey);
+      const evaluation = evaluatePodRestart(previousSnapshot, uid, totalRestarts);
 
-      if (previousSnapshot === undefined) {
-        // First time seeing this pod — set baseline, no notification
-        updateSnapshot(watchKey, totalRestarts);
-        initializedRef.current.add(snapshotKey);
-        continue;
+      if (evaluation.changed) {
+        updateSnapshot(watchKey, evaluation.next);
       }
 
-      if (totalRestarts > previousSnapshot) {
-        const delta = totalRestarts - previousSnapshot;
+      if (evaluation.delta > 0) {
+        const delta = evaluation.delta;
         const msg = `Pod ${name} restarted ${delta} time${delta > 1 ? 's' : ''} (total: ${totalRestarts})`;
 
         if (notificationsEnabled) {
@@ -71,8 +70,6 @@ export function usePodRestartWatcher(
             new Notification('Pod Restart Detected', { body: msg });
           }
         }
-
-        updateSnapshot(watchKey, totalRestarts);
       }
     }
   }, [pods, clusterId, watchedPods, notificationsEnabled, getSnapshot, updateSnapshot]);

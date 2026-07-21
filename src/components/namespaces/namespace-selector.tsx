@@ -11,8 +11,10 @@ import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { toggleNamespaceSelection } from '@/lib/namespace-selection';
 
 const ALL_NAMESPACES = '_all';
+const NO_NAMESPACES: string[] = [];
 
 export function NamespaceSelector() {
   const params = useParams();
@@ -21,13 +23,18 @@ export function NamespaceSelector() {
   const clusterId = params?.clusterId as string;
   const decodedClusterId = clusterId ? decodeURIComponent(clusterId) : null;
   const { namespaces, isLoading } = useNamespaces(decodedClusterId);
-  const {
-    setActiveNamespace,
-    getActiveNamespace,
-    getSelectedNamespaces,
-    setSelectedNamespaces,
-    isMultiNamespace,
-  } = useNamespaceStore();
+  const setActiveNamespace = useNamespaceStore((state) => state.setActiveNamespace);
+  const setSelectedNamespaces = useNamespaceStore((state) => state.setSelectedNamespaces);
+  const activeNamespace = useNamespaceStore((state) =>
+    decodedClusterId
+      ? state.activeNamespaces[decodedClusterId] || ALL_NAMESPACES
+      : ALL_NAMESPACES
+  );
+  const selectedNamespaces = useNamespaceStore((state) =>
+    decodedClusterId
+      ? state.selectedNamespaces[decodedClusterId] || NO_NAMESPACES
+      : NO_NAMESPACES
+  );
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   // Track mount state without setState in effect
@@ -38,26 +45,16 @@ export function NamespaceSelector() {
   );
 
   // Initialize multiMode from store
-  const storedSelected = decodedClusterId ? getSelectedNamespaces(decodedClusterId) : [];
-  const [multiMode, setMultiMode] = useState(() => storedSelected.length > 1);
+  const [multiMode, setMultiMode] = useState(() => selectedNamespaces.length > 1);
 
   // Sync multiMode when cluster changes
   const prevClusterRef = useRef(decodedClusterId);
   if (prevClusterRef.current !== decodedClusterId) {
     prevClusterRef.current = decodedClusterId;
-    const sel = decodedClusterId ? getSelectedNamespaces(decodedClusterId) : [];
+    const sel = selectedNamespaces;
     if (sel.length > 1 && !multiMode) setMultiMode(true);
     if (sel.length <= 1 && multiMode) setMultiMode(false);
   }
-
-  const activeNamespace = decodedClusterId
-    ? getActiveNamespace(decodedClusterId)
-    : ALL_NAMESPACES;
-
-  const selectedNamespaces = useMemo(
-    () => (decodedClusterId ? getSelectedNamespaces(decodedClusterId) : []),
-    [decodedClusterId, getSelectedNamespaces],
-  );
 
   // useMemo BEFORE any early return to satisfy rules-of-hooks
   const selectedSet = useMemo(() => new Set(selectedNamespaces), [selectedNamespaces]);
@@ -76,7 +73,7 @@ export function NamespaceSelector() {
   const exactMatch = nsList.some((name: string) => name.toLowerCase() === trimmedQuery);
   const showUseCustom = trimmedQuery && !exactMatch && !multiMode;
 
-  const isMulti = multiMode || (decodedClusterId ? isMultiNamespace(decodedClusterId) : false);
+  const isMulti = multiMode || selectedNamespaces.length > 1;
   const displayName = isMulti && selectedNamespaces.length > 1
     ? `${selectedNamespaces.length} namespaces`
     : activeNamespace === ALL_NAMESPACES
@@ -98,13 +95,7 @@ export function NamespaceSelector() {
 
   const handleMultiToggle = (nsName: string) => {
     if (!decodedClusterId) return;
-    const current = new Set(selectedNamespaces);
-    if (current.has(nsName)) {
-      current.delete(nsName);
-    } else {
-      current.add(nsName);
-    }
-    const newSelected = Array.from(current);
+    const newSelected = toggleNamespaceSelection(selectedNamespaces, nsName);
     setSelectedNamespaces(decodedClusterId, newSelected);
 
     if (newSelected.length > 1) {
@@ -112,8 +103,6 @@ export function NamespaceSelector() {
       if (nsMatch && clusterId) {
         router.push(`/clusters/${clusterId}/namespaces/_all/${nsMatch[1]}`);
       }
-    } else if (newSelected.length === 1) {
-      handleSelect(newSelected[0]);
     }
   };
 
@@ -180,13 +169,18 @@ export function NamespaceSelector() {
               <TooltipTrigger asChild>
                 <button
                   onClick={() => {
-                    setMultiMode(!multiMode);
-                    if (!multiMode && decodedClusterId) {
+                    const enteringMultiMode = !multiMode;
+                    setMultiMode(enteringMultiMode);
+                    if (enteringMultiMode && decodedClusterId) {
                       if (activeNamespace !== ALL_NAMESPACES) {
                         setSelectedNamespaces(decodedClusterId, [activeNamespace]);
                       }
-                    } else if (multiMode && decodedClusterId) {
-                      setSelectedNamespaces(decodedClusterId, []);
+                    } else if (!enteringMultiMode && decodedClusterId) {
+                      if (selectedNamespaces.length === 1) {
+                        handleSelect(selectedNamespaces[0]);
+                      } else if (selectedNamespaces.length === 0) {
+                        setSelectedNamespaces(decodedClusterId, []);
+                      }
                     }
                   }}
                   className={cn(
