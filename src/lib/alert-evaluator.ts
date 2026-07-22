@@ -1,51 +1,10 @@
 import type { AlertRule, AlertEvent, AlertCondition } from '@/types/alert';
 import type { WatchEvent, WatchEventObject } from '@/types/watch';
+import { parseK8sQuantity } from './k8s-quantity';
 
 interface EvalResult {
   matched: boolean;
   message: string;
-}
-
-/**
- * Parse K8s resource quantities like "100m", "256Mi", "2Gi", "500n" into a base number.
- * CPU: returns cores (e.g. "100m" → 0.1, "2" → 2)
- * Memory: returns bytes (e.g. "256Mi" → 268435456, "1Gi" → 1073741824)
- */
-function parseK8sQuantity(quantity: string): number {
-  const str = quantity.trim();
-  if (!str) return NaN;
-
-  // CPU millicores: "100m" → 0.1
-  if (str.endsWith('m')) {
-    return parseFloat(str.slice(0, -1)) / 1000;
-  }
-  // CPU nanocores: "100000000n" → 0.1
-  if (str.endsWith('n')) {
-    return parseFloat(str.slice(0, -1)) / 1_000_000_000;
-  }
-
-  // Memory binary units
-  const binaryUnits: Record<string, number> = {
-    Ki: 1024, Mi: 1024 ** 2, Gi: 1024 ** 3, Ti: 1024 ** 4, Pi: 1024 ** 5, Ei: 1024 ** 6,
-  };
-  for (const [suffix, multiplier] of Object.entries(binaryUnits)) {
-    if (str.endsWith(suffix)) {
-      return parseFloat(str.slice(0, -suffix.length)) * multiplier;
-    }
-  }
-
-  // Memory decimal units
-  const decimalUnits: Record<string, number> = {
-    k: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15, E: 1e18,
-  };
-  for (const [suffix, multiplier] of Object.entries(decimalUnits)) {
-    if (str.endsWith(suffix) && !str.endsWith('Mi') && !str.endsWith('Gi')) {
-      return parseFloat(str.slice(0, -suffix.length)) * multiplier;
-    }
-  }
-
-  // Plain number
-  return parseFloat(str);
 }
 
 function evaluateCondition(condition: AlertCondition, resource: WatchEventObject): EvalResult {
@@ -119,7 +78,7 @@ function evaluateCondition(condition: AlertCondition, resource: WatchEventObject
       if (!cpuUsage) return { matched: false, message: '' };
       const cpuNum = parseK8sQuantity(cpuUsage);
       const threshold = parseK8sQuantity(String(value));
-      if (isNaN(cpuNum)) return { matched: false, message: '' };
+      if (!Number.isFinite(cpuNum) || !Number.isFinite(threshold)) return { matched: false, message: '' };
       if (operator === '>' && cpuNum > threshold) {
         return { matched: true, message: `CPU usage ${cpuNum} > ${threshold}` };
       }
@@ -141,7 +100,7 @@ function evaluateCondition(condition: AlertCondition, resource: WatchEventObject
       if (!memUsage) return { matched: false, message: '' };
       const memNum = parseK8sQuantity(memUsage);
       const threshold = parseK8sQuantity(String(value));
-      if (isNaN(memNum)) return { matched: false, message: '' };
+      if (!Number.isFinite(memNum) || !Number.isFinite(threshold)) return { matched: false, message: '' };
       if (operator === '>' && memNum > threshold) {
         return { matched: true, message: `Memory usage ${memNum} > ${threshold}` };
       }

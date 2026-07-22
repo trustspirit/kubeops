@@ -181,7 +181,7 @@ export function CrListPage() {
   return (
     <div className="flex flex-col gap-4 p-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => router.push(`/clusters/${clusterId}/custom-resources`)}>
+        <Button variant="ghost" size="icon" onClick={() => router.push(`/clusters/${clusterId}/custom-resources`)} aria-label="Back to custom resources">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>

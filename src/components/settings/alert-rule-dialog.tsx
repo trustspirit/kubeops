@@ -20,6 +20,11 @@ import {
 } from '@/components/ui/select';
 import { useAlertStore } from '@/stores/alert-store';
 import type { AlertRule, ConditionType, ConditionOperator } from '@/types/alert';
+import {
+  CONDITION_OPERATORS,
+  type AlertRuleValidationErrors,
+  validateAlertRuleDraft,
+} from '@/lib/alert-rule-validation';
 
 const RESOURCE_TYPES = [
   { value: 'pods', label: 'Pods' },
@@ -67,6 +72,7 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
   const [operator, setOperator] = useState<ConditionOperator>('==');
   const [value, setValue] = useState('');
   const [cooldown, setCooldown] = useState('60');
+  const [errors, setErrors] = useState<AlertRuleValidationErrors>({});
 
    
   useEffect(() => {
@@ -89,12 +95,23 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
       setValue('');
       setCooldown('60');
     }
+    setErrors({});
   }, [editRule, open]);
 
   const handleSave = () => {
-    const conditionValue = ['restart_count', 'cpu_threshold', 'memory_threshold'].includes(conditionType)
-      ? Number(value)
-      : value;
+    const validation = validateAlertRuleDraft({
+      name,
+      clusterId,
+      conditionType,
+      operator,
+      value,
+      cooldown,
+    });
+    if (!validation.ok) {
+      setErrors(validation.errors);
+      return;
+    }
+    setErrors({});
 
     const rule: AlertRule = {
       id: editRule?.id || `rule-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -106,9 +123,9 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
       condition: {
         type: conditionType,
         operator,
-        value: conditionValue,
+        value: validation.value.conditionValue,
       },
-      cooldown: Number(cooldown) || 60,
+      cooldown: validation.value.cooldown,
     };
 
     if (editRule) {
@@ -119,6 +136,15 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
 
     onOpenChange(false);
   };
+
+  const handleConditionTypeChange = (nextConditionType: ConditionType) => {
+    setConditionType(nextConditionType);
+    if (!CONDITION_OPERATORS[nextConditionType].includes(operator)) {
+      setOperator(CONDITION_OPERATORS[nextConditionType][0]);
+    }
+  };
+
+  const allowedOperators = CONDITION_OPERATORS[conditionType];
 
   const isValid = name.trim() !== '' && clusterId.trim() !== '' && value.trim() !== '';
 
@@ -137,6 +163,7 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
+            {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -147,6 +174,7 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
                 value={clusterId}
                 onChange={(e) => setClusterId(e.target.value)}
               />
+              {errors.clusterId && <p className="text-xs text-destructive">{errors.clusterId}</p>}
             </div>
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">Namespace (optional)</label>
@@ -177,7 +205,7 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">Condition</label>
-              <Select value={conditionType} onValueChange={(v) => setConditionType(v as ConditionType)}>
+              <Select value={conditionType} onValueChange={(v) => handleConditionTypeChange(v as ConditionType)}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -197,7 +225,7 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {OPERATORS.map((op) => (
+                  {OPERATORS.filter((op) => allowedOperators.includes(op.value)).map((op) => (
                     <SelectItem key={op.value} value={op.value}>
                       {op.label}
                     </SelectItem>
@@ -212,6 +240,7 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
               />
+              {errors.value && <p className="text-xs text-destructive">{errors.value}</p>}
             </div>
           </div>
 
@@ -224,8 +253,11 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
               value={cooldown}
               onChange={(e) => setCooldown(e.target.value)}
             />
+            {errors.cooldown && <p className="text-xs text-destructive">{errors.cooldown}</p>}
           </div>
         </div>
+
+        {errors.operator && <p className="text-xs text-destructive">{errors.operator}</p>}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

@@ -15,6 +15,7 @@ import {
 import { useKubeconfigContexts } from '@/hooks/use-kubeconfig-contexts';
 import { ContextDialog } from '@/components/settings/context-dialog';
 import { MergeKubeconfigDialog } from '@/components/settings/merge-kubeconfig-dialog';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { toast } from 'sonner';
 
 export function KubeconfigTab() {
@@ -24,6 +25,8 @@ export function KubeconfigTab() {
   const [showMerge, setShowMerge] = useState(false);
   const [showRawYaml, setShowRawYaml] = useState(false);
   const [rawYaml, setRawYaml] = useState('');
+  const [deleteContextName, setDeleteContextName] = useState<string | null>(null);
+  const [deletingContext, setDeletingContext] = useState(false);
 
   const handleSetCurrent = async (name: string) => {
     try {
@@ -43,7 +46,9 @@ export function KubeconfigTab() {
     }
   };
 
-  const handleDelete = async (name: string) => {
+  const handleDelete = async (name: string | null) => {
+    if (!name) return;
+    setDeletingContext(true);
     try {
       const response = await fetch(`/api/kubeconfig/contexts/${encodeURIComponent(name)}`, {
         method: 'DELETE',
@@ -56,6 +61,9 @@ export function KubeconfigTab() {
       mutate();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setDeletingContext(false);
+      setDeleteContextName(null);
     }
   };
 
@@ -112,6 +120,7 @@ export function KubeconfigTab() {
                   className="h-7 w-7"
                   onClick={() => handleSetCurrent(ctx.name)}
                   title={ctx.isCurrent ? 'Current context' : 'Set as current'}
+                  aria-label={`Set ${ctx.name} as current context`}
                 >
                   {ctx.isCurrent ? (
                     <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
@@ -134,6 +143,7 @@ export function KubeconfigTab() {
                     size="icon"
                     className="h-7 w-7"
                     onClick={() => setEditContext(ctx.name)}
+                    aria-label={`Edit context ${ctx.name}`}
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
@@ -141,7 +151,8 @@ export function KubeconfigTab() {
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7 text-destructive"
-                    onClick={() => handleDelete(ctx.name)}
+                    onClick={() => setDeleteContextName(ctx.name)}
+                    aria-label={`Delete context ${ctx.name}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -181,6 +192,17 @@ export function KubeconfigTab() {
           onSaved={() => { mutate(); setEditContext(null); }}
         />
       )}
+
+      <ConfirmDialog
+        open={!!deleteContextName}
+        onOpenChange={(open) => { if (!open) setDeleteContextName(null); }}
+        title={`Delete context ${deleteContextName}?`}
+        description={`This will permanently delete the kubeconfig context "${deleteContextName}". This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => handleDelete(deleteContextName)}
+        loading={deletingContext}
+      />
 
       <MergeKubeconfigDialog
         open={showMerge}

@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { spawn, ChildProcess, execSync } from 'child_process';
+import {
+  createPortForwardId,
+  findAvailableLoopbackPort,
+  validatePortForwardRequest,
+} from '@/lib/port-forward';
+import { waitForPortForwardReady } from '@/lib/port-forward-process';
+import { sanitizeServerError } from '@/lib/server-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +25,33 @@ interface PortForward {
 
 // Server-side state for active port forwards
 export const activeForwards = new Map<string, { info: PortForward; proc: ChildProcess }>();
+const pendingForwardIds = new Set<string>();
+const pendingLocalPorts = new Set<number>();
+let portSelectionQueue = Promise.resolve();
+
+function deleteForwardIfSame(id: string, proc: ChildProcess): boolean {
+  if (activeForwards.get(id)?.proc !== proc) return false;
+  return activeForwards.delete(id);
+}
+
+async function reserveAvailableLocalPort(preferred: number): Promise<number> {
+  let releaseSelection!: () => void;
+  const previousSelection = portSelectionQueue;
+  portSelectionQueue = new Promise<void>(resolve => { releaseSelection = resolve; });
+  await previousSelection;
+
+  try {
+    const reserved = new Set([
+      ...Array.from(activeForwards.values(), entry => entry.info.localPort),
+      ...pendingLocalPorts,
+    ]);
+    const localPort = await findAvailableLoopbackPort(preferred, reserved);
+    pendingLocalPorts.add(localPort);
+    return localPort;
+  } finally {
+    releaseSelection();
+  }
+}
 
 /** Kill all active port forward processes. Called on server shutdown. */
 export function cleanupAllForwards() {
@@ -25,6 +59,8 @@ export function cleanupAllForwards() {
     try { proc.kill(); } catch { /* ignore */ }
   }
   activeForwards.clear();
+  pendingForwardIds.clear();
+  pendingLocalPorts.clear();
 }
 
 // Resolve kubectl path
@@ -37,17 +73,6 @@ try {
     || kubectlPath;
 } catch { /* use default */ }
 
-function findFreePort(preferred: number): number {
-  // Try preferred port first, then increment
-  // In production, we'd check if port is free, but for simplicity use preferred
-  const usedPorts = new Set(Array.from(activeForwards.values()).map(f => f.info.localPort));
-  let port = preferred;
-  while (usedPorts.has(port)) {
-    port++;
-  }
-  return port;
-}
-
 // GET - list active port forwards
 export async function GET() {
   const forwards = Array.from(activeForwards.values()).map(f => f.info);
@@ -56,78 +81,86 @@ export async function GET() {
 
 // POST - start a port forward
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const { clusterId, namespace, resourceType, resourceName, containerPort, localPort: requestedPort } = body;
-
-  if (!clusterId || !namespace || !resourceName || !containerPort) {
-    return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const localPort = findFreePort(requestedPort || containerPort);
-  const id = `${resourceType || 'pod'}/${resourceName}:${containerPort}`;
-
-  // Kill existing forward for same target
-  if (activeForwards.has(id)) {
-    const existing = activeForwards.get(id)!;
-    try { existing.proc.kill(); } catch { /* ignore */ }
-    activeForwards.delete(id);
+  const validation = validatePortForwardRequest(body);
+  if (!validation.ok) {
+    return NextResponse.json({ error: validation.error }, { status: 400 });
   }
 
-  const target = resourceType === 'svc' || resourceType === 'services'
-    ? `svc/${resourceName}`
-    : `pod/${resourceName}`;
+  const request = validation.value;
+  const id = createPortForwardId(request);
+  if (activeForwards.has(id) || pendingForwardIds.has(id)) {
+    return NextResponse.json({ error: 'Port forward already exists' }, { status: 409 });
+  }
 
-  const info: PortForward = {
-    id,
-    clusterId,
-    namespace,
-    resourceType: resourceType || 'pod',
-    resourceName,
-    containerPort,
-    localPort,
-    status: 'starting',
-  };
+  pendingForwardIds.add(id);
+  let localPort: number | undefined;
+  let proc: ChildProcess | undefined;
 
-  const proc = spawn(kubectlPath, [
-    'port-forward',
-    '--context', clusterId,
-    '-n', namespace,
-    target,
-    `${localPort}:${containerPort}`,
-  ], {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    env: process.env,
-  });
+  try {
+    localPort = await reserveAvailableLocalPort(request.localPort);
+    const target = `${request.resourceType}/${request.resourceName}`;
+    const info: PortForward = {
+      id,
+      clusterId: request.clusterId,
+      namespace: request.namespace,
+      resourceType: request.resourceType,
+      resourceName: request.resourceName,
+      containerPort: request.containerPort,
+      localPort,
+      status: 'starting',
+    };
 
-  info.pid = proc.pid;
-  activeForwards.set(id, { info, proc });
+    proc = spawn(kubectlPath, [
+      'port-forward',
+      '--context', request.clusterId,
+      '-n', request.namespace,
+      target,
+      `${localPort}:${request.containerPort}`,
+    ], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env,
+    });
 
-  proc.stdout?.on('data', (data: Buffer) => {
-    const msg = data.toString();
-    console.log(`[PortForward] ${id}: ${msg.trim()}`);
-    if (msg.includes('Forwarding')) {
-      info.status = 'active';
+    info.pid = proc.pid;
+    const startedProcess = proc;
+    activeForwards.set(id, { info, proc: startedProcess });
+    pendingLocalPorts.delete(localPort);
+
+    proc.once('exit', code => {
+      if (deleteForwardIfSame(id, startedProcess)) {
+        console.log(`[PortForward] ${id} exited with code ${code}`);
+      }
+    });
+
+    await waitForPortForwardReady(startedProcess, 10_000);
+    if (activeForwards.get(id)?.proc !== startedProcess) {
+      throw new Error('Port forward was stopped during startup');
     }
-  });
-
-  proc.stderr?.on('data', (data: Buffer) => {
-    const msg = data.toString().trim();
-    console.error(`[PortForward] ${id} error: ${msg}`);
-    if (!msg.includes('handling connection')) {
-      info.status = 'error';
-      info.error = msg;
+    info.status = 'active';
+    proc.stdout?.resume();
+    proc.stderr?.resume();
+    return NextResponse.json({ forward: info });
+  } catch (error) {
+    if (proc) {
+      try { proc.kill(); } catch { /* process already stopped */ }
+      deleteForwardIfSame(id, proc);
     }
-  });
-
-  proc.on('exit', (code) => {
-    console.log(`[PortForward] ${id} exited with code ${code}`);
-    activeForwards.delete(id);
-  });
-
-  // Wait briefly for it to start
-  await new Promise(r => setTimeout(r, 500));
-
-  return NextResponse.json({ forward: info });
+    const rawMessage = error instanceof Error ? error.message : '';
+    console.error('[PortForward] failed to start:', error);
+    const message = sanitizeServerError(error, 'Unable to start port forward');
+    const status = rawMessage === 'No available local port found' ? 503 : 502;
+    return NextResponse.json({ error: message }, { status });
+  } finally {
+    pendingForwardIds.delete(id);
+    if (localPort !== undefined) pendingLocalPorts.delete(localPort);
+  }
 }
 
 // DELETE - stop a port forward
@@ -145,7 +178,7 @@ export async function DELETE(req: NextRequest) {
   }
 
   try { entry.proc.kill(); } catch { /* ignore */ }
-  activeForwards.delete(id);
+  deleteForwardIfSame(id, entry.proc);
 
   return NextResponse.json({ success: true });
 }

@@ -7,6 +7,7 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { usePortForwards } from '@/hooks/use-port-forwards';
+import { findMatchingPortForward, type PortForwardInfo } from '@/lib/port-forward-client';
 
 interface PortForwardBtnProps {
   clusterId: string;
@@ -19,23 +20,33 @@ interface PortForwardBtnProps {
 export function PortForwardBtn({ clusterId, namespace, resourceType, resourceName, port }: PortForwardBtnProps) {
   const { forwards } = usePortForwards();
   const [starting, setStarting] = useState(false);
-  const active = forwards.find((f) => f.containerPort === port && f.id.includes(resourceName));
+  const active = findMatchingPortForward(forwards, {
+    clusterId,
+    namespace,
+    resourceType,
+    resourceName,
+    containerPort: port,
+  });
 
   const start = async () => {
     setStarting(true);
     try {
-      await apiClient.post('/api/port-forward', { clusterId, namespace, resourceType, resourceName, containerPort: port, localPort: port });
+      const response = await apiClient.post<{ forward: PortForwardInfo }>('/api/port-forward', { clusterId, namespace, resourceType, resourceName, containerPort: port, localPort: port });
       globalMutate('/api/port-forward');
-      toast.success(`Forwarding localhost:${port} → ${port}`);
+      toast.success(`Forwarding localhost:${response.forward.localPort} → ${port}`);
     } catch (err: unknown) { toast.error(err instanceof Error ? err.message : 'Unknown error'); }
     finally { setStarting(false); }
   };
 
   const stop = async () => {
     if (!active) return;
-    await apiClient.delete(`/api/port-forward?id=${encodeURIComponent(active.id)}`);
-    globalMutate('/api/port-forward');
-    toast.success('Port forward stopped');
+    try {
+      await apiClient.delete(`/api/port-forward?id=${encodeURIComponent(active.id)}`);
+      globalMutate('/api/port-forward');
+      toast.success('Port forward stopped');
+    } catch (err: unknown) {
+      toast.error(`Failed to stop port forward: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
   };
 
   if (active) {
@@ -45,7 +56,13 @@ export function PortForwardBtn({ clusterId, namespace, resourceType, resourceNam
           className="inline-flex items-center gap-1 rounded-md border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-400 hover:bg-green-500/20 transition-colors">
           <ExternalLink className="h-3 w-3" />localhost:{active.localPort}
         </a>
-        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={stop}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={stop}
+          aria-label={`Stop port forward for ${resourceName} on local port ${active.localPort}`}
+        >
           <X className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
         </Button>
       </span>

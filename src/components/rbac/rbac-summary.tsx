@@ -156,6 +156,9 @@ export function RBACSummary({ entries, isLoading }: RBACSummaryProps) {
                             size="icon"
                             className="h-6 w-6"
                             onClick={() => toggleRow(rowKey)}
+                            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} RBAC rules for ${entry.subject.name}`}
+                            aria-expanded={isExpanded}
+                            aria-controls={`rbac-rules-${rowKey}`}
                           >
                             {isExpanded ? (
                               <ChevronDown className="h-3.5 w-3.5" />
@@ -221,7 +224,7 @@ export function RBACSummary({ entries, isLoading }: RBACSummaryProps) {
                     {isExpanded && hasRules && (
                       <TableRow className="hover:bg-transparent">
                         <TableCell colSpan={6} className="p-0">
-                          <div className="bg-muted/30 px-6 py-4 border-t">
+                          <div id={`rbac-rules-${rowKey}`} className="bg-muted/30 px-6 py-4 border-t">
                             <div className="flex items-center gap-2 mb-3">
                               <span className="text-xs font-semibold">
                                 Permission Rules

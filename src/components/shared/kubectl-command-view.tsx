@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Terminal, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface KubectlCommandViewProps {
   command: string;
@@ -21,19 +22,26 @@ export function KubectlCommandView({
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(command);
+      try {
+        await navigator.clipboard.writeText(command);
+      } catch {
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = command;
+        try {
+          document.body.appendChild(textarea);
+          textarea.select();
+          if (!document.execCommand('copy')) {
+            throw new Error('Clipboard copy command was rejected');
+          }
+        } finally {
+          textarea.remove();
+        }
+      }
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback for older browsers
-      const textarea = document.createElement('textarea');
-      textarea.value = command;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      toast.error('Failed to copy kubectl command');
     }
   };
 
@@ -56,6 +64,7 @@ export function KubectlCommandView({
               size="icon"
               className="h-6 w-6 shrink-0"
               onClick={handleCopy}
+              aria-label="Copy kubectl command"
             >
               {copied ? (
                 <Check className="h-3 w-3 text-green-500" />
@@ -78,6 +87,7 @@ export function KubectlCommandView({
         size="icon"
         className="h-6 w-6 shrink-0"
         onClick={handleCopy}
+        aria-label="Copy kubectl command"
       >
         {copied ? (
           <Check className="h-3 w-3 text-green-500" />

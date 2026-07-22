@@ -44,6 +44,7 @@ export function ClusterTagEditor({ contextName }: ClusterTagEditorProps) {
           size="icon"
           className="h-6 w-6"
           onClick={(e) => e.stopPropagation()}
+          aria-label={`Edit tags for ${contextName}`}
         >
           <Settings2 className="h-3.5 w-3.5" />
         </Button>
@@ -71,7 +72,7 @@ export function ClusterTagEditor({ contextName }: ClusterTagEditorProps) {
                 onKeyDown={(e) => e.key === 'Enter' && handleAddGroup()}
                 className="h-7 text-xs"
               />
-              <Button variant="outline" size="icon" className="h-7 w-7 shrink-0" onClick={handleAddGroup} disabled={!newGroup.trim()}>
+              <Button variant="outline" size="icon" className="h-7 w-7 shrink-0" onClick={handleAddGroup} disabled={!newGroup.trim()} aria-label="Add group">
                 <Plus className="h-3 w-3" />
               </Button>
             </div>
@@ -83,7 +84,7 @@ export function ClusterTagEditor({ contextName }: ClusterTagEditorProps) {
               {meta.tags.map((tag) => (
                 <Badge key={tag} variant="secondary" className="text-xs gap-1 pr-1">
                   {tag}
-                  <button onClick={() => removeTag(contextName, tag)} className="hover:text-destructive">
+                  <button onClick={() => removeTag(contextName, tag)} className="hover:text-destructive" aria-label={`Remove tag ${tag}`}>
                     <X className="h-3 w-3" />
                   </button>
                 </Badge>
@@ -97,7 +98,7 @@ export function ClusterTagEditor({ contextName }: ClusterTagEditorProps) {
                 onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
                 className="h-7 text-xs"
               />
-              <Button variant="outline" size="icon" className="h-7 w-7 shrink-0" onClick={handleAddTag} disabled={!newTag.trim()}>
+              <Button variant="outline" size="icon" className="h-7 w-7 shrink-0" onClick={handleAddTag} disabled={!newTag.trim()} aria-label="Add tag">
                 <Plus className="h-3 w-3" />
               </Button>
             </div>

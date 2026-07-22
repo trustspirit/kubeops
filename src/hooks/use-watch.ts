@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState } from 'react';
+import { buildWebSocketUrl } from '@/lib/websocket-session';
+import { ConnectionAttemptGate } from '@/lib/connection-attempt-gate';
 import type { WatchSubscription, WatchMessage, WatchEvent } from '@/types/watch';
 
 export type WatchConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
@@ -23,6 +25,7 @@ export function useWatch(clusterId: string | null) {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
   const clusterIdRef = useRef(clusterId);
+  const connectionAttemptGateRef = useRef(new ConnectionAttemptGate());
 
   // Keep clusterId ref up to date
   useEffect(() => { clusterIdRef.current = clusterId; });
@@ -34,94 +37,121 @@ export function useWatch(clusterId: string | null) {
   // Use a ref to break the circular dependency between connect and scheduleReconnect
   const scheduleReconnectRef = useRef<() => void>(() => {});
 
-  const connect = useCallback(() => {
+  const connect = useCallback((): Promise<void> | void => {
     if (!clusterIdRef.current) return;
     if (!isMountedRef.current) return;
+    if (subscriptionsRef.current.size === 0) return;
+    if (wsRef.current?.readyState === WebSocket.CONNECTING || wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    // Cancel any pending reconnect timer to avoid duplicate connections
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
+    return connectionAttemptGateRef.current.run(async attempt => {
+      const connectingClusterId = clusterIdRef.current;
+      if (!connectingClusterId) return;
 
-    // Clean up existing connection
-    if (wsRef.current) {
-      wsRef.current.onclose = null;
-      wsRef.current.onerror = null;
-      wsRef.current.onmessage = null;
-      wsRef.current.onopen = null;
-      try { wsRef.current.close(); } catch { /* ignore */ }
-      wsRef.current = null;
-    }
-
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${window.location.host}/ws/watch/${encodeURIComponent(clusterIdRef.current)}`;
-
-    setConnectionState((prev) => (prev === 'disconnected' ? 'connecting' : 'reconnecting'));
-
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      if (!isMountedRef.current) {
-        ws.close();
-        return;
+      // Cancel any pending reconnect timer to avoid duplicate connections.
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
       }
-      setConnectionState('connected');
-      backoffRef.current = MIN_BACKOFF;
 
-      // Re-subscribe all active subscriptions
-      for (const [, sub] of subscriptionsRef.current) {
-        const msg: WatchSubscription = {
-          action: 'subscribe',
-          resourceType: sub.resourceType,
-          namespace: sub.namespace,
-        };
-        ws.send(JSON.stringify(msg));
+      // Dispose a closed/replaced socket before beginning a fresh nonce request.
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.onopen = null;
+        try { wsRef.current.close(); } catch { /* ignore */ }
+        wsRef.current = null;
       }
-    };
 
-    ws.onmessage = (event) => {
-      if (!isMountedRef.current) return;
+      setConnectionState((prev) => (prev === 'disconnected' ? 'connecting' : 'reconnecting'));
 
-      let msg: WatchMessage;
+      let url: string;
       try {
-        msg = JSON.parse(event.data as string);
+        url = await buildWebSocketUrl(`/ws/watch/${encodeURIComponent(connectingClusterId)}`);
       } catch {
+        if (!attempt.isCurrent() || !isMountedRef.current || clusterIdRef.current !== connectingClusterId) return;
+        setConnectionState('disconnected');
+        scheduleReconnectRef.current();
         return;
       }
 
-      if (msg.type === 'event' && msg.event) {
-        const key = subKey(msg.resourceType, msg.namespace);
-        const sub = subscriptionsRef.current.get(key);
-        if (sub) {
-          for (const cb of sub.callbacks) {
-            try { cb(msg.event); } catch { /* ignore */ }
+      if (
+        !attempt.isCurrent()
+        || !isMountedRef.current
+        || clusterIdRef.current !== connectingClusterId
+        || subscriptionsRef.current.size === 0
+      ) return;
+
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+      const isCurrentSocket = () => (
+        attempt.isCurrent()
+        && isMountedRef.current
+        && clusterIdRef.current === connectingClusterId
+        && wsRef.current === ws
+      );
+
+      ws.onopen = () => {
+        if (!isCurrentSocket() || subscriptionsRef.current.size === 0) {
+          ws.close();
+          return;
+        }
+        setConnectionState('connected');
+        backoffRef.current = MIN_BACKOFF;
+
+        // Re-subscribe all active subscriptions.
+        for (const [, sub] of subscriptionsRef.current) {
+          const msg: WatchSubscription = {
+            action: 'subscribe',
+            resourceType: sub.resourceType,
+            namespace: sub.namespace,
+          };
+          ws.send(JSON.stringify(msg));
+        }
+      };
+
+      ws.onmessage = (event) => {
+        if (!isCurrentSocket()) return;
+
+        let msg: WatchMessage;
+        try {
+          msg = JSON.parse(event.data as string);
+        } catch {
+          return;
+        }
+
+        if (msg.type === 'event' && msg.event) {
+          const key = subKey(msg.resourceType, msg.namespace);
+          const sub = subscriptionsRef.current.get(key);
+          if (sub) {
+            for (const cb of sub.callbacks) {
+              try { cb(msg.event); } catch { /* ignore */ }
+            }
+          }
+        } else if (msg.type === 'error' && msg.event) {
+          // Propagate error events to subscribers.
+          const key = subKey(msg.resourceType, msg.namespace);
+          const sub = subscriptionsRef.current.get(key);
+          if (sub) {
+            for (const cb of sub.callbacks) {
+              try { cb(msg.event); } catch { /* ignore */ }
+            }
           }
         }
-      } else if (msg.type === 'error' && msg.event) {
-        // Propagate error events to subscribers
-        const key = subKey(msg.resourceType, msg.namespace);
-        const sub = subscriptionsRef.current.get(key);
-        if (sub) {
-          for (const cb of sub.callbacks) {
-            try { cb(msg.event); } catch { /* ignore */ }
-          }
-        }
-      }
-      // 'subscribed' and 'unsubscribed' are acknowledgements — no action needed
-    };
+        // 'subscribed' and 'unsubscribed' are acknowledgements — no action needed.
+      };
 
-    ws.onclose = () => {
-      if (!isMountedRef.current) return;
-      wsRef.current = null;
-      setConnectionState('disconnected');
-      scheduleReconnectRef.current();
-    };
+      ws.onclose = () => {
+        if (!isCurrentSocket()) return;
+        wsRef.current = null;
+        setConnectionState('disconnected');
+        scheduleReconnectRef.current();
+      };
 
-    ws.onerror = () => {
-      // onclose will fire after onerror, so reconnect is handled there
-    };
+      ws.onerror = () => {
+        // onclose will fire after onerror, so reconnect is handled there.
+      };
+    });
   }, []); // No dependencies needed since we use refs
 
   const scheduleReconnect = useCallback(() => {
@@ -151,6 +181,7 @@ export function useWatch(clusterId: string | null) {
   // Connect when clusterId changes
   useEffect(() => {
     const subs = subscriptionsRef.current;
+    const connectionAttemptGate = connectionAttemptGateRef.current;
     if (!clusterId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setConnectionState('disconnected');
@@ -161,6 +192,7 @@ export function useWatch(clusterId: string | null) {
     // The actual connect is triggered by the first subscribe call
     return () => {
       // Cleanup on clusterId change
+      connectionAttemptGate.invalidate();
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.onerror = null;
@@ -179,9 +211,11 @@ export function useWatch(clusterId: string | null) {
 
   // Cleanup on unmount
   useEffect(() => {
+    const connectionAttemptGate = connectionAttemptGateRef.current;
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      connectionAttemptGate.invalidate();
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.onerror = null;
@@ -255,9 +289,17 @@ export function useWatch(clusterId: string | null) {
 
         // If no more subscriptions, disconnect
         if (subscriptionsRef.current.size === 0 && ws) {
+          connectionAttemptGateRef.current.invalidate();
           ws.onclose = null;
           try { ws.close(); } catch { /* ignore */ }
           wsRef.current = null;
+          setConnectionState('disconnected');
+          if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+          }
+        } else if (subscriptionsRef.current.size === 0) {
+          connectionAttemptGateRef.current.invalidate();
           setConnectionState('disconnected');
           if (reconnectTimerRef.current) {
             clearTimeout(reconnectTimerRef.current);

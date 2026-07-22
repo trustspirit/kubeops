@@ -65,6 +65,7 @@ export function HelmUpgradeDialog({
     } catch (err: unknown) {
       console.error('Failed to load current values:', err);
       setValues('');
+      toast.error(`Failed to load current Helm values: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setLoadingValues(false);
     }

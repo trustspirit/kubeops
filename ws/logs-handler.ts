@@ -5,6 +5,7 @@ import { parse } from 'url';
 import { PassThrough } from 'stream';
 import fetch from 'node-fetch';
 import { getKubeConfigForContext } from '../src/lib/k8s/kubeconfig-manager';
+import { normalizeLogTailLines } from '../src/lib/log-request';
 
 type QueryValue = string | string[] | undefined;
 
@@ -92,8 +93,7 @@ export function handleLogsConnection(ws: WebSocket, req: IncomingMessage) {
   const container = firstQueryValue(query.container);
   const follow = query.follow === 'true';
   const timestamps = query.timestamps === 'true';
-  const parsedTailLines = parseInt(firstQueryValue(query.tailLines) || '', 10);
-  const tailLines = Number.isFinite(parsedTailLines) && parsedTailLines > 0 ? parsedTailLines : 100;
+  const tailLines = normalizeLogTailLines(firstQueryValue(query.tailLines));
 
   if (!clusterId || !namespace || !podName || !container) {
     sendError(ws, 'Missing cluster, namespace, pod, or container for log request');

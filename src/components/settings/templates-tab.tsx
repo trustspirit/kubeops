@@ -15,11 +15,19 @@ import {
 import { useTemplateStore, type ResourceTemplate } from '@/stores/template-store';
 import { RESOURCE_LABELS } from '@/lib/constants';
 import { SaveAsTemplateDialog } from '@/components/templates/save-as-template-dialog';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
 export function TemplatesTab() {
   const { templates, deleteTemplate } = useTemplateStore();
   const [editTemplate, setEditTemplate] = useState<ResourceTemplate | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [deleteTemplateTarget, setDeleteTemplateTarget] = useState<ResourceTemplate | null>(null);
+
+  const handleDeleteTemplate = () => {
+    if (!deleteTemplateTarget) return;
+    deleteTemplate(deleteTemplateTarget.id);
+    setDeleteTemplateTarget(null);
+  };
 
   return (
     <div className="space-y-4">
@@ -66,6 +74,7 @@ export function TemplatesTab() {
                     size="icon"
                     className="h-7 w-7"
                     onClick={() => setEditTemplate(template)}
+                    aria-label={`Edit template ${template.name}`}
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
@@ -74,7 +83,8 @@ export function TemplatesTab() {
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-destructive"
-                      onClick={() => deleteTemplate(template.id)}
+                      onClick={() => setDeleteTemplateTarget(template)}
+                      aria-label={`Delete template ${template.name}`}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -109,6 +119,16 @@ export function TemplatesTab() {
           mode="edit"
         />
       )}
+
+      <ConfirmDialog
+        open={!!deleteTemplateTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTemplateTarget(null); }}
+        title={`Delete template ${deleteTemplateTarget?.name}?`}
+        description={`This will permanently delete the custom template "${deleteTemplateTarget?.name}". This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleDeleteTemplate}
+      />
     </div>
   );
 }

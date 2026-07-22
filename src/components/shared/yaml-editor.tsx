@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import * as yaml from 'js-yaml';
 import { mutate as globalMutate } from 'swr';
 import { usePortForwards } from '@/hooks/use-port-forwards';
+import { findMatchingPortForward, type PortForwardInfo } from '@/lib/port-forward-client';
 import { YamlDiffView } from '@/components/shared/yaml-diff-view';
 import { MultiClusterApplyDialog } from '@/components/multi-cluster/multi-cluster-apply-dialog';
 
@@ -43,14 +44,18 @@ function PortForwardButton({ containerPort }: { containerPort: number }) {
   const [starting, setStarting] = useState(false);
 
   if (!ctx) return null;
-  const active = forwards.find(
-    f => f.containerPort === containerPort && f.id.includes(ctx.resourceName)
-  );
+  const active = findMatchingPortForward(forwards, {
+    clusterId: ctx.clusterId,
+    namespace: ctx.namespace,
+    resourceType: ctx.resourceType,
+    resourceName: ctx.resourceName,
+    containerPort,
+  });
 
   const startForward = async () => {
     setStarting(true);
     try {
-      await apiClient.post('/api/port-forward', {
+      const response = await apiClient.post<{ forward: PortForwardInfo }>('/api/port-forward', {
         clusterId: ctx.clusterId,
         namespace: ctx.namespace,
         resourceType: ctx.resourceType,
@@ -59,7 +64,7 @@ function PortForwardButton({ containerPort }: { containerPort: number }) {
         localPort: containerPort,
       });
       globalMutate('/api/port-forward');
-      toast.success(`Forwarding localhost:${containerPort} → ${containerPort}`);
+      toast.success(`Forwarding localhost:${response.forward.localPort} → ${containerPort}`);
     } catch (err: unknown) {
       toast.error(`Port forward failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
@@ -73,7 +78,9 @@ function PortForwardButton({ containerPort }: { containerPort: number }) {
       await apiClient.delete(`/api/port-forward?id=${encodeURIComponent(active.id)}`);
       globalMutate('/api/port-forward');
       toast.success('Port forward stopped');
-    } catch { /* ignore */ }
+    } catch (err: unknown) {
+      toast.error(`Failed to stop port forward: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
   };
 
   if (active) {
@@ -89,7 +96,11 @@ function PortForwardButton({ containerPort }: { containerPort: number }) {
           <ExternalLink className="h-3 w-3" />
           :{active.localPort}
         </a>
-        <button onClick={stopForward} className="text-muted-foreground hover:text-destructive p-0.5">
+        <button
+          onClick={stopForward}
+          className="text-muted-foreground hover:text-destructive p-0.5"
+          aria-label={`Stop port forward on local port ${active.localPort}`}
+        >
           <X className="h-3 w-3" />
         </button>
       </span>

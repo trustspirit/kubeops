@@ -5,6 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
 import { useLogSearch } from '@/hooks/use-log-search';
+import { buildWebSocketUrl } from '@/lib/websocket-session';
+import { canRetryStream, getReconnectDelay, isNearScrollBottom } from '@/lib/stream-policy';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -13,6 +15,8 @@ import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
 import AnsiToHtml from 'ansi-to-html';
 
 const MAX_LOG_SIZE = 512 * 1024; // 512KB
+const MAX_RETRIES = 5;
+type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
 
 function trimLogs(logs: string): string {
   if (logs.length <= MAX_LOG_SIZE) return logs;
@@ -39,9 +43,14 @@ export default function PodLogsPage() {
   const [container, setContainer] = useState('');
   const [follow, setFollow] = useState(true);
   const [logs, setLogs] = useState('');
-  const [connected, setConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
+  const [reconnectNonce, setReconnectNonce] = useState(0);
   const logRef = useRef<HTMLPreElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const retryRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasStreamedRef = useRef(false);
+  const logTargetRef = useRef<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const converterRef = useRef(new AnsiToHtml({ fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true }));
 
@@ -61,37 +70,80 @@ export default function PodLogsPage() {
   useEffect(() => {
     if (!container) return;
 
-    // Reset converter for new stream
-    converterRef.current = new AnsiToHtml({ fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true });
+    const logTarget = `${podName}\u0000${container}`;
+    if (logTargetRef.current !== logTarget) {
+      logTargetRef.current = logTarget;
+      retryRef.current = 0;
+      hasStreamedRef.current = false;
+      setLogs('');
+      converterRef.current = new AnsiToHtml({ fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true });
+    }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/logs/${encodeURIComponent(decodeURIComponent(clusterId))}/${namespace}/${podName}?container=${container}&follow=true&timestamps=true&tailLines=500`;
+    let disposed = false;
+    setConnectionState(retryRef.current > 0 ? 'reconnecting' : 'connecting');
 
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    void (async () => {
+      try {
+        const decodedCluster = decodeURIComponent(clusterId);
+        const tailLines = hasStreamedRef.current ? 0 : 500;
+        const logPath = `/ws/logs/${encodeURIComponent(decodedCluster)}/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}?container=${encodeURIComponent(container)}&follow=true&timestamps=true&tailLines=${tailLines}`;
+        const ws = new WebSocket(await buildWebSocketUrl(logPath));
+        if (disposed) {
+          ws.close();
+          return;
+        }
 
-    ws.onopen = () => setConnected(true);
-    ws.onmessage = (event) => {
-      const data = event.data;
-      if (typeof data === 'string') {
-        try {
-          const msg = JSON.parse(data);
-          if (msg.type === 'error') {
-            setLogs(prev => trimLogs(prev + `\n[ERROR] ${msg.message}\n`));
+        wsRef.current = ws;
+        ws.onopen = () => {
+          if (disposed) return;
+          retryRef.current = 0;
+          setConnectionState('connected');
+        };
+        ws.onmessage = (event) => {
+          if (disposed || typeof event.data !== 'string') return;
+          hasStreamedRef.current = true;
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'error') {
+              setLogs(prev => trimLogs(prev + `\n[ERROR] ${msg.message}\n`));
+              return;
+            }
+          } catch { /* not JSON, it's log data */ }
+          setLogs(prev => trimLogs(prev + event.data));
+        };
+        ws.onclose = (event) => {
+          if (disposed) return;
+          if (event.wasClean) {
+            setConnectionState('disconnected');
             return;
           }
-        } catch { /* not JSON, it's log data */ }
-        setLogs(prev => trimLogs(prev + data));
+
+          if (canRetryStream({ intentional: disposed, normalExit: false, attempt: retryRef.current, maxAttempts: MAX_RETRIES })) {
+            const attempt = retryRef.current++;
+            setConnectionState('reconnecting');
+            reconnectTimerRef.current = setTimeout(
+              () => setReconnectNonce((value) => value + 1),
+              getReconnectDelay(attempt),
+            );
+          } else {
+            setConnectionState('disconnected');
+          }
+        };
+      } catch {
+        if (!disposed) setConnectionState('disconnected');
       }
-    };
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setConnected(false);
+    })();
 
     return () => {
-      ws.close();
-      setLogs('');
+      disposed = true;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      wsRef.current?.close();
+      wsRef.current = null;
     };
-  }, [container, clusterId, namespace, podName]);
+  }, [container, clusterId, namespace, podName, reconnectNonce]);
 
   // ANSI conversion + search highlighting
   const [baseHtml, setBaseHtml] = useState('Connecting...');
@@ -135,12 +187,28 @@ export default function PodLogsPage() {
     URL.revokeObjectURL(url);
   };
 
+  const scrollToBottom = () => {
+    setFollow(true);
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  };
+
+  const toggleFollow = () => {
+    if (follow) setFollow(false);
+    else scrollToBottom();
+  };
+
+  const reconnect = () => {
+    retryRef.current = 0;
+    setConnectionState('connecting');
+    setReconnectNonce((value) => value + 1);
+  };
+
   if (!pod) return <LoadingSkeleton />;
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-3 p-4 border-b">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+        <Button variant="ghost" size="icon" onClick={() => router.back()} aria-label="Go back from pod logs">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <h1 className="text-lg font-semibold">Logs: {podName}</h1>
@@ -157,7 +225,7 @@ export default function PodLogsPage() {
               </SelectContent>
             </Select>
           )}
-          <Button variant="outline" size="sm" onClick={() => setFollow(!follow)}>
+          <Button variant="outline" size="sm" onClick={toggleFollow}>
             {follow ? <Pause className="h-4 w-4 mr-1" /> : <Play className="h-4 w-4 mr-1" />}
             {follow ? 'Pause' : 'Follow'}
           </Button>
@@ -176,7 +244,15 @@ export default function PodLogsPage() {
             <Search className="h-4 w-4 mr-1" />
             Search
           </Button>
-          <div className={`h-2 w-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
+          <div className={`h-2 w-2 rounded-full ${connectionState === 'connected' ? 'bg-green-500' : connectionState === 'reconnecting' ? 'bg-yellow-500' : 'bg-red-500'}`} />
+          <span className="text-xs text-muted-foreground">
+            {connectionState === 'connected' ? 'Streaming' : connectionState === 'reconnecting' ? 'Reconnecting…' : connectionState === 'connecting' ? 'Connecting…' : 'Disconnected'}
+          </span>
+          {connectionState === 'disconnected' && (
+            <Button variant="outline" size="sm" onClick={reconnect}>
+              Reconnect
+            </Button>
+          )}
         </div>
       </div>
       {search.isOpen && (
@@ -235,6 +311,10 @@ export default function PodLogsPage() {
       <pre
         ref={logRef}
         className="flex-1 overflow-auto bg-[#1e1e2e] text-[#cdd6f4] p-4 font-mono text-xs leading-5 whitespace-pre"
+        onScroll={(event) => {
+          const element = event.currentTarget;
+          setFollow(isNearScrollBottom(element));
+        }}
         dangerouslySetInnerHTML={{ __html: logsHtml }}
       />
       <style jsx global>{`

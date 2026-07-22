@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runHelm, isValidHelmName, isValidNamespace, isValidChartRef } from '@/lib/helm/helm-runner';
 import { requireHelm, withTempValuesFile } from '@/lib/helm/helpers';
+import { sanitizeServerError } from '@/lib/server-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     if (result.code !== 0) {
       console.error(`[Helm] install ${releaseName} failed: ${result.stderr}`);
       return NextResponse.json(
-        { error: result.stderr || `Failed to install chart "${chart}" as "${releaseName}"` },
+        { error: sanitizeServerError(result.stderr, `Failed to install chart "${chart}" as "${releaseName}"`) },
         { status: 500 }
       );
     }

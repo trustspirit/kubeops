@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as k8s from '@kubernetes/client-node';
 import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
+import { sanitizeServerError } from '@/lib/server-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -145,7 +146,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[NodeDebug] POST debug pod on ${nodeName}: ${status} ${message}`);
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: sanitizeServerError(message, 'Failed to create debug pod') }, { status });
   }
 }
 
@@ -176,7 +177,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[NodeDebug] DELETE debug pod ${podName}: ${status} ${message}`);
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: sanitizeServerError(message, 'Failed to delete debug pod') }, { status });
   }
 }
 
@@ -206,6 +207,6 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[NodeDebug] GET debug pods for ${nodeName}: ${status} ${message}`);
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: sanitizeServerError(message, 'Failed to list debug pods') }, { status });
   }
 }
