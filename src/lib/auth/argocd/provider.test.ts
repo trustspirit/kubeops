@@ -19,4 +19,9 @@ describe('argocdProvider', () => {
     assert.equal(mode?.type, 'select');
     assert.ok(mode?.options?.some((o) => o.value === 'sso'));
   });
+  it('does not offer username-password auth mode', () => {
+    const fields = argocdProvider.getConfigFields();
+    const mode = fields.find((f) => f.key === 'authMode');
+    assert.equal(mode?.options?.some((o) => o.value === 'username-password'), false);
+  });
 });

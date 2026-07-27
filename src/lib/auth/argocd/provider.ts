@@ -74,12 +74,8 @@ export const argocdProvider: AuthProvider = {
         label: 'Auth Mode',
         type: 'select',
         required: false,
-        options: [
-          { value: 'sso', label: 'SSO (browser)' },
-          { value: 'username-password', label: 'Username / Password' },
-        ],
+        options: [{ value: 'sso', label: 'SSO (browser)' }],
       },
-      { key: 'username', label: 'Username', type: 'text', required: false, placeholder: '(username/password mode only)' },
       {
         key: 'grpcWeb',
         label: 'gRPC-Web',
