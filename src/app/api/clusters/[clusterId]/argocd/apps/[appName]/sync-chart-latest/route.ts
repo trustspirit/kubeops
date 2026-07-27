@@ -35,6 +35,10 @@ export interface ChartSyncPlan {
   reason?: string;
 }
 
+function isArgocdAuthError(message: string): boolean {
+  return /not logged in|please login|Unauthenticated|invalid session|token is expired|expired token/i.test(message);
+}
+
 // Pure decision logic — no CLI/IO — so it is unit-testable.
 export function planChartSync(
   app: Pick<ArgoCDApplication, 'spec' | 'status'>,
@@ -91,7 +95,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     appJson = JSON.parse(out);
   } catch (err: unknown) {
     const message = extractCliError(err, `Failed to read ArgoCD app "${app}"`);
-    const needsLogin = /not logged in|please login|Unauthenticated|token/i.test(message);
+    const needsLogin = isArgocdAuthError(message);
     return NextResponse.json({ error: message, needsLogin }, { status: needsLogin ? 401 : 500 });
   }
 
@@ -106,11 +110,16 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   if (!plan.updateAvailable) {
     return NextResponse.json({ ...plan, skipped: true });
   }
+  if (body.sync !== true) {
+    return NextResponse.json({ ...plan });
+  }
 
   try {
     const out = runCli(argocdPath, buildAppSyncArgs(app, { server }), 300_000);
     return NextResponse.json({ ...plan, synced: true, output: out.trim() });
   } catch (err: unknown) {
-    return NextResponse.json({ error: extractCliError(err, `Failed to sync ArgoCD app "${app}"`) }, { status: 500 });
+    const message = extractCliError(err, `Failed to sync ArgoCD app "${app}"`);
+    const needsLogin = isArgocdAuthError(message);
+    return NextResponse.json({ error: message, needsLogin }, { status: needsLogin ? 401 : 500 });
   }
 }
