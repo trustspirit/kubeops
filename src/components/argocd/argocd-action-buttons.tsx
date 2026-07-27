@@ -4,8 +4,9 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { Loader2, RefreshCw, RotateCw, Play } from 'lucide-react';
+import { Loader2, RefreshCw, RotateCw, Play, ArrowUpCircle } from 'lucide-react';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { ArgoCDSyncChartDialog } from '@/components/argocd/argocd-sync-chart-dialog';
 import {
   buildArgoCDRefreshPatch,
   buildArgoCDSyncPatch,
@@ -19,6 +20,8 @@ interface ArgoCDActionButtonsProps {
   namespace: string;
   onChanged?: () => void;
   compact?: boolean;
+  chart?: string;
+  chartVersion?: string;
 }
 
 type PendingAction = 'refresh' | 'hard-refresh' | 'sync' | null;
@@ -29,9 +32,12 @@ export function ArgoCDActionButtons({
   namespace,
   onChanged,
   compact = false,
+  chart,
+  chartVersion,
 }: ArgoCDActionButtonsProps) {
   const [pending, setPending] = useState<PendingAction>(null);
   const [syncConfirmOpen, setSyncConfirmOpen] = useState(false);
+  const [syncChartOpen, setSyncChartOpen] = useState(false);
   const apiUrl = getArgoCDAppApiUrl(clusterId, appName, namespace);
 
   const patchApp = async (action: PendingAction, body: Record<string, unknown>, successMessage: string): Promise<boolean> => {
@@ -94,6 +100,18 @@ export function ArgoCDActionButtons({
           {pending === 'sync' ? <Loader2 className={`${iconClass} animate-spin`} /> : <Play className={iconClass} />}
           {!compact && 'Sync'}
         </Button>
+        {chart && (
+          <Button
+            variant="outline"
+            size={compact ? 'xs' : 'sm'}
+            onClick={() => setSyncChartOpen(true)}
+            disabled={pending !== null}
+            title="Sync chart to latest version"
+          >
+            <ArrowUpCircle className={iconClass} />
+            {!compact && 'Sync to Latest'}
+          </Button>
+        )}
       </div>
 
       <ConfirmDialog
@@ -105,6 +123,19 @@ export function ArgoCDActionButtons({
         onConfirm={requestSync}
         loading={pending === 'sync'}
       />
+
+      {chart && (
+        <ArgoCDSyncChartDialog
+          open={syncChartOpen}
+          onOpenChange={setSyncChartOpen}
+          clusterId={clusterId}
+          appName={appName}
+          namespace={namespace}
+          chart={chart}
+          currentVersion={chartVersion}
+          onSynced={onChanged}
+        />
+      )}
     </>
   );
 }
