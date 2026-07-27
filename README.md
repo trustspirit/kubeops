@@ -63,6 +63,7 @@ Download from the **[Releases](https://github.com/trustspirit/kubeops/releases/l
 - *(Optional)* `gcloud` CLI for Google GKE clusters
 - *(Optional)* `az` CLI for Azure AKS clusters
 - *(Optional)* `kubelogin` for OIDC-based authentication (Keycloak, Dex, etc.)
+- *(Optional)* `argocd` CLI for ArgoCD login and chart "Sync to Latest" (delegates auth to your `argocd login` session)
 
 ---
 

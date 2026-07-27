@@ -107,6 +107,8 @@ export default function ArgoCDAppDetailPage() {
   const healthStatus = app.status?.health?.status || 'Unknown';
   const apiUrl = getArgoCDAppApiUrl(decodedClusterId, appName, resolvedNamespace);
   const operation = app.status?.operationState;
+  const helmChart = source.type === 'Helm' ? source.name : undefined;
+  const helmVersion = source.type === 'Helm' ? source.revision : undefined;
 
   return (
     <div className="flex flex-col gap-4 p-6">
@@ -130,6 +132,8 @@ export default function ArgoCDAppDetailPage() {
           appName={appName}
           namespace={resolvedNamespace}
           onChanged={() => mutate()}
+          chart={helmChart}
+          chartVersion={helmVersion}
         />
       </div>
 

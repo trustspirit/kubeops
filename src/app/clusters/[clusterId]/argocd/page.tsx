@@ -128,6 +128,7 @@ export default function ArgoCDAppsPage() {
         const name = app.metadata?.name;
         const namespace = app.metadata?.namespace;
         if (!name || !namespace) return null;
+        const summary = getArgoCDAppSourceSummary(app);
         return (
           <ArgoCDActionButtons
             clusterId={decodedClusterId}
@@ -135,6 +136,8 @@ export default function ArgoCDAppsPage() {
             namespace={namespace}
             onChanged={() => mutate()}
             compact
+            chart={summary.type === 'Helm' ? summary.name : undefined}
+            chartVersion={summary.type === 'Helm' ? summary.revision : undefined}
           />
         );
       },
