@@ -101,11 +101,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   const plan = planChartSync(appJson, { checkOnly: body.checkOnly });
 
-  if (!plan.supported) {
-    return NextResponse.json({ ...plan }, { status: 400 });
-  }
   if (body.checkOnly) {
     return NextResponse.json({ ...plan });
+  }
+  if (!plan.supported) {
+    return NextResponse.json({ ...plan }, { status: 400 });
   }
   if (!plan.updateAvailable) {
     return NextResponse.json({ ...plan, skipped: true });

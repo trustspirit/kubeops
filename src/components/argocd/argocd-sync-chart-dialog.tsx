@@ -130,7 +130,9 @@ export function ArgoCDSyncChartDialog({
               </div>
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">Status</span>
-                <span className="font-mono">{check.updateAvailable ? 'Update available' : 'Up to date'}</span>
+                <span className="font-mono">
+                  {!check.supported ? 'Not supported' : check.updateAvailable ? 'Update available' : 'Up to date'}
+                </span>
               </div>
               {!check.supported && check.reason && (
                 <p className="text-muted-foreground pt-1">{check.reason}</p>
