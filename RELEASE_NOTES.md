@@ -1,3 +1,17 @@
+# v0.6.0 — ArgoCD Login & Chart Sync
+
+## What's New
+
+- Added ArgoCD as an authentication provider: log in to your ArgoCD server (SSO browser flow) directly from KubeOps via the `argocd` CLI — no terminal needed. Auth is delegated to your `argocd login` session; KubeOps stores no tokens.
+- Added a "Sync to Latest" action for ArgoCD Applications backed by a Helm chart, on both the Applications list and the app detail page. It checks whether the app is out of sync and, on confirmation, triggers an ArgoCD sync.
+- The sync dialog shows current vs. target revision and offers inline ArgoCD login when the CLI session is missing.
+- CLI arguments derived from user input are validated to prevent argv flag smuggling.
+
+## Notes
+
+- Applications with a floating `targetRevision` (e.g. `1.2.*`, ranges) are fully supported. Applications pinned to an exact chart version currently show an informational "not yet supported" message; bumping a pinned version to the latest is planned for a follow-up.
+- Requires the optional `argocd` CLI on your `PATH`.
+
 # v0.4.6 — Helm Sync Latest
 
 ## What's New
