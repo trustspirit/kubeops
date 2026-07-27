@@ -1,5 +1,16 @@
 import type { ArgoCDApplication } from './helpers';
 
+const APP_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
+const SERVER_RE = /^[A-Za-z0-9.-]+(?::\d+)?$/;
+const REVISION_RE = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
+const USERNAME_RE = /^[A-Za-z0-9][A-Za-z0-9._@-]*$/;
+
+function assertSafeArg(value: string, kind: string, pattern: RegExp): void {
+  if (!value || value.startsWith('-') || !pattern.test(value)) {
+    throw new Error(`Invalid ArgoCD ${kind}: ${JSON.stringify(value)}`);
+  }
+}
+
 const SEMVER_EXACT = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
 function parseParts(v: string): { nums: number[]; pre: string | null } {
@@ -100,18 +111,26 @@ export interface ArgoCDServerOpts {
 }
 
 function serverArgs(opts?: ArgoCDServerOpts): string[] {
-  return opts?.server ? ['--server', opts.server] : [];
+  if (opts?.server) {
+    assertSafeArg(opts.server, 'server', SERVER_RE);
+    return ['--server', opts.server];
+  }
+  return [];
 }
 
 export function buildAppGetArgs(app: string, opts?: ArgoCDServerOpts & { refresh?: boolean }): string[] {
+  assertSafeArg(app, 'app name', APP_NAME_RE);
   return ['app', 'get', app, '-o', 'json', ...(opts?.refresh ? ['--refresh'] : []), ...serverArgs(opts)];
 }
 
 export function buildAppSetRevisionArgs(app: string, revision: string, opts?: ArgoCDServerOpts): string[] {
+  assertSafeArg(app, 'app name', APP_NAME_RE);
+  assertSafeArg(revision, 'revision', REVISION_RE);
   return ['app', 'set', app, '--revision', revision, ...serverArgs(opts)];
 }
 
 export function buildAppSyncArgs(app: string, opts?: ArgoCDServerOpts): string[] {
+  assertSafeArg(app, 'app name', APP_NAME_RE);
   return ['app', 'sync', app, ...serverArgs(opts)];
 }
 
@@ -124,9 +143,13 @@ export interface ArgoCDLoginConfig {
 }
 
 export function buildLoginArgs(config: ArgoCDLoginConfig): string[] {
+  assertSafeArg(config.server, 'server', SERVER_RE);
   const args = ['login', config.server];
   if (config.authMode === 'username-password') {
-    if (config.username) args.push('--username', config.username);
+    if (config.username) {
+      assertSafeArg(config.username, 'username', USERNAME_RE);
+      args.push('--username', config.username);
+    }
     if (config.password) args.push('--password', config.password);
   } else {
     args.push('--sso');

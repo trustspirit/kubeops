@@ -122,3 +122,26 @@ describe('arg builders', () => {
     assert.deepEqual(buildUserInfoArgs({ server: 's' }), ['account', 'get-user-info', '-o', 'json', '--server', 's']);
   });
 });
+
+describe('arg builder input validation', () => {
+  it('rejects a flag-like app name', () => {
+    assert.throws(() => buildAppGetArgs('--core'), /Invalid ArgoCD app name/);
+    assert.throws(() => buildAppSyncArgs('-x'), /Invalid ArgoCD app name/);
+  });
+  it('rejects a flag-like or malformed server', () => {
+    assert.throws(() => buildAppGetArgs('web', { server: '--evil' }), /Invalid ArgoCD server/);
+    assert.throws(() => buildUserInfoArgs({ server: 'bad host!' }), /Invalid ArgoCD server/);
+  });
+  it('rejects a flag-like revision', () => {
+    assert.throws(() => buildAppSetRevisionArgs('web', '--boom'), /Invalid ArgoCD revision/);
+  });
+  it('rejects a flag-like server in login args', () => {
+    assert.throws(() => buildLoginArgs({ server: '-x', authMode: 'sso' }), /Invalid ArgoCD server/);
+  });
+  it('still accepts valid values', () => {
+    assert.deepEqual(buildAppGetArgs('web', { server: 'argocd-root.ovdr.io:443', refresh: true }),
+      ['app', 'get', 'web', '-o', 'json', '--refresh', '--server', 'argocd-root.ovdr.io:443']);
+    assert.deepEqual(buildAppSetRevisionArgs('ns/web', '1.2.3-rc.1'),
+      ['app', 'set', 'ns/web', '--revision', '1.2.3-rc.1']);
+  });
+});
