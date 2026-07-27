@@ -3,7 +3,11 @@ import type { ArgoCDApplication } from './helpers';
 const SEMVER_EXACT = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
 function parseParts(v: string): { nums: number[]; pre: string | null } {
-  const [core, pre = null] = v.replace(/^v/, '').split('-', 2);
+  const normalized = v.replace(/^v/, '');
+  const idx = normalized.indexOf('-');
+  const core = idx < 0 ? normalized : normalized.slice(0, idx);
+  const pre = idx < 0 ? null : normalized.slice(idx + 1);
+
   const nums = core.split('.').map((n) => parseInt(n, 10) || 0);
   while (nums.length < 3) nums.push(0);
   return { nums, pre };
@@ -18,7 +22,36 @@ export function compareSemver(a: string, b: string): number {
   // A prerelease is lower than the corresponding release.
   if (pa.pre && !pb.pre) return -1;
   if (!pa.pre && pb.pre) return 1;
-  if (pa.pre && pb.pre) return pa.pre < pb.pre ? -1 : pa.pre > pb.pre ? 1 : 0;
+  if (pa.pre && pb.pre) {
+    // Compare prerelease identifiers per semver spec
+    const aIds = pa.pre.split('.');
+    const bIds = pb.pre.split('.');
+    for (let i = 0; i < Math.max(aIds.length, bIds.length); i++) {
+      const aId = aIds[i];
+      const bId = bIds[i];
+
+      // If one is missing, the longer one is greater
+      if (aId === undefined) return -1;
+      if (bId === undefined) return 1;
+
+      const aIsNum = /^\d+$/.test(aId);
+      const bIsNum = /^\d+$/.test(bId);
+
+      if (aIsNum && bIsNum) {
+        // Both numeric, compare numerically
+        const diff = parseInt(aId, 10) - parseInt(bId, 10);
+        if (diff !== 0) return diff;
+      } else if (aIsNum !== bIsNum) {
+        // One is numeric, one is not; numeric is lower
+        return aIsNum ? -1 : 1;
+      } else {
+        // Both are non-numeric, compare lexically
+        if (aId < bId) return -1;
+        if (aId > bId) return 1;
+      }
+    }
+    return 0;
+  }
   return 0;
 }
 

@@ -24,6 +24,12 @@ describe('compareSemver', () => {
   it('treats a prerelease as lower than its release', () => {
     assert.equal(compareSemver('1.2.3-rc.1', '1.2.3') < 0, true);
   });
+  it('compares numeric prerelease identifiers numerically', () => {
+    assert.equal(compareSemver('1.2.3-rc.2', '1.2.3-rc.10') < 0, true);
+  });
+  it('preserves multi-hyphen prerelease versions', () => {
+    assert.equal(compareSemver('1.2.3-rc-1', '1.2.3') < 0, true);
+  });
 });
 
 describe('selectLatestVersion', () => {
@@ -32,6 +38,9 @@ describe('selectLatestVersion', () => {
   });
   it('returns null for an empty list', () => {
     assert.equal(selectLatestVersion([]), null);
+  });
+  it('selects the numerically highest prerelease identifier', () => {
+    assert.equal(selectLatestVersion(['1.2.3-rc.2', '1.2.3-rc.10']), '1.2.3-rc.10');
   });
 });
 
