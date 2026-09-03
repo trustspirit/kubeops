@@ -35,7 +35,7 @@
     "start": "NODE_ENV=production tsx server.ts",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test \"src/**/*.test.ts\"",
+    "test": "node scripts/run-tests.mjs",
     "verify": "npm run typecheck && npm run lint && npm test",
     "electron:dev": "concurrently -k \"npm run dev\" \"wait-on http://localhost:51230 && electron .\"",
     "electron:build": "npm run build && node scripts/build-server.mjs && electron-builder",

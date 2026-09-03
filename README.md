@@ -363,7 +363,7 @@ The app opens automatically once the dev server is ready (port 51230).
 ```bash
 npm run typecheck    # tsc --noEmit
 npm run lint         # eslint
-npm test             # node:test suite
+npm test             # node:test suite (196 tests)
 npm run verify       # all three, in order
 ```
 
