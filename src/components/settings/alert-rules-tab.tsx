@@ -14,12 +14,12 @@ const ACTIVITY_BADGE: Record<AlertRuleActivity, { label: string; className: stri
   active: {
     label: 'Active',
     className: 'bg-green-500/15 text-green-700 dark:text-green-400',
-    title: 'Evaluating against this cluster\u2019s live Watch stream',
+    title: 'Evaluating against the open cluster\u2019s Watch stream',
   },
-  paused: {
-    label: 'Paused',
-    className: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
-    title: 'Rules are evaluated for the cluster you are viewing. Open this rule\u2019s cluster to resume it.',
+  background: {
+    label: 'Background',
+    className: 'bg-blue-500/15 text-blue-700 dark:text-blue-400',
+    title: 'Evaluating over a background Watch connection to this rule\u2019s cluster',
   },
   disabled: {
     label: 'Off',
@@ -77,15 +77,16 @@ export function AlertRulesTab() {
       <div className="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <p>
-          Alert rules are evaluated for the cluster you have open
-          {activeClusterId ? <> — currently <span className="font-mono text-foreground">{activeClusterId}</span></> : ''}.
-          {scope.paused > 0 && (
+          Enabled rules keep running while KubeOps is open, whichever cluster you are
+          looking at. The open cluster
+          {activeClusterId ? <> (<span className="font-mono text-foreground">{activeClusterId}</span>)</> : ''}{' '}
+          reuses this page&apos;s connection.
+          {scope.background > 0 && (
             <>
               {' '}
-              {scope.paused} rule{scope.paused === 1 ? '' : 's'} for{' '}
-              <span className="font-mono">{scope.pausedClusters.join(', ')}</span>{' '}
-              {scope.paused === 1 ? 'is' : 'are'} paused until you open{' '}
-              {scope.pausedClusters.length === 1 ? 'that cluster' : 'those clusters'}.
+              {scope.background} rule{scope.background === 1 ? '' : 's'} for{' '}
+              <span className="font-mono">{scope.backgroundClusters.join(', ')}</span>{' '}
+              {scope.background === 1 ? 'runs' : 'run'} over background connections.
             </>
           )}
         </p>

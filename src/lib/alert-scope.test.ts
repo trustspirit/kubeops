@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { getAlertRuleActivity, selectActiveRules, summarizeAlertScope } from './alert-scope';
+import { getAlertRuleActivity, selectRulesForCluster, summarizeAlertScope } from './alert-scope';
 import type { AlertRule } from '@/types/alert';
 
 function rule(overrides: Partial<AlertRule> = {}): AlertRule {
@@ -21,36 +21,36 @@ describe('getAlertRuleActivity', () => {
     assert.equal(getAlertRuleActivity(rule(), 'prod'), 'active');
   });
 
-  it('is paused for an enabled rule on another cluster', () => {
-    assert.equal(getAlertRuleActivity(rule(), 'staging'), 'paused');
+  it('still runs — in the background — for another cluster', () => {
+    assert.equal(getAlertRuleActivity(rule(), 'staging'), 'background');
   });
 
-  it('is paused when no cluster is open', () => {
-    assert.equal(getAlertRuleActivity(rule(), null), 'paused');
+  it('runs in the background when no cluster is open at all', () => {
+    assert.equal(getAlertRuleActivity(rule(), null), 'background');
   });
 
-  it('reports disabled ahead of paused, so the switch is what the user sees', () => {
+  it('reports disabled ahead of everything else, so the switch is what the user sees', () => {
     assert.equal(getAlertRuleActivity(rule({ enabled: false }), 'prod'), 'disabled');
     assert.equal(getAlertRuleActivity(rule({ enabled: false }), 'staging'), 'disabled');
   });
 });
 
-describe('selectActiveRules', () => {
-  it('keeps only enabled rules for the open cluster', () => {
+describe('selectRulesForCluster', () => {
+  it('keeps only enabled rules for the given cluster', () => {
     const rules = [
       rule({ id: 'a', clusterId: 'prod' }),
       rule({ id: 'b', clusterId: 'staging' }),
       rule({ id: 'c', clusterId: 'prod', enabled: false }),
     ];
-    assert.deepEqual(selectActiveRules(rules, 'prod').map((r) => r.id), ['a']);
+    assert.deepEqual(selectRulesForCluster(rules, 'prod').map((r) => r.id), ['a']);
   });
 
-  it('returns nothing when no cluster is open', () => {
-    assert.deepEqual(selectActiveRules([rule()], null), []);
+  it('returns nothing without a cluster', () => {
+    assert.deepEqual(selectRulesForCluster([rule()], null), []);
   });
 
   it('does not match a cluster whose name merely shares a prefix', () => {
-    assert.deepEqual(selectActiveRules([rule({ clusterId: 'prod-eu' })], 'prod'), []);
+    assert.deepEqual(selectRulesForCluster([rule({ clusterId: 'prod-eu' })], 'prod'), []);
   });
 });
 
@@ -64,27 +64,27 @@ describe('summarizeAlertScope', () => {
     ];
     const summary = summarizeAlertScope(rules, 'prod');
     assert.equal(summary.active, 1);
-    assert.equal(summary.paused, 2);
+    assert.equal(summary.background, 2);
     assert.equal(summary.disabled, 1);
-    assert.equal(summary.active + summary.paused + summary.disabled, rules.length);
+    assert.equal(summary.active + summary.background + summary.disabled, rules.length);
   });
 
-  it('lists the paused clusters once each, sorted', () => {
+  it('lists the background clusters once each, sorted', () => {
     const rules = [
       rule({ id: 'a', clusterId: 'staging' }),
       rule({ id: 'b', clusterId: 'staging' }),
       rule({ id: 'c', clusterId: 'dev' }),
     ];
-    assert.deepEqual(summarizeAlertScope(rules, 'prod').pausedClusters, ['dev', 'staging']);
+    assert.deepEqual(summarizeAlertScope(rules, 'prod').backgroundClusters, ['dev', 'staging']);
   });
 
-  it('does not list disabled rules as paused clusters', () => {
+  it('does not list disabled rules as background clusters', () => {
     const rules = [rule({ clusterId: 'dev', enabled: false })];
-    assert.deepEqual(summarizeAlertScope(rules, 'prod').pausedClusters, []);
+    assert.deepEqual(summarizeAlertScope(rules, 'prod').backgroundClusters, []);
   });
 
   it('handles an empty rule set', () => {
     const summary = summarizeAlertScope([], 'prod');
-    assert.deepEqual(summary, { active: 0, paused: 0, disabled: 0, pausedClusters: [] });
+    assert.deepEqual(summary, { active: 0, background: 0, disabled: 0, backgroundClusters: [] });
   });
 });

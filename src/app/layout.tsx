@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ElectronClass } from "@/components/layout/electron-class";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { BackgroundMonitor } from "@/components/shared/background-monitor";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -41,6 +42,8 @@ export default function RootLayout({
             <SWRProvider>
               <TooltipProvider>
                 <ElectronClass />
+                {/* Alert rules and watched pods keep reporting off-screen. */}
+                <BackgroundMonitor />
                 {children}
                 <Toaster />
               </TooltipProvider>

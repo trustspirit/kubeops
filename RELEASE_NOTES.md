@@ -1,3 +1,31 @@
+# v0.7.2 — Background Monitoring
+
+## Fixed
+
+- **Watched pods now actually watch in the background.** The pod restart watcher
+  was documented as a background monitor, but it only evaluated while the
+  cluster's *Pods list* was on screen — navigating to Deployments, another
+  cluster, or the cluster list silently stopped it. Detection now runs off the
+  cluster's Watch stream and keeps reporting wherever you are.
+- **Alert rules run for every cluster they target**, not only the one you have
+  open.
+
+## How it works
+
+Monitoring is opened only for clusters you explicitly asked about — a cluster
+with an enabled alert rule or a watched pod. The cluster on screen reuses the
+connection its page already holds; the others get a background connection. A
+cluster that only has watched pods subscribes to pods alone rather than to every
+node and event in the cluster.
+
+Settings → Alert Rules labels each rule **Active** (open cluster),
+**Background**, or **Off**.
+
+## Internal
+
+- Single owner for pod-restart detection; the two page-scoped call sites that
+  shared mutable snapshot state are gone. 232 -> 245 tests.
+
 # v0.7.1 — Alert Scope & Test Discovery
 
 ## Changed

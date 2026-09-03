@@ -1,40 +1,35 @@
 import type { AlertRule } from '@/types/alert';
 
 /**
- * Alert rules are evaluated from the Watch stream of the cluster you are
- * currently viewing, reusing that page's existing connection. A rule targeting
- * a different cluster is therefore *paused*, not broken.
+ * Alert rules are evaluated for every cluster they target, whether or not that
+ * cluster is on screen: the cluster you are viewing is handled by the in-page
+ * monitor, and the rest by background Watch connections.
  *
- * This used to be an unstated limitation — rules simply stopped firing the
- * moment you navigated away, with nothing in the UI to explain it. The state is
- * now derived explicitly so the settings screen can show it.
+ * `monitored` distinguishes the two only so the settings screen can show where
+ * the events are coming from — both states fire alerts.
  */
-export type AlertRuleActivity = 'active' | 'paused' | 'disabled';
+export type AlertRuleActivity = 'active' | 'background' | 'disabled';
 
 export function getAlertRuleActivity(
   rule: Pick<AlertRule, 'enabled' | 'clusterId'>,
   activeClusterId: string | null,
 ): AlertRuleActivity {
   if (!rule.enabled) return 'disabled';
-  if (!activeClusterId || rule.clusterId !== activeClusterId) return 'paused';
-  return 'active';
+  return rule.clusterId === activeClusterId ? 'active' : 'background';
 }
 
-/** Rules that should be evaluated against the given cluster's Watch stream. */
-export function selectActiveRules(
-  rules: AlertRule[],
-  activeClusterId: string | null,
-): AlertRule[] {
-  if (!activeClusterId) return [];
-  return rules.filter((rule) => getAlertRuleActivity(rule, activeClusterId) === 'active');
+/** Rules evaluated against the given cluster's Watch stream. */
+export function selectRulesForCluster(rules: AlertRule[], clusterId: string | null): AlertRule[] {
+  if (!clusterId) return [];
+  return rules.filter((rule) => rule.enabled && rule.clusterId === clusterId);
 }
 
 export interface AlertScopeSummary {
   active: number;
-  paused: number;
+  background: number;
   disabled: number;
-  /** Clusters that have enabled rules but are not the one being viewed. */
-  pausedClusters: string[];
+  /** Clusters monitored in the background, i.e. everything but the open one. */
+  backgroundClusters: string[];
 }
 
 /** Counts for the settings screen, so the scope is visible at a glance. */
@@ -42,15 +37,20 @@ export function summarizeAlertScope(
   rules: AlertRule[],
   activeClusterId: string | null,
 ): AlertScopeSummary {
-  const summary: AlertScopeSummary = { active: 0, paused: 0, disabled: 0, pausedClusters: [] };
-  const pausedClusters = new Set<string>();
+  const summary: AlertScopeSummary = {
+    active: 0,
+    background: 0,
+    disabled: 0,
+    backgroundClusters: [],
+  };
+  const clusters = new Set<string>();
 
   for (const rule of rules) {
     const activity = getAlertRuleActivity(rule, activeClusterId);
     summary[activity] += 1;
-    if (activity === 'paused' && rule.clusterId) pausedClusters.add(rule.clusterId);
+    if (activity === 'background' && rule.clusterId) clusters.add(rule.clusterId);
   }
 
-  summary.pausedClusters = [...pausedClusters].sort();
+  summary.backgroundClusters = [...clusters].sort();
   return summary;
 }

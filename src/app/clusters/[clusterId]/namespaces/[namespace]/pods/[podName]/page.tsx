@@ -22,7 +22,6 @@ import { PodMetricsCharts } from '@/components/shared/metrics-charts';
 import { EnvValueCell, EnvFromRows, MountedSecretRows, PodLinkedSecrets } from '@/components/shared/env-value-resolver';
 import { PortForwardBtn } from '@/components/shared/port-forward-btn';
 import { PodWatchButton } from '@/components/pods/pod-watch-button';
-import { usePodRestartWatcher } from '@/hooks/use-pod-watcher';
 import { ResourceTreeView } from '@/components/shared/resource-tree';
 import { useResourceTree } from '@/hooks/use-resource-tree';
 import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
@@ -147,7 +146,6 @@ export default function PodDetailPage() {
   );
 
   // Watch for restarts on this single pod
-  usePodRestartWatcher(decodedClusterId, pod ? [pod] : undefined);
 
   if (isLoading) return <LoadingSkeleton />;
   if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;

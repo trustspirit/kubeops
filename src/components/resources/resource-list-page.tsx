@@ -10,7 +10,6 @@ import { ErrorDisplay } from '@/components/shared/error-display';
 import { COLUMN_MAP } from './resource-columns';
 import { RESOURCE_LABELS } from '@/lib/constants';
 import { ColumnDef, CellContext } from '@tanstack/react-table';
-import { usePodRestartWatcher } from '@/hooks/use-pod-watcher';
 import { ResourceActions } from '@/components/resources/resource-actions';
 import { useNamespaceStore } from '@/stores/namespace-store';
 import type { KubeResource } from '@/types/resource';
@@ -48,12 +47,6 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
     [resourceType],
   );
   const label = RESOURCE_LABELS[resourceType] || resourceType;
-
-  // Watch for pod restarts when viewing pods list
-  usePodRestartWatcher(
-    decodedClusterId,
-    resourceType === 'pods' ? data?.items : undefined
-  );
 
   // Stable mutate callback to avoid re-creating columns on every render
   const handleMutate = useCallback(() => mutate(), [mutate]);

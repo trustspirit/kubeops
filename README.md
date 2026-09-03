@@ -289,10 +289,11 @@ Resource lists update in real-time via K8s Watch API over WebSocket. A connectio
 
 Define alert rules to monitor resource status changes, restart counts, CPU/memory thresholds, or event patterns. Alerts trigger desktop notifications and in-app toasts. Manage rules and view alert history from Settings.
 
-Rules are evaluated from the Watch stream of the cluster you have open, so they
-reuse that page's connection rather than holding one open per cluster. Rules
-targeting a different cluster show as **Paused** in Settings → Alert Rules, with
-the cluster you would need to open to resume them.
+Enabled rules keep running for every cluster they target while KubeOps is open,
+regardless of which page you are on. The cluster you are viewing reuses that
+page's Watch connection; the rest run over background connections, opened only
+for clusters that actually have rules. Settings → Alert Rules shows which is
+which.
 
 ### Event Timeline
 
@@ -342,7 +343,10 @@ Visualize NetworkPolicy relationships as an interactive graph. Pod groups as nod
 
 ### Pod Restart Watcher
 
-Enable Watch on any pod to monitor restart counts in the background. Polls every 10 seconds and sends desktop notifications when restarts increase. Watched pods persist across sessions.
+Enable Watch on any pod to monitor restart counts in the background. Detection
+runs off the cluster's Watch stream and keeps working wherever you navigate —
+including on other clusters and the cluster list. Watched pods persist across
+sessions.
 
 ### Auto-Update
 
