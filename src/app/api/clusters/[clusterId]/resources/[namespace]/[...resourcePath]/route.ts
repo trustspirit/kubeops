@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as k8s from '@kubernetes/client-node';
 import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
 import { getResourceConfig } from '@/lib/k8s/resource-api';
+import { parsePropagationPolicy } from '@/lib/delete-options';
 import type { K8sApiConstructor } from '@/types/resource';
 
 export const dynamic = 'force-dynamic';
@@ -21,14 +22,6 @@ function extractK8sError(error: unknown): { status: number; message: string } {
   const message = String((typeof body === 'object' ? (body as Record<string, unknown>)?.message : body) || (err?.message as string) || 'Request failed');
   return { status, message };
 }
-
-/**
- * Garbage-collection policies the K8s API accepts on a delete. Anything else is
- * rejected rather than silently falling back to the server default — the UI
- * lets the user pick "Orphan", and quietly cascading instead would be worse
- * than refusing.
- */
-const PROPAGATION_POLICIES = new Set(['Foreground', 'Background', 'Orphan']);
 
 const API_CLASS_MAP: Record<string, K8sApiConstructor> = {
   CoreV1Api: k8s.CoreV1Api,
@@ -213,13 +206,11 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: `Cannot delete resource type: ${resourceType}` }, { status: 400 });
   }
 
-  const propagationPolicy = new URL(req.url).searchParams.get('propagationPolicy') ?? undefined;
-  if (propagationPolicy !== undefined && !PROPAGATION_POLICIES.has(propagationPolicy)) {
-    return NextResponse.json(
-      { error: `Invalid propagationPolicy: ${propagationPolicy}` },
-      { status: 400 },
-    );
+  const parsedPolicy = parsePropagationPolicy(new URL(req.url).searchParams.get('propagationPolicy'));
+  if (!parsedPolicy.ok) {
+    return NextResponse.json({ error: parsedPolicy.error }, { status: 400 });
   }
+  const propagationPolicy = parsedPolicy.policy;
 
   try {
     const client = getClient(contextName, config.apiClass);

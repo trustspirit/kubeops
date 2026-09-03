@@ -1,3 +1,28 @@
+# v0.7.1 — Alert Scope & Test Discovery
+
+## Changed
+
+- **Alert rules state their scope.** They are evaluated from the Watch stream of
+  the cluster you have open — reusing that page's connection instead of holding
+  one open per rule-bearing cluster. Settings → Alert Rules now marks each rule
+  **Active**, **Paused** or **Off**, and names the cluster you would need to
+  open to resume a paused one. The previous behaviour was the same scope with no
+  indication of it anywhere.
+
+## Fixed
+
+- **Tests were silently skipped.** Node's test runner reads `--test` arguments
+  as glob patterns, and App Router paths contain `[param]` segments that are
+  glob character classes — so `route.test.ts` under
+  `[clusterId]/[appName]` matched nothing and never ran, without an error. The
+  runner now imports discovered files directly, and a guard test fails if
+  discovery ever misses a file in the working tree again.
+
+## Internal
+
+- Extracted manifest parsing, delete propagation-policy validation and alert
+  scope into testable modules. 196 -> 232 tests.
+
 # v0.7.0 — Correctness, Safety & UX Pass
 
 A broad review-driven release. No new surface area; a lot of things that quietly
@@ -41,8 +66,9 @@ did the wrong thing now do the right one.
 
 ## Improved
 
-- **Alert rules keep running app-wide.** They previously only evaluated while
-  you were looking at the cluster they targeted.
+- **Alert rule scope is now visible.** Rules are evaluated from the open
+  cluster's Watch stream; ones targeting another cluster show as *Paused* in
+  Settings instead of silently doing nothing.
 - **Port forwards are polled**, and a tunnel that dies (pod restart, connection
   drop) now says so instead of staying green.
 - **Downloading logs fetches the pod's full log** from the cluster rather than

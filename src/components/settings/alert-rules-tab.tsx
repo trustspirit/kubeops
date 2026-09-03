@@ -1,12 +1,32 @@
 'use client';
 
 import { useState } from 'react';
+import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAlertStore } from '@/stores/alert-store';
 import { AlertRuleDialog } from './alert-rule-dialog';
-import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Info, Plus, Pencil, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { getAlertRuleActivity, summarizeAlertScope, type AlertRuleActivity } from '@/lib/alert-scope';
 import type { AlertRule } from '@/types/alert';
+
+const ACTIVITY_BADGE: Record<AlertRuleActivity, { label: string; className: string; title: string }> = {
+  active: {
+    label: 'Active',
+    className: 'bg-green-500/15 text-green-700 dark:text-green-400',
+    title: 'Evaluating against this cluster\u2019s live Watch stream',
+  },
+  paused: {
+    label: 'Paused',
+    className: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
+    title: 'Rules are evaluated for the cluster you are viewing. Open this rule\u2019s cluster to resume it.',
+  },
+  disabled: {
+    label: 'Off',
+    className: 'bg-muted text-muted-foreground',
+    title: 'Rule is switched off',
+  },
+};
 
 function conditionSummary(rule: AlertRule): string {
   const { type, operator, value } = rule.condition;
@@ -22,6 +42,11 @@ function conditionSummary(rule: AlertRule): string {
 
 export function AlertRulesTab() {
   const { rules, deleteRule, toggleRule } = useAlertStore();
+  const params = useParams();
+  const activeClusterId = typeof params?.clusterId === 'string'
+    ? decodeURIComponent(params.clusterId)
+    : null;
+  const scope = summarizeAlertScope(rules, activeClusterId);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
 
@@ -45,6 +70,27 @@ export function AlertRulesTab() {
         </Button>
       </div>
 
+      {/*
+        Rules run off the Watch connection of the cluster on screen. Saying so
+        beats the previous behaviour, where they just stopped firing.
+      */}
+      <div className="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <p>
+          Alert rules are evaluated for the cluster you have open
+          {activeClusterId ? <> — currently <span className="font-mono text-foreground">{activeClusterId}</span></> : ''}.
+          {scope.paused > 0 && (
+            <>
+              {' '}
+              {scope.paused} rule{scope.paused === 1 ? '' : 's'} for{' '}
+              <span className="font-mono">{scope.pausedClusters.join(', ')}</span>{' '}
+              {scope.paused === 1 ? 'is' : 'are'} paused until you open{' '}
+              {scope.pausedClusters.length === 1 ? 'that cluster' : 'those clusters'}.
+            </>
+          )}
+        </p>
+      </div>
+
       {rules.length === 0 ? (
         <p className="text-sm text-muted-foreground py-4">
           No alert rules configured. Create one to get started.
@@ -58,6 +104,7 @@ export function AlertRulesTab() {
                 <th className="px-3 py-2 text-left font-medium">Scope</th>
                 <th className="px-3 py-2 text-left font-medium">Resource</th>
                 <th className="px-3 py-2 text-left font-medium">Condition</th>
+                <th className="px-3 py-2 text-left font-medium">Status</th>
                 <th className="px-3 py-2 text-left font-medium">Enabled</th>
                 <th className="px-3 py-2 text-left font-medium w-[100px]">Actions</th>
               </tr>
@@ -78,6 +125,20 @@ export function AlertRulesTab() {
                     </Badge>
                   </td>
                   <td className="px-3 py-2 text-xs font-mono">{conditionSummary(rule)}</td>
+                  <td className="px-3 py-2">
+                    {(() => {
+                      const activity = getAlertRuleActivity(rule, activeClusterId);
+                      const badge = ACTIVITY_BADGE[activity];
+                      return (
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] ${badge.className}`}
+                          title={badge.title}
+                        >
+                          {badge.label}
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td className="px-3 py-2">
                     <Button
                       variant="ghost"

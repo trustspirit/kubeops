@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as k8s from '@kubernetes/client-node';
-import * as yaml from 'js-yaml';
 import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
+import { describeResource, parseManifest } from '@/lib/manifest';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,13 +24,6 @@ interface ApplyResult {
   message?: string;
   /** Identifies which document in a multi-document manifest this result is for. */
   resource?: string;
-}
-
-/** Upper bound so one paste cannot fan out into an unbounded number of writes. */
-const MAX_DOCUMENTS = 50;
-
-function describeResource(resource: k8s.KubernetesObject): string {
-  return `${resource.kind}/${resource.metadata?.name}`;
 }
 
 const CLUSTER_SCOPED_KINDS = new Set([
@@ -155,52 +148,6 @@ async function applyToTarget(
       message,
     };
   }
-}
-
-interface ParsedManifest {
-  ok: true;
-  documents: k8s.KubernetesObject[];
-}
-
-interface ManifestError {
-  ok: false;
-  error: string;
-}
-
-/**
- * Parses a manifest that may contain several `---`-separated documents.
- *
- * `yaml.load` only accepts a single document and throws on anything else, so
- * pasting the multi-document output of `kubectl get -o yaml` or a Helm template
- * used to fail with an opaque "expected a single document" error.
- */
-function parseManifest(yamlStr: string): ParsedManifest | ManifestError {
-  let raw: unknown[];
-  try {
-    raw = yaml.loadAll(yamlStr);
-  } catch (e: unknown) {
-    return { ok: false, error: `Invalid YAML: ${(e as { message?: string }).message}` };
-  }
-
-  const documents = raw.filter((doc): doc is k8s.KubernetesObject => (
-    doc !== null && doc !== undefined && typeof doc === 'object'
-  ));
-
-  if (documents.length === 0) {
-    return { ok: false, error: 'YAML must contain at least one Kubernetes resource object' };
-  }
-  if (documents.length > MAX_DOCUMENTS) {
-    return { ok: false, error: `Too many documents (${documents.length}); the limit is ${MAX_DOCUMENTS}` };
-  }
-
-  for (const [index, resource] of documents.entries()) {
-    const where = documents.length > 1 ? ` (document ${index + 1})` : '';
-    if (!resource.kind) return { ok: false, error: `Resource must have a "kind" field${where}` };
-    if (!resource.apiVersion) return { ok: false, error: `Resource must have an "apiVersion" field${where}` };
-    if (!resource.metadata?.name) return { ok: false, error: `Resource must have a "metadata.name" field${where}` };
-  }
-
-  return { ok: true, documents };
 }
 
 export async function POST(req: NextRequest) {

@@ -287,7 +287,12 @@ Resource lists update in real-time via K8s Watch API over WebSocket. A connectio
 
 ### Custom Alert Rules
 
-Define alert rules to monitor resource status changes, restart counts, CPU/memory thresholds, or event patterns. Alerts trigger desktop notifications and in-app toasts. Rules keep evaluating for every cluster they target while KubeOps is open — you do not have to be looking at that cluster. Manage rules and view alert history from Settings.
+Define alert rules to monitor resource status changes, restart counts, CPU/memory thresholds, or event patterns. Alerts trigger desktop notifications and in-app toasts. Manage rules and view alert history from Settings.
+
+Rules are evaluated from the Watch stream of the cluster you have open, so they
+reuse that page's connection rather than holding one open per cluster. Rules
+targeting a different cluster show as **Paused** in Settings → Alert Rules, with
+the cluster you would need to open to resume them.
 
 ### Event Timeline
 

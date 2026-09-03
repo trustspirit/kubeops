@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useCallback, useMemo, useRef } from 'react';
-import { useWatch } from '@/hooks/use-watch';
+import { useEffect, useCallback, useRef } from 'react';
+import { useParams } from 'next/navigation';
+import { useWatchContext } from '@/providers/watch-provider';
 import { useAlertStore } from '@/stores/alert-store';
 import { evaluateRules } from '@/lib/alert-evaluator';
+import { selectActiveRules } from '@/lib/alert-scope';
 import { toast } from 'sonner';
 import type { WatchEvent } from '@/types/watch';
 
@@ -20,15 +22,18 @@ const WATCHED_RESOURCE_TYPES = [
 ] as const;
 
 /**
- * Evaluates a single cluster's enabled alert rules against its Watch stream.
+ * Headless component that evaluates alert rules against the active cluster's
+ * Watch stream.
  *
- * One of these is mounted per cluster that has rules, independent of which page
- * is open. Previously the listener lived in the cluster route layout and only
- * evaluated rules for the cluster being viewed, so navigating away — or just
- * sitting on the cluster list — silently stopped every alert.
+ * Scope is deliberately the cluster you are viewing: it reuses the connection
+ * the page already holds instead of opening a socket per rule-bearing cluster.
+ * Rules for other clusters are reported as paused in Settings → Alert Rules
+ * rather than silently doing nothing.
  */
-function ClusterAlertWatcher({ clusterId }: { clusterId: string }) {
-  const { subscribe } = useWatch(clusterId);
+export function AlertListener() {
+  const params = useParams();
+  const clusterId = typeof params?.clusterId === 'string' ? decodeURIComponent(params.clusterId) : null;
+  const watchCtx = useWatchContext();
   const rules = useAlertStore((s) => s.rules);
   const lastTriggered = useAlertStore((s) => s.lastTriggered);
   const addAlert = useAlertStore((s) => s.addAlert);
@@ -37,19 +42,19 @@ function ClusterAlertWatcher({ clusterId }: { clusterId: string }) {
   // Refs so the subscription callback never goes stale without resubscribing.
   const rulesRef = useRef(rules);
   const lastTriggeredRef = useRef(lastTriggered);
+  const clusterIdRef = useRef(clusterId);
   useEffect(() => { rulesRef.current = rules; });
   useEffect(() => { lastTriggeredRef.current = lastTriggered; });
+  useEffect(() => { clusterIdRef.current = clusterId; });
 
   const handleWatchEvent = useCallback(
     (event: WatchEvent) => {
       if (event.type === 'BOOKMARK' || event.type === 'ERROR') return;
 
-      const enabledRules = rulesRef.current.filter(
-        (r) => r.enabled && r.clusterId === clusterId,
-      );
-      if (enabledRules.length === 0) return;
+      const activeRules = selectActiveRules(rulesRef.current, clusterIdRef.current);
+      if (activeRules.length === 0) return;
 
-      const alerts = evaluateRules(enabledRules, event, lastTriggeredRef.current);
+      const alerts = evaluateRules(activeRules, event, lastTriggeredRef.current);
 
       for (const alert of alerts) {
         addAlert(alert);
@@ -76,10 +81,16 @@ function ClusterAlertWatcher({ clusterId }: { clusterId: string }) {
         }
       }
     },
-    [addAlert, setLastTriggered, clusterId],
+    [addAlert, setLastTriggered],
   );
 
+  // `subscribe` is a stable callback, so this only re-runs when the cluster
+  // changes — not on every connecting/connected transition.
+  const subscribe = watchCtx?.subscribe;
+
   useEffect(() => {
+    if (!subscribe) return;
+
     const unsubscribers = WATCHED_RESOURCE_TYPES.map((rt) =>
       subscribe(rt, undefined, handleWatchEvent),
     );
@@ -89,28 +100,4 @@ function ClusterAlertWatcher({ clusterId }: { clusterId: string }) {
   }, [subscribe, handleWatchEvent]);
 
   return null;
-}
-
-/**
- * Headless component that keeps alert rules running for every cluster that has
- * at least one enabled rule, regardless of the current route.
- */
-export function AlertListener() {
-  const rules = useAlertStore((s) => s.rules);
-
-  const clusterIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const rule of rules) {
-      if (rule.enabled && rule.clusterId) ids.add(rule.clusterId);
-    }
-    return [...ids].sort();
-  }, [rules]);
-
-  return (
-    <>
-      {clusterIds.map((clusterId) => (
-        <ClusterAlertWatcher key={clusterId} clusterId={clusterId} />
-      ))}
-    </>
-  );
 }

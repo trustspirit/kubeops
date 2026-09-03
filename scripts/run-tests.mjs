@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Discovers *.test.ts under src/ and runs them through tsx.
+// Runs every *.test.ts under src/ through tsx.
 //
 // Why this exists rather than `tsx --test "src/**/*.test.ts"`:
 //
@@ -15,28 +15,15 @@
 // entirely: `node:test` registers and runs everything the entry imports, and
 // exits non-zero if any test fails.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { collectTestFiles, TEST_ROOT } from './collect-tests.mjs';
 
-const ROOT = 'src';
-const IGNORED = new Set(['node_modules', '.next', 'dist']);
-
-function collect(dir) {
-  const files = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (IGNORED.has(entry.name)) continue;
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) files.push(...collect(path));
-    else if (entry.name.endsWith('.test.ts')) files.push(path);
-  }
-  return files.sort();
-}
-
-const testFiles = collect(ROOT);
+const testFiles = collectTestFiles();
 if (testFiles.length === 0) {
-  console.error(`No test files found under ${ROOT}${sep}`);
+  console.error(`No test files found under ${TEST_ROOT}${sep}`);
   process.exit(1);
 }
 
