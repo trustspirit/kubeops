@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Bug, Loader2, AlertTriangle } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { usePanelStore } from '@/stores/panel-store';
 
@@ -63,14 +63,14 @@ export function PodDebugDialog({
         {
           image,
           targetContainer: targetContainer === '_none' ? undefined : targetContainer,
-        }
+        },
+        { timeoutMs: LONG_RUNNING_TIMEOUT_MS },
       );
 
       toast.success(`Debug container ${result.containerName} attached to ${podName}`);
 
       // Open terminal tab in bottom panel
       addTab({
-        id: `exec-${podName}-${result.containerName}`,
         type: 'exec',
         title: `Debug: ${podName}`,
         clusterId: encodedClusterId,

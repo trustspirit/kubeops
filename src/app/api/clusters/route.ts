@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getContexts, getClusterServer } from '@/lib/k8s/kubeconfig-manager';
 import { ClusterInfo } from '@/lib/k8s/types';
-import { getCachedStatus, isStatusStale, refreshStatusesInBackground } from '@/lib/k8s/cluster-status-cache';
+import { getCachedStatus } from '@/lib/k8s/cluster-status-cache';
 import { detectProvider } from '@/lib/auth/provider-detector';
 
 export const dynamic = 'force-dynamic';
@@ -26,14 +26,9 @@ export async function GET() {
       };
     });
 
-    // Trigger background health checks for stale entries (fire-and-forget)
-    const staleNames = contexts
-      .filter((ctx) => isStatusStale(ctx.name))
-      .map((ctx) => ctx.name);
-    if (staleNames.length > 0) {
-      refreshStatusesInBackground(staleNames).catch(() => {});
-    }
-
+    // Health checks are driven by the /api/clusters/status stream, which
+    // streams results back per cluster. Kicking off a second, invisible round
+    // of checks here doubled the work on every 30s poll.
     return NextResponse.json({ clusters });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to list clusters';

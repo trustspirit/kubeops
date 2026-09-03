@@ -4,6 +4,11 @@ import { parse } from 'url';
 import { getWatchManager, type WatchCallback } from '../src/lib/k8s/watch-manager';
 import type { WatchEvent, WatchSubscription, WatchMessage } from '../src/types/watch';
 
+// A resync on a large cluster can emit thousands of ADDED events back to back.
+// If the renderer cannot keep up, drop events rather than growing the send
+// buffer without bound — the client revalidates via SWR on reconnect anyway.
+const MAX_SOCKET_BACKLOG_BYTES = 4 * 1024 * 1024;
+
 export function handleWatchConnection(ws: WebSocket, req: IncomingMessage) {
   const { pathname } = parse(req.url!, true);
   const parts = pathname ? pathname.split('/').filter(Boolean) : [];
@@ -164,9 +169,32 @@ export function handleWatchConnection(ws: WebSocket, req: IncomingMessage) {
     activeSubscriptions.clear();
   }
 
+  let droppedEvents = 0;
+
   function sendMessage(msg: WatchMessage) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(msg));
+    if (ws.readyState !== WebSocket.OPEN) return;
+
+    if (ws.bufferedAmount > MAX_SOCKET_BACKLOG_BYTES) {
+      // Never drop control messages — only the high-volume event stream.
+      if (msg.type === 'event') {
+        droppedEvents++;
+        if (droppedEvents === 1 || droppedEvents % 1000 === 0) {
+          console.warn(`[Watch] Backlogged on cluster ${clusterId}; dropped ${droppedEvents} events`);
+        }
+        return;
+      }
+    } else if (droppedEvents > 0) {
+      console.log(`[Watch] Backlog cleared on cluster ${clusterId} after ${droppedEvents} dropped events`);
+      droppedEvents = 0;
+      // Tell the client its view may have gaps so it can do a full refetch.
+      ws.send(JSON.stringify({
+        type: 'error',
+        resourceType: msg.resourceType,
+        namespace: msg.namespace,
+        error: 'Watch backlog cleared — resynchronizing',
+      } satisfies WatchMessage));
     }
+
+    ws.send(JSON.stringify(msg));
   }
 }

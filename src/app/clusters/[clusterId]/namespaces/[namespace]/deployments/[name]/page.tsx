@@ -166,7 +166,7 @@ export default function DeploymentDetailPage() {
     <div className="flex flex-col gap-4 p-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+        <Button variant="ghost" size="icon" onClick={() => router.back()} aria-label="Go back">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
@@ -356,13 +356,13 @@ export default function DeploymentDetailPage() {
                           <td className="px-3 py-2"><AgeDisplay timestamp={pod.metadata?.creationTimestamp} /></td>
                           <td className="px-3 py-2">
                             <div className="flex gap-1">
-                              <Button variant="ghost" size="icon" className="h-7 w-7" title="Logs" onClick={() => firstContainer && addTab({ id: `logs-${pName}-${firstContainer}`, type: 'logs', title: `Logs: ${pName}`, clusterId, namespace, podName: pName, container: firstContainer })}>
+                              <Button variant="ghost" size="icon" className="h-7 w-7" title="Logs" aria-label="Logs" onClick={() => firstContainer && addTab({ type: 'logs', title: `Logs: ${pName}`, clusterId, namespace, podName: pName, container: firstContainer })}>
                                 <ScrollText className="h-3.5 w-3.5" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-7 w-7" title="Exec" onClick={() => firstContainer && addTab({ id: `exec-${pName}-${firstContainer}`, type: 'exec', title: `Exec: ${pName}`, clusterId, namespace, podName: pName, container: firstContainer })}>
+                              <Button variant="ghost" size="icon" className="h-7 w-7" title="Exec" aria-label="Exec" onClick={() => firstContainer && addTab({ type: 'exec', title: `Exec: ${pName}`, clusterId, namespace, podName: pName, container: firstContainer })}>
                                 <Terminal className="h-3.5 w-3.5" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" title="Delete Pod" onClick={() => setDeletePodName(pName ?? null)}>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" title="Delete Pod" aria-label="Delete Pod" onClick={() => setDeletePodName(pName ?? null)}>
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </div>

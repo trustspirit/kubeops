@@ -45,7 +45,6 @@ const METADATA_NOISE_KEYS = [
 
 function cleanForDiff(resource: KubeResource): Record<string, unknown> {
   if (!resource) return resource;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { status: _status, ...rest } = resource;
   const cleaned: Record<string, unknown> = { ...rest };
   if (resource.metadata) {

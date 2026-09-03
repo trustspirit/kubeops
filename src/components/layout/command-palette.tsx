@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useCallback, useMemo, useState } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import {
   CommandDialog,
@@ -18,10 +18,27 @@ import { SIDEBAR_SECTIONS } from '@/lib/constants';
 import { Server, FolderOpen } from 'lucide-react';
 import { Box } from 'lucide-react';
 import { useResourceList } from '@/hooks/use-resource-list';
+import { useCommandPaletteStore } from '@/stores/command-palette-store';
 import type { KubeResource } from '@/types/resource';
 
+/**
+ * Rendering every object in a large namespace would make the palette sluggish,
+ * so the list is capped — but the cap is applied *after* filtering on the
+ * user's query. Slicing first meant anything past the cap was unreachable no
+ * matter what you typed.
+ */
+const MAX_VISIBLE_NAMESPACES = 50;
+const MAX_VISIBLE_OBJECTS = 100;
+
+function matches(haystack: string, needle: string): boolean {
+  return haystack.toLowerCase().includes(needle);
+}
+
 export function CommandPalette() {
-  const [open, setOpen] = useState(false);
+  const open = useCommandPaletteStore((s) => s.open);
+  const setOpen = useCommandPaletteStore((s) => s.setOpen);
+  const toggle = useCommandPaletteStore((s) => s.toggle);
+  const [search, setSearch] = useState('');
   const router = useRouter();
   const params = useParams();
   const pathname = usePathname();
@@ -47,21 +64,44 @@ export function CommandPalette() {
     const down = (e: KeyboardEvent) => {
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        setOpen((prev) => !prev);
+        toggle();
       }
     };
     document.addEventListener('keydown', down);
     return () => document.removeEventListener('keydown', down);
-  }, []);
+  }, [toggle]);
 
   const navigate = useCallback((path: string) => {
     router.push(path);
     setOpen(false);
-  }, [router]);
+    setSearch('');
+  }, [router, setOpen]);
+
+  const normalizedSearch = search.trim().toLowerCase();
+
+  const visibleNamespaces = useMemo(() => {
+    const list = namespaces as { name: string }[];
+    const filtered = normalizedSearch
+      ? list.filter((ns) => matches(ns.name, normalizedSearch))
+      : list;
+    return filtered.slice(0, MAX_VISIBLE_NAMESPACES);
+  }, [namespaces, normalizedSearch]);
+
+  const visibleObjects = useMemo(() => {
+    const items: KubeResource[] = currentObjects?.items ?? [];
+    const filtered = normalizedSearch
+      ? items.filter((object) => matches(object.metadata?.name ?? '', normalizedSearch))
+      : items;
+    return filtered.slice(0, MAX_VISIBLE_OBJECTS);
+  }, [currentObjects, normalizedSearch]);
 
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="Search clusters, resources, namespaces..." />
+      <CommandInput
+        placeholder="Search clusters, resources, namespaces..."
+        value={search}
+        onValueChange={setSearch}
+      />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
 
@@ -85,7 +125,7 @@ export function CommandPalette() {
           <>
             <CommandSeparator />
             <CommandGroup heading="Namespaces">
-              {namespaces.slice(0, 10).map((ns: { name: string }) => (
+              {visibleNamespaces.map((ns) => (
                 <CommandItem
                   key={ns.name}
                   value={`namespace ${ns.name}`}
@@ -119,11 +159,11 @@ export function CommandPalette() {
                 })
               )}
             </CommandGroup>
-            {currentResource && (currentObjects?.items?.length ?? 0) > 0 && (
+            {currentResource && visibleObjects.length > 0 && (
               <>
                 <CommandSeparator />
                 <CommandGroup heading={`Objects in ${currentResource.label}`}>
-                  {currentObjects!.items.slice(0, 50).map((object: KubeResource) => {
+                  {visibleObjects.map((object: KubeResource) => {
                     const objectName = object.metadata?.name || '';
                     const objectNamespace = object.metadata?.namespace || currentNamespace;
                     const path = currentResource.clusterScoped

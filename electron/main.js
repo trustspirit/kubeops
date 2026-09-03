@@ -2,15 +2,33 @@ const { app, BrowserWindow, shell, Menu, dialog, ipcMain } = require('electron')
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
+const http = require('http');
 const { execFile } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 
 const isDev = !app.isPackaged;
 const PORT = parseInt(process.env.PORT || '51230', 10);
 const iconPath = path.join(__dirname, '..', 'resources', 'icon.png');
+// Sent by the server on startup so we can tell our own server apart from an
+// unrelated process that happens to be sitting on the same port.
+const HEALTH_PATH = '/api/session';
 
 let mainWindow = null;
 let serverProcess = null;
+
+// A second instance would fight the first one for port 51230 and lose in a way
+// that is invisible to the user. Focus the existing window instead.
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
 
 // === Error Log ===
 const LOG_DIR = path.join(app.getPath('userData'), 'logs');
@@ -66,6 +84,7 @@ if (process.platform === 'darwin') {
 
 // Track the downloaded update file path for manual install on macOS
 let downloadedUpdateFile = null;
+let isQuitting = false;
 
 /**
  * Manually install update on macOS — bypasses ShipIt/Squirrel code signature validation.
@@ -137,11 +156,15 @@ async function macOSManualInstall() {
     '#!/bin/bash',
     `PID=${process.pid}`,
     'while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done',
-    `rm -rf "$1"`,
-    `mv "$2" "$1"`,
-    `rm -rf "$3"`,
-    `xattr -cr "$1" 2>/dev/null`,
-    `open "$1"`,
+    // Move the old bundle aside instead of deleting it up front: if the
+    // replacement move fails, the user still has a working app to restore.
+    'BACKUP="$1.old-$$"',
+    'mv "$1" "$BACKUP" || exit 1',
+    'if ! mv "$2" "$1"; then mv "$BACKUP" "$1"; rm -rf "$3"; open "$1"; exit 1; fi',
+    'rm -rf "$BACKUP"',
+    'rm -rf "$3"',
+    'xattr -cr "$1" 2>/dev/null',
+    'open "$1"',
   ].join('\n');
   fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 });
 
@@ -466,15 +489,50 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/**
+ * Confirms that whatever is listening on `port` is a KubeOps server, not some
+ * other local service. A bare TCP connect would happily "succeed" against an
+ * unrelated app and we would then load its pages into our window.
+ */
+function isOurServer(port) {
+  return new Promise((resolve) => {
+    const req = http.request(
+      { host: 'localhost', port, path: HEALTH_PATH, method: 'GET', timeout: 2000 },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          try {
+            resolve(Boolean(JSON.parse(body).nonce));
+          } catch {
+            resolve(false);
+          }
+        });
+      },
+    );
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.on('error', () => resolve(false));
+    req.end();
+  });
+}
+
 function waitForServer(port, maxRetries = 60) {
   return new Promise((resolve, reject) => {
     let retries = 0;
     const tryConnect = () => {
       const socket = new net.Socket();
       socket.setTimeout(1000);
-      socket.once('connect', () => {
+      socket.once('connect', async () => {
         socket.destroy();
-        resolve();
+        if (await isOurServer(port)) {
+          resolve();
+          return;
+        }
+        if (++retries >= maxRetries) {
+          reject(new Error(`Port ${port} is in use by another application`));
+        } else {
+          setTimeout(tryConnect, 500);
+        }
       });
       socket.once('error', () => {
         socket.destroy();
@@ -527,6 +585,17 @@ function startProductionServer() {
   serverProcess.on('exit', (code, signal) => {
     if (code !== 0 && code !== null) {
       writeErrorLog('server:exit', `Server exited with code ${code}, signal ${signal}`);
+    }
+    serverProcess = null;
+    if (!isQuitting && mainWindow && !mainWindow.isDestroyed()) {
+      // The window is still up but every request from now on would fail with a
+      // blank page and no explanation.
+      dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'KubeOps backend stopped',
+        message: 'The KubeOps background service stopped unexpectedly.',
+        detail: 'Restart KubeOps to reconnect. Details are in Help → Open Error Log.',
+      }).catch(() => {});
     }
   });
 
@@ -584,6 +653,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  isQuitting = true;
   if (serverProcess) {
     serverProcess.kill();
     serverProcess = null;

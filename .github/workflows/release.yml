@@ -86,8 +86,33 @@ jobs:
             echo "should_publish=false" >> "$GITHUB_OUTPUT"
           fi
 
+  # Gate every release on the checks that used to exist but were never run in CI.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
   create-release:
-    needs: check-version
+    needs: [check-version, verify]
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -113,10 +138,11 @@ jobs:
             || echo "Release already exists, continuing..."
 
   release:
-    needs: [check-version, create-release]
+    needs: [check-version, verify, create-release]
     if: |
       always() &&
       needs.check-version.outputs.should_release == 'true' &&
+      needs.verify.result == 'success' &&
       needs.create-release.result == 'success'
     strategy:
       fail-fast: false
@@ -179,11 +205,12 @@ jobs:
           if-no-files-found: ignore
 
   npm-publish:
-    needs: [check-version, release]
+    needs: [check-version, verify, release]
     if: |
       always() &&
       needs.check-version.outputs.should_publish == 'true' &&
       needs.check-version.result == 'success' &&
+      needs.verify.result == 'success' &&
       (needs.release.result == 'success' || needs.release.result == 'skipped')
     runs-on: ubuntu-latest
     steps:

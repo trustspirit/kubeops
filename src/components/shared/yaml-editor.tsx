@@ -14,6 +14,8 @@ import { usePortForwards } from '@/hooks/use-port-forwards';
 import { findMatchingPortForward, type PortForwardInfo } from '@/lib/port-forward-client';
 import { YamlDiffView } from '@/components/shared/yaml-diff-view';
 import { MultiClusterApplyDialog } from '@/components/multi-cluster/multi-cluster-apply-dialog';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { useModifierKeyLabel } from '@/hooks/use-modifier-key';
 
 // === Types ===
 
@@ -40,7 +42,7 @@ const PFContext = createContext<PortForwardContext | null>(null);
 
 function PortForwardButton({ containerPort }: { containerPort: number }) {
   const ctx = useContext(PFContext);
-  const { forwards } = usePortForwards();
+  const { forwards, markStopped } = usePortForwards();
   const [starting, setStarting] = useState(false);
 
   if (!ctx) return null;
@@ -75,6 +77,8 @@ function PortForwardButton({ containerPort }: { containerPort: number }) {
   const stopForward = async () => {
     if (!active) return;
     try {
+      // Suppress the "stopped unexpectedly" warning for a deliberate stop.
+      markStopped(active.id);
       await apiClient.delete(`/api/port-forward?id=${encodeURIComponent(active.id)}`);
       globalMutate('/api/port-forward');
       toast.success('Port forward stopped');
@@ -310,7 +314,10 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
   const [originalYaml, setOriginalYaml] = useState('');
   const [yamlError, setYamlError] = useState<string | null>(null);
   const [multiApplyOpen, setMultiApplyOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [conflict, setConflict] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const modifierKey = useModifierKeyLabel();
 
   const yamlStr = useMemo(
     () => (mode === 'yaml' ? yaml.dump(data, { lineWidth: -1 }) : ''),
@@ -318,8 +325,14 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
   );
 
   const startEditing = useCallback(() => {
-    const clean = { ...data, metadata: { ...data.metadata } };
-    if (clean.metadata?.managedFields) delete clean.metadata.managedFields;
+    // `status` is server-owned and often hundreds of lines; showing it buries
+    // the handful of spec fields the user actually came to edit. `resourceVersion`
+    // stays so the API can reject a write that raced with someone else.
+    const clean = { ...data, metadata: { ...data.metadata } } as Record<string, unknown>;
+    const metadata = clean.metadata as Record<string, unknown> | undefined;
+    if (metadata?.managedFields) delete metadata.managedFields;
+    delete clean.status;
+
     const yamlStr = yaml.dump(clean, { lineWidth: -1 });
     setEditValue(yamlStr);
     setOriginalYaml(yamlStr);
@@ -327,11 +340,25 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
     setMode('edit');
   }, [data]);
 
+  const isDirty = mode !== 'table' && mode !== 'yaml' && editValue !== originalYaml;
+
   const cancelEditing = useCallback(() => {
     setMode('table');
     setEditValue('');
+    setOriginalYaml('');
     setYamlError(null);
+    setDiscardOpen(false);
   }, []);
+
+  // Discarding an edit is not recoverable, so confirm when there is something
+  // to lose.
+  const requestCancel = useCallback(() => {
+    if (editValue !== originalYaml) {
+      setDiscardOpen(true);
+      return;
+    }
+    cancelEditing();
+  }, [editValue, originalYaml, cancelEditing]);
 
   const goToReview = useCallback(() => {
     // Validate YAML before entering review
@@ -365,19 +392,34 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
     }
     setSaving(true);
     setYamlError(null);
+    setConflict(false);
     try {
       await apiClient.put(apiUrl, parsed);
       const meta = parsed?.metadata as Record<string, unknown> | undefined;
       toast.success(`${meta?.name || 'Resource'} updated`);
       setMode('table');
       setEditValue('');
+      setOriginalYaml('');
       onSaved?.();
     } catch (err: unknown) {
+      const status = (err as { status?: number })?.status;
+      // 409 means someone (or a controller) changed the object underneath us.
+      setConflict(status === 409);
       setYamlError(`Save failed: ${(err instanceof Error ? err.message : 'Unknown error')}`);
     } finally {
       setSaving(false);
     }
   };
+
+  // Pull the server's current version into the editor, keeping the user's text
+  // available to copy across.
+  const reloadFromServer = useCallback(() => {
+    onSaved?.();
+    setConflict(false);
+    setYamlError(null);
+    startEditing();
+    toast.info('Reloaded the current version from the cluster');
+  }, [onSaved, startEditing]);
 
   // Cmd+S in review mode → apply changes
   useEffect(() => {
@@ -407,11 +449,12 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
                 <GitCompareArrows className="h-4 w-4 mr-1" />
                 Review Changes
               </Button>
-              <Button variant="outline" size="sm" onClick={cancelEditing}>
+              <Button variant="outline" size="sm" onClick={requestCancel}>
                 <RotateCcw className="h-4 w-4 mr-1" />
                 Cancel
               </Button>
-              <span className="text-xs text-muted-foreground ml-2">Cmd+S to review</span>
+              {isDirty && <span className="text-xs text-amber-600 dark:text-amber-400">Unsaved changes</span>}
+              <span className="text-xs text-muted-foreground ml-2">{modifierKey}+S to review</span>
             </>
           ) : mode === 'review' ? (
             <>
@@ -423,11 +466,11 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
                 <Pencil className="h-4 w-4 mr-1" />
                 Back to Edit
               </Button>
-              <Button variant="outline" size="sm" onClick={cancelEditing}>
+              <Button variant="outline" size="sm" onClick={requestCancel}>
                 <RotateCcw className="h-4 w-4 mr-1" />
                 Cancel
               </Button>
-              <span className="text-xs text-muted-foreground ml-2">Cmd+S to apply</span>
+              <span className="text-xs text-muted-foreground ml-2">{modifierKey}+S to apply</span>
             </>
           ) : (
             <>
@@ -460,8 +503,18 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
         </div>
 
         {yamlError && (
-          <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
-            {yamlError}
+          <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+            <p>{yamlError}</p>
+            {conflict && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs">
+                  The resource changed in the cluster after you started editing.
+                </span>
+                <Button variant="outline" size="sm" onClick={reloadFromServer}>
+                  Reload current version
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
@@ -517,6 +570,16 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
             delete clean.metadata?.creationTimestamp;
             return yaml.dump(clean, { lineWidth: -1 });
           })()}
+        />
+
+        <ConfirmDialog
+          open={discardOpen}
+          onOpenChange={setDiscardOpen}
+          title="Discard changes?"
+          description="Your edits to this resource have not been applied and will be lost."
+          confirmLabel="Discard"
+          variant="destructive"
+          onConfirm={cancelEditing}
         />
       </div>
     </PFContext.Provider>

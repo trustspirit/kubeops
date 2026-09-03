@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { sanitizeServerError } from '@/lib/server-error';
 import { updateContext, deleteContext, setCurrentContext } from '@/lib/kubeconfig-editor';
+import { invalidateKubeconfigDerivedCaches } from '@/lib/k8s/invalidate-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,13 +19,15 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
     if (setAsCurrent) {
       await setCurrentContext(contextName);
+      invalidateKubeconfigDerivedCaches();
       return NextResponse.json({ success: true });
     }
 
     await updateContext(contextName, { cluster, user, namespace });
+    invalidateKubeconfigDerivedCaches();
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to update context';
+    const message = sanitizeServerError(error, 'Failed to update context');
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -34,9 +38,10 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
 
   try {
     await deleteContext(contextName);
+    invalidateKubeconfigDerivedCaches();
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to delete context';
+    const message = sanitizeServerError(error, 'Failed to delete context');
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

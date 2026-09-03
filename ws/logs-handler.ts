@@ -4,8 +4,16 @@ import * as k8s from '@kubernetes/client-node';
 import { parse } from 'url';
 import { PassThrough } from 'stream';
 import fetch from 'node-fetch';
+import { StringDecoder } from 'string_decoder';
 import { getKubeConfigForContext } from '../src/lib/k8s/kubeconfig-manager';
 import { normalizeLogTailLines } from '../src/lib/log-request';
+import { isDns1123Label, isDns1123Subdomain, isSafeCliScalar } from '../src/lib/exec-validation';
+
+// Stop reading from the API server once this much converted output is still
+// queued on the socket. Without it a chatty pod can grow the send buffer
+// without bound while the renderer is busy painting.
+const MAX_SOCKET_BACKLOG_BYTES = 1024 * 1024;
+const KEEPALIVE_INTERVAL_MS = 30_000;
 
 type QueryValue = string | string[] | undefined;
 
@@ -84,30 +92,91 @@ async function streamPodLogs(
 }
 
 export function handleLogsConnection(ws: WebSocket, req: IncomingMessage) {
-  const { pathname, query } = parse(req.url!, true);
-  const parts = pathname!.split('/').filter(Boolean);
+  const { pathname, query } = parse(req.url ?? '', true);
+  const parts = pathname ? pathname.split('/').filter(Boolean) : [];
+
   // parts: ['ws', 'logs', clusterId, namespace, podName]
-  const clusterId = decodeURIComponent(parts[2]);
-  const namespace = decodeURIComponent(parts[3] || '');
-  const podName = decodeURIComponent(parts[4] || '');
+  let clusterId: string | undefined;
+  let namespace: string | undefined;
+  let podName: string | undefined;
+  try {
+    clusterId = parts[2] === undefined ? undefined : decodeURIComponent(parts[2]);
+    namespace = parts[3] === undefined ? undefined : decodeURIComponent(parts[3]);
+    podName = parts[4] === undefined ? undefined : decodeURIComponent(parts[4]);
+  } catch {
+    // A malformed percent-escape must not escape this handler: an exception
+    // here propagates out of the 'connection' listener and kills the server.
+    sendError(ws, 'Malformed log request URL');
+    return;
+  }
+
   const container = firstQueryValue(query.container);
   const follow = query.follow === 'true';
   const timestamps = query.timestamps === 'true';
   const tailLines = normalizeLogTailLines(firstQueryValue(query.tailLines));
 
-  if (!clusterId || !namespace || !podName || !container) {
-    sendError(ws, 'Missing cluster, namespace, pod, or container for log request');
+  if (
+    !isSafeCliScalar(clusterId)
+    || !isDns1123Subdomain(namespace)
+    || !isDns1123Subdomain(podName)
+    || !isDns1123Label(container)
+  ) {
+    sendError(ws, 'Invalid cluster, namespace, pod, or container for log request');
     return;
   }
 
-  const kc = getKubeConfigForContext(clusterId);
+  let kc: k8s.KubeConfig;
+  try {
+    kc = getKubeConfigForContext(clusterId);
+  } catch (err) {
+    sendError(ws, err instanceof Error ? err.message : 'Unable to load kubeconfig');
+    return;
+  }
+
   const logStream = new PassThrough();
   const abortController = new AbortController();
+  // Chunk boundaries fall wherever the network splits them, which is routinely
+  // mid-codepoint. Decoding per chunk mangles any non-ASCII log line.
+  const decoder = new StringDecoder('utf-8');
+  let closed = false;
+  let paused = false;
+
+  const keepalive = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) ws.ping();
+  }, KEEPALIVE_INTERVAL_MS);
+
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    clearInterval(keepalive);
+    abortController.abort();
+    logStream.destroy();
+  };
+
+  const drainIfPossible = () => {
+    if (!paused || closed) return;
+    if (ws.bufferedAmount > MAX_SOCKET_BACKLOG_BYTES) {
+      setTimeout(drainIfPossible, 50);
+      return;
+    }
+    paused = false;
+    logStream.resume();
+  };
 
   logStream.on('data', (chunk: Buffer) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(chunk.toString('utf-8'));
+    if (ws.readyState !== WebSocket.OPEN) return;
+    const text = decoder.write(chunk);
+    if (text) ws.send(text);
+    if (!paused && ws.bufferedAmount > MAX_SOCKET_BACKLOG_BYTES) {
+      paused = true;
+      logStream.pause();
+      setTimeout(drainIfPossible, 50);
     }
+  });
+
+  logStream.on('end', () => {
+    const rest = decoder.end();
+    if (rest && ws.readyState === WebSocket.OPEN) ws.send(rest);
   });
 
   logStream.on('error', (err) => {
@@ -115,6 +184,7 @@ export function handleLogsConnection(ws: WebSocket, req: IncomingMessage) {
       ws.send(JSON.stringify({ type: 'error', message: err.message }));
       ws.close();
     }
+    cleanup();
   });
 
   streamPodLogs(kc, namespace, podName, container, logStream, abortController, {
@@ -124,6 +194,7 @@ export function handleLogsConnection(ws: WebSocket, req: IncomingMessage) {
   })
     .catch((err) => {
       sendError(ws, err instanceof Error ? err.message : String(err));
+      cleanup();
     });
 
   ws.on('message', (data: Buffer) => {
@@ -137,13 +208,6 @@ export function handleLogsConnection(ws: WebSocket, req: IncomingMessage) {
     }
   });
 
-  ws.on('close', () => {
-    abortController.abort();
-    logStream.destroy();
-  });
-
-  ws.on('error', () => {
-    abortController.abort();
-    logStream.destroy();
-  });
+  ws.on('close', cleanup);
+  ws.on('error', cleanup);
 }

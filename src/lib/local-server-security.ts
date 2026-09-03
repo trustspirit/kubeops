@@ -41,3 +41,35 @@ export function isAllowedWebSocketUpgrade(input: WebSocketUpgradeInput): boolean
     return false;
   }
 }
+
+export interface SameOriginRequestInput {
+  method: string;
+  host: string | undefined;
+  origin: string | null | undefined;
+}
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * Cross-site request forgery guard for the local HTTP API.
+ *
+ * The server only ever binds to loopback, but any page in any browser on the
+ * machine can still reach `http://localhost:<port>` — and a `text/plain` form
+ * POST is a "simple request", so it is delivered without a CORS preflight.
+ * The response stays unreadable, but the side effect (merging a kubeconfig,
+ * deleting a context, applying a manifest) would already have happened.
+ *
+ * `Host` is validated separately by `isAllowedLocalHost` before the request
+ * reaches Next, so comparing `Origin` against `Host` is sufficient here.
+ */
+export function isSameOriginRequest(input: SameOriginRequestInput): boolean {
+  if (SAFE_METHODS.has(input.method.toUpperCase())) return true;
+  if (!input.host || !input.origin) return false;
+  try {
+    const origin = new URL(input.origin);
+    if (origin.protocol !== 'http:') return false;
+    return origin.host === input.host;
+  } catch {
+    return false;
+  }
+}

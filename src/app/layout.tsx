@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ElectronClass } from "@/components/layout/electron-class";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { AlertListener } from "@/components/shared/alert-listener";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -41,6 +42,8 @@ export default function RootLayout({
             <SWRProvider>
               <TooltipProvider>
                 <ElectronClass />
+                {/* Alert rules run app-wide, not only while their cluster is open. */}
+                <AlertListener />
                 {children}
                 <Toaster />
               </TooltipProvider>

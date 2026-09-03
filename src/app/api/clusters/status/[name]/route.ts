@@ -19,7 +19,8 @@ export async function GET(
     return NextResponse.json({ error: 'Context not found' }, { status: 404 });
   }
 
-  const entry = await checkClusterStatus(contextName);
+  // Refreshing one cluster is always a deliberate user action.
+  const entry = await checkClusterStatus(contextName, { force: true });
   return NextResponse.json({
     name: contextName,
     status: entry.status,

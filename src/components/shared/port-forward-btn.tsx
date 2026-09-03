@@ -18,7 +18,7 @@ interface PortForwardBtnProps {
 }
 
 export function PortForwardBtn({ clusterId, namespace, resourceType, resourceName, port }: PortForwardBtnProps) {
-  const { forwards } = usePortForwards();
+  const { forwards, markStopped } = usePortForwards();
   const [starting, setStarting] = useState(false);
   const active = findMatchingPortForward(forwards, {
     clusterId,
@@ -41,6 +41,8 @@ export function PortForwardBtn({ clusterId, namespace, resourceType, resourceNam
   const stop = async () => {
     if (!active) return;
     try {
+      // Suppress the "stopped unexpectedly" warning for a deliberate stop.
+      markStopped(active.id);
       await apiClient.delete(`/api/port-forward?id=${encodeURIComponent(active.id)}`);
       globalMutate('/api/port-forward');
       toast.success('Port forward stopped');

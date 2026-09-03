@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { Loader2, RefreshCw } from 'lucide-react';
 
@@ -70,6 +70,7 @@ export function HelmSyncLatestDialog({
           dependencyUpdate,
           currentVersion,
         },
+        { timeoutMs: LONG_RUNNING_TIMEOUT_MS },
       );
       const versionLabel = result.chartVersion ? ` to ${result.chartVersion}` : '';
       toast.success(

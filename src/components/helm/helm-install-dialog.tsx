@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { Loader2, Search, Plus, Package } from 'lucide-react';
 
@@ -100,7 +100,8 @@ export function HelmInstallDialog({ open, onOpenChange, clusterId, onInstalled }
           namespace,
           values: values || undefined,
           createNamespace: true,
-        }
+        },
+        { timeoutMs: LONG_RUNNING_TIMEOUT_MS }
       );
       toast.success(`Release "${releaseName}" installed successfully`);
       onInstalled?.();

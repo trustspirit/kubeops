@@ -12,7 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePodWatcherStore } from '@/stores/pod-watcher-store';
 import { useAlertStore } from '@/stores/alert-store';
-import { Bell, BellOff } from 'lucide-react';
+import { useSettingsStore } from '@/stores/settings-store';
+import { Bell, BellOff, LogIn } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { AlertRulesTab } from './alert-rules-tab';
 import { AlertHistory } from './alert-history';
@@ -27,10 +28,15 @@ function SettingsDialogContent({ onOpenChange }: { onOpenChange: (open: boolean)
   const { notificationsEnabled, setNotificationsEnabled } = usePodWatcherStore();
   const alertUnread = useAlertStore((s) => s.history.filter((a) => !a.read).length);
 
+  const autoLoginOnLaunch = useSettingsStore((s) => s.autoLoginOnLaunch);
+  const setAutoLoginOnLaunch = useSettingsStore((s) => s.setAutoLoginOnLaunch);
+
   const [notifEnabled, setNotifEnabled] = useState(notificationsEnabled);
+  const [autoLogin, setAutoLogin] = useState(autoLoginOnLaunch);
 
   const handleSave = () => {
     setNotificationsEnabled(notifEnabled);
+    setAutoLoginOnLaunch(autoLogin);
     onOpenChange(false);
   };
 
@@ -81,6 +87,24 @@ function SettingsDialogContent({ onOpenChange }: { onOpenChange: (open: boolean)
                   <><BellOff className="h-4 w-4" />Desktop Notifications Disabled</>
                 )}
               </Button>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold">Sign-in</h4>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => setAutoLogin((value) => !value)}
+                aria-pressed={autoLogin}
+              >
+                <LogIn className="h-4 w-4" />
+                {autoLogin ? 'Sign in automatically on launch' : 'Ask before signing in'}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Automatic sign-in opens your browser as soon as KubeOps starts. When off,
+                use the provider button in the header instead.
+              </p>
             </div>
           </div>
 

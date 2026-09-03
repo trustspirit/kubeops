@@ -167,3 +167,17 @@
 .react-flow__controls-button svg {
   fill: currentColor !important;
 }
+/*
+ * Spinners, pulses and transitions are everywhere in this app; honour the
+ * system setting for users who get motion sickness from them.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

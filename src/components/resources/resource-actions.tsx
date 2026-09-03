@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
@@ -16,6 +19,8 @@ import { CascadeDeleteDialog } from '@/components/shared/cascade-delete-dialog';
 import { NodeDebugDialog } from '@/components/nodes/node-debug-dialog';
 import { PodDebugDialog } from '@/components/pods/pod-debug-dialog';
 import { apiClient } from '@/lib/api-client';
+import { singularize } from '@/lib/kubectl-command';
+import { listPodContainers } from '@/lib/pod-containers';
 import { toast } from 'sonner';
 import { usePanelStore } from '@/stores/panel-store';
 import type { KubeResource } from '@/types/resource';
@@ -84,12 +89,15 @@ export function ResourceActions({
     }
   }, [restarting, encodedClusterId, namespace, resourceType, name, onMutate]);
 
-  const handleDelete = useCallback(async () => {
+  const handleDelete = useCallback(async (propagationPolicy?: string) => {
     if (deleting) return;
     setDeleting(true);
     try {
+      const query = propagationPolicy
+        ? `?propagationPolicy=${encodeURIComponent(propagationPolicy)}`
+        : '';
       await apiClient.delete(
-        `/api/clusters/${encodedClusterId}/resources/${namespace}/${resourceType}/${name}`
+        `/api/clusters/${encodedClusterId}/resources/${namespace}/${resourceType}/${name}${query}`
       );
       toast.success(`${name} deletion requested`);
       setDeleteRequested(true);
@@ -102,36 +110,32 @@ export function ResourceActions({
     }
   }, [deleting, encodedClusterId, namespace, resourceType, name, onMutate]);
 
-  const handleLogs = useCallback(() => {
-    const containers = resource?.spec?.containers as { name: string }[] | undefined;
-    const container = containers?.[0]?.name;
-    if (!container) return;
+  const containers = useMemo(() => listPodContainers(resource), [resource]);
+
+  const openPanelTab = useCallback((type: 'logs' | 'exec', container: string) => {
     addTab({
-      id: `logs-${name}-${container}`,
-      type: 'logs',
-      title: `Logs: ${name}`,
+      type,
+      title: `${type === 'logs' ? 'Logs' : 'Exec'}: ${name}/${container}`,
       clusterId: encodedClusterId,
       namespace,
       podName: name,
       container,
     });
-  }, [resource, name, encodedClusterId, namespace, addTab]);
+  }, [addTab, encodedClusterId, namespace, name]);
 
-  const handleExec = useCallback(() => {
-    const containers = resource?.spec?.containers as { name: string }[] | undefined;
-    const container = containers?.[0]?.name;
-    if (!container) return;
-    addTab({
-      id: `exec-${name}-${container}`,
-      type: 'exec',
-      title: `Exec: ${name}`,
-      clusterId: encodedClusterId,
-      namespace,
-      podName: name,
-      container,
-    });
-  }, [resource, name, encodedClusterId, namespace, addTab]);
+  // A pod row can arrive without a full spec (partial list projections, or a
+  // pod that only has init containers left). Say so instead of no-opping.
+  const handleContainerAction = useCallback((type: 'logs' | 'exec') => {
+    if (containers.length === 0) {
+      toast.error(`No containers found for ${name}`, {
+        description: 'The pod spec is still loading or the pod has no runnable containers.',
+      });
+      return;
+    }
+    openPanelTab(type, containers[0].name);
+  }, [containers, name, openPanelTab]);
 
+  const kind = singularize(resourceType);
   const spec = resource?.spec as Record<string, unknown> | undefined;
   const status = resource?.status as Record<string, unknown> | undefined;
   const currentReplicas = (spec?.replicas as number) ?? (status?.replicas as number) ?? 0;
@@ -155,14 +159,49 @@ export function ResourceActions({
         <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
           {isPod && (
             <>
-              <DropdownMenuItem onClick={handleLogs}>
-                <ScrollText className="h-4 w-4 mr-2" />
-                View Logs
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleExec}>
-                <Terminal className="h-4 w-4 mr-2" />
-                Exec
-              </DropdownMenuItem>
+              {containers.length > 1 ? (
+                <>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <ScrollText className="h-4 w-4 mr-2" />
+                      View Logs
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {containers.map((c) => (
+                        <DropdownMenuItem key={c.name} onClick={() => openPanelTab('logs', c.name)}>
+                          {c.name}
+                          {c.init && <span className="ml-2 text-xs text-muted-foreground">init</span>}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <Terminal className="h-4 w-4 mr-2" />
+                      Exec
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {containers.map((c) => (
+                        <DropdownMenuItem key={c.name} onClick={() => openPanelTab('exec', c.name)}>
+                          {c.name}
+                          {c.init && <span className="ml-2 text-xs text-muted-foreground">init</span>}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                </>
+              ) : (
+                <>
+                  <DropdownMenuItem onClick={() => handleContainerAction('logs')}>
+                    <ScrollText className="h-4 w-4 mr-2" />
+                    View Logs
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleContainerAction('exec')}>
+                    <Terminal className="h-4 w-4 mr-2" />
+                    Exec
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuItem onClick={() => setPodDebugOpen(true)}>
                 <Bug className="h-4 w-4 mr-2" />
                 Debug
@@ -228,7 +267,7 @@ export function ResourceActions({
           onOpenChange={setRestartOpen}
           title={`Restart ${name}?`}
           description="This will perform a rolling restart of all pods."
-          context={{ cluster: clusterId, namespace, kind: resourceType.slice(0, -1), name }}
+          context={{ cluster: clusterId, namespace, kind, name }}
           confirmLabel="Restart"
           onConfirm={handleRestart}
           loading={restarting}
@@ -243,7 +282,7 @@ export function ResourceActions({
           namespace={namespace}
           resourceType={resourceType}
           name={name}
-          onConfirm={() => handleDelete()}
+          onConfirm={(propagationPolicy) => handleDelete(propagationPolicy)}
           loading={deleting}
         />
       )}
@@ -253,11 +292,11 @@ export function ResourceActions({
           open={deleteOpen}
           onOpenChange={setDeleteOpen}
           title={`Delete ${name}?`}
-          description={`This will permanently delete the ${resourceType.slice(0, -1)} "${name}". This action cannot be undone.`}
-          context={{ cluster: clusterId, namespace, kind: resourceType.slice(0, -1), name }}
+          description={`This will permanently delete the ${kind} "${name}". This action cannot be undone.`}
+          context={{ cluster: clusterId, namespace, kind, name }}
           confirmLabel="Delete"
           variant="destructive"
-          onConfirm={handleDelete}
+          onConfirm={() => handleDelete()}
           loading={deleting}
         />
       )}
@@ -278,7 +317,7 @@ export function ResourceActions({
           clusterId={clusterId}
           namespace={namespace}
           podName={name}
-          containers={(resource?.spec?.containers as { name: string }[] || []).map(c => c.name)}
+          containers={containers.map((c) => c.name)}
         />
       )}
     </>

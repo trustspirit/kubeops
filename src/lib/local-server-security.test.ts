@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
-import { isAllowedLocalHost, isAllowedWebSocketUpgrade } from './local-server-security';
+import { isAllowedLocalHost, isAllowedWebSocketUpgrade, isSameOriginRequest } from './local-server-security';
 
 describe('local server security', () => {
   it('accepts only loopback hosts on the configured port', () => {
@@ -53,5 +53,50 @@ describe('local server security', () => {
 
     assert.ok(hostBoundary >= 0, 'upgrade handler must reject a foreign Host');
     assert.ok(hostBoundary < socketClassification, 'Host boundary must run before socket classification');
+  });
+});
+
+describe('isSameOriginRequest', () => {
+  it('allows safe methods with no Origin (navigations, EventSource)', () => {
+    assert.equal(isSameOriginRequest({ method: 'GET', host: 'localhost:51230', origin: null }), true);
+    assert.equal(isSameOriginRequest({ method: 'HEAD', host: 'localhost:51230', origin: null }), true);
+  });
+
+  it('allows a state-changing request from the app window itself', () => {
+    assert.equal(isSameOriginRequest({
+      method: 'POST', host: 'localhost:51230', origin: 'http://localhost:51230',
+    }), true);
+  });
+
+  it('rejects a cross-site form POST, which arrives without a CORS preflight', () => {
+    assert.equal(isSameOriginRequest({
+      method: 'POST', host: 'localhost:51230', origin: 'https://evil.example',
+    }), false);
+  });
+
+  it('rejects a state-changing request with no Origin at all', () => {
+    assert.equal(isSameOriginRequest({ method: 'DELETE', host: 'localhost:51230', origin: null }), false);
+  });
+
+  it('rejects a different port on the same host', () => {
+    assert.equal(isSameOriginRequest({
+      method: 'POST', host: 'localhost:51230', origin: 'http://localhost:3000',
+    }), false);
+  });
+
+  it('rejects an https origin — the local server only ever speaks http', () => {
+    assert.equal(isSameOriginRequest({
+      method: 'PUT', host: 'localhost:51230', origin: 'https://localhost:51230',
+    }), false);
+  });
+
+  it('rejects a malformed Origin header', () => {
+    assert.equal(isSameOriginRequest({
+      method: 'PATCH', host: 'localhost:51230', origin: 'not a url',
+    }), false);
+  });
+
+  it('is case-insensitive about the method', () => {
+    assert.equal(isSameOriginRequest({ method: 'get', host: 'localhost:51230', origin: null }), true);
   });
 });

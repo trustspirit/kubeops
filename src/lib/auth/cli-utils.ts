@@ -1,14 +1,14 @@
 import { execFileSync } from 'child_process';
+import { isCliAvailable, resolveCli } from '../cli-path';
 
 /**
  * Find a CLI tool in PATH. Returns absolute path or null.
+ * Uses `where` on Windows and `which` elsewhere.
  */
 export function findCli(name: string): string | null {
-  try {
-    return execFileSync('which', [name], { encoding: 'utf-8', timeout: 5_000 }).trim().split('\n')[0] || null;
-  } catch {
-    return null;
-  }
+  if (!isCliAvailable(name)) return null;
+  const resolved = resolveCli(name, '');
+  return resolved || null;
 }
 
 /**

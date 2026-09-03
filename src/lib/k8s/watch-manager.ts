@@ -201,6 +201,11 @@ export class WatchManager {
       queryParams.resourceVersion = active.resourceVersion;
     }
 
+    // Capture the controller that is live *now*: `stopWatch` can run while the
+    // request below is still being established, and the entry would be gone
+    // from the map by the time we come back.
+    const abort = active.abort;
+
     try {
       const req = await watch.watch(
         watchPath,
@@ -235,6 +240,11 @@ export class WatchManager {
 
           const currentActive = this.watches.get(key);
           if (!currentActive) return;
+
+          if (!err && currentActive.resourceVersion) {
+            // Clean end of a healthy stream — restart promptly.
+            currentActive.backoffMs = MIN_BACKOFF;
+          }
 
           if (err) {
             const watchErr = err as { message?: string; statusCode?: number; code?: number };
@@ -272,14 +282,16 @@ export class WatchManager {
         },
       );
 
-      // Store the request so we can abort it
-      const currentActive = this.watches.get(key);
-      if (currentActive) {
-        // When abort is signalled, destroy the underlying request
-        currentActive.abort.signal.addEventListener('abort', () => {
-          try { req.abort(); } catch { /* already aborted */ }
-        }, { once: true });
+      // Wire abort → request teardown. If the watch was already stopped while
+      // `watch.watch` was in flight, the signal has fired and this aborts the
+      // request immediately instead of leaking the connection forever.
+      if (abort.signal.aborted || this.isShutdown || this.watches.get(key)?.abort !== abort) {
+        try { req.abort(); } catch { /* already aborted */ }
+        return;
       }
+      abort.signal.addEventListener('abort', () => {
+        try { req.abort(); } catch { /* already aborted */ }
+      }, { once: true });
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`[WatchManager] Failed to start watch for ${key}:`, errMsg);

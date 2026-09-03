@@ -1,8 +1,7 @@
 'use client';
-/* eslint-disable react-hooks/set-state-in-effect */
 
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
 import { useLogSearch } from '@/hooks/use-log-search';
 import { buildWebSocketUrl } from '@/lib/websocket-session';
@@ -10,19 +9,23 @@ import { canRetryStream, getReconnectDelay, isNearScrollBottom } from '@/lib/str
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Pause, Play, Download, Search, ChevronUp, ChevronDown, X, CaseSensitive, Regex } from 'lucide-react';
+import { ArrowLeft, Pause, Play, Download, Search, ChevronUp, ChevronDown, X, CaseSensitive, Regex, Scissors } from 'lucide-react';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
+import { LogBuffer } from '@/lib/log-buffer';
+import { downloadPodLogs } from '@/lib/log-download';
 import AnsiToHtml from 'ansi-to-html';
 
-const MAX_LOG_SIZE = 512 * 1024; // 512KB
+const MAX_LOG_SIZE = 512 * 1024; // 512KB retained in the viewer
 const MAX_RETRIES = 5;
+/** Repaint at most this often instead of on every incoming chunk. */
+const RENDER_INTERVAL_MS = 100;
 type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
 
-function trimLogs(logs: string): string {
-  if (logs.length <= MAX_LOG_SIZE) return logs;
-  const trimmed = logs.slice(logs.length - MAX_LOG_SIZE);
-  const firstNewline = trimmed.indexOf('\n');
-  return firstNewline >= 0 ? trimmed.slice(firstNewline + 1) : trimmed;
+const ANSI_OPTIONS = { fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true, stream: true } as const;
+
+function createLogBuffer(): LogBuffer {
+  const converter = new AnsiToHtml(ANSI_OPTIONS);
+  return new LogBuffer({ maxChars: MAX_LOG_SIZE, convert: (raw) => converter.toHtml(raw) });
 }
 
 export default function PodLogsPage() {
@@ -42,7 +45,10 @@ export default function PodLogsPage() {
   const containers = useMemo(() => pod?.spec?.containers || [], [pod]);
   const [container, setContainer] = useState('');
   const [follow, setFollow] = useState(true);
-  const [logs, setLogs] = useState('');
+  const [baseHtml, setBaseHtml] = useState('');
+  const [truncated, setTruncated] = useState(false);
+  const [hasOutput, setHasOutput] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [reconnectNonce, setReconnectNonce] = useState(0);
   const logRef = useRef<HTMLPreElement>(null);
@@ -52,15 +58,35 @@ export default function PodLogsPage() {
   const hasStreamedRef = useRef(false);
   const logTargetRef = useRef<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const converterRef = useRef(new AnsiToHtml({ fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true }));
+  const bufferRef = useRef<LogBuffer>(createLogBuffer());
+  const pendingRef = useRef('');
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const search = useLogSearch({
-    logs,
+    html: baseHtml,
     logRef,
     onScrollToMatch: () => setFollow(false),
   });
 
-   
+  const flushBuffer = useCallback(() => {
+    flushTimerRef.current = null;
+    const chunk = pendingRef.current;
+    if (!chunk) return;
+    pendingRef.current = '';
+
+    const buffer = bufferRef.current;
+    buffer.append(chunk);
+    setBaseHtml(buffer.html);
+    setTruncated(buffer.truncated);
+    setHasOutput(true);
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (flushTimerRef.current) return;
+    flushTimerRef.current = setTimeout(flushBuffer, RENDER_INTERVAL_MS);
+  }, [flushBuffer]);
+
+
   useEffect(() => {
     if (containers.length > 0 && !container) {
       setContainer(containers[0].name);
@@ -75,8 +101,11 @@ export default function PodLogsPage() {
       logTargetRef.current = logTarget;
       retryRef.current = 0;
       hasStreamedRef.current = false;
-      setLogs('');
-      converterRef.current = new AnsiToHtml({ fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true });
+      pendingRef.current = '';
+      bufferRef.current = createLogBuffer();
+      setBaseHtml('');
+      setTruncated(false);
+      setHasOutput(false);
     }
 
     let disposed = false;
@@ -105,11 +134,13 @@ export default function PodLogsPage() {
           try {
             const msg = JSON.parse(event.data);
             if (msg.type === 'error') {
-              setLogs(prev => trimLogs(prev + `\n[ERROR] ${msg.message}\n`));
+              pendingRef.current += `\n[ERROR] ${msg.message}\n`;
+              scheduleFlush();
               return;
             }
           } catch { /* not JSON, it's log data */ }
-          setLogs(prev => trimLogs(prev + event.data));
+          pendingRef.current += event.data;
+          scheduleFlush();
         };
         ws.onclose = (event) => {
           if (disposed) return;
@@ -142,21 +173,14 @@ export default function PodLogsPage() {
       }
       wsRef.current?.close();
       wsRef.current = null;
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+      pendingRef.current = '';
     };
-  }, [container, clusterId, namespace, podName, reconnectNonce]);
+  }, [container, clusterId, namespace, podName, reconnectNonce, scheduleFlush]);
 
-  // ANSI conversion + search highlighting
-  const [baseHtml, setBaseHtml] = useState('Connecting...');
-  useEffect(() => {
-    if (!logs) { setBaseHtml('Connecting...'); return; }
-    setBaseHtml(converterRef.current.toHtml(logs));
-  }, [logs]);
-
-  const { query, highlightHtml, open: openSearch } = search;
-  const logsHtml = useMemo(
-    () => (query ? highlightHtml(baseHtml) : baseHtml),
-    [baseHtml, query, highlightHtml]
-  );
+  const { open: openSearch, highlightedHtml } = search;
+  const logsHtml = hasOutput ? highlightedHtml : 'Connecting...';
 
   useEffect(() => {
     if (follow && logRef.current) {
@@ -177,14 +201,21 @@ export default function PodLogsPage() {
     return () => window.removeEventListener('keydown', handler);
   }, [openSearch]);
 
-  const handleDownload = () => {
-    const blob = new Blob([logs], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${podName}-${container}.log`;
-    a.click();
-    URL.revokeObjectURL(url);
+  // Fetch the complete log rather than saving the trimmed on-screen buffer.
+  const handleDownload = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await downloadPodLogs({
+        clusterId: decodeURIComponent(clusterId),
+        namespace,
+        podName,
+        container,
+        fallbackText: bufferRef.current.text,
+      });
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const scrollToBottom = () => {
@@ -229,10 +260,25 @@ export default function PodLogsPage() {
             {follow ? <Pause className="h-4 w-4 mr-1" /> : <Play className="h-4 w-4 mr-1" />}
             {follow ? 'Pause' : 'Follow'}
           </Button>
-          <Button variant="outline" size="sm" onClick={handleDownload}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownload}
+            disabled={downloading}
+            title="Download the pod's full log"
+          >
             <Download className="h-4 w-4 mr-1" />
-            Download
+            {downloading ? 'Downloading…' : 'Download'}
           </Button>
+          {truncated && (
+            <span
+              className="flex items-center gap-1 text-xs text-muted-foreground"
+              title={`Only the most recent ${Math.round(MAX_LOG_SIZE / 1024)}KB is kept in view. Download for the full log.`}
+            >
+              <Scissors className="h-3 w-3" />
+              Trimmed
+            </span>
+          )}
           <Button
             variant="outline"
             size="sm"

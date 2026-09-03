@@ -28,7 +28,7 @@ export default function MultiClusterOverviewPage() {
       {/* Header */}
       <header className="electron-header-inset flex h-14 items-center justify-between border-b px-4 shrink-0 drag-region">
         <div className="flex items-center gap-3 no-drag-region">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => router.push('/clusters')}>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => router.push('/clusters')} aria-label="Back to clusters">
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <h1 className="text-lg font-bold tracking-tight">Multi-Cluster Overview</h1>

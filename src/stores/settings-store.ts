@@ -12,6 +12,15 @@ interface SettingsState {
   authProviderConfigs: Record<string, Record<string, string>>;
   setAuthProviderConfig: (providerId: string, config: Record<string, string>) => void;
 
+  /**
+   * Run provider login automatically on app launch.
+   *
+   * Off by default: auto-login pops open a browser window, and doing that
+   * unprompted the first time someone opens the app is startling.
+   */
+  autoLoginOnLaunch: boolean;
+  setAutoLoginOnLaunch: (enabled: boolean) => void;
+
   // Manual cluster -> provider overrides
   clusterProviderOverrides: Record<string, string>;
   setClusterProviderOverride: (clusterId: string, providerId: string) => void;
@@ -31,6 +40,9 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({
           authProviderConfigs: { ...state.authProviderConfigs, [providerId]: config },
         })),
+
+      autoLoginOnLaunch: false,
+      setAutoLoginOnLaunch: (enabled) => set({ autoLoginOnLaunch: enabled }),
 
       clusterProviderOverrides: {},
       setClusterProviderOverride: (clusterId, providerId) =>

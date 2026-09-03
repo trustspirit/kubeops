@@ -75,7 +75,7 @@ export default function SecretDetailPage() {
   return (
     <div className="flex flex-col gap-4 p-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+        <Button variant="ghost" size="icon" onClick={() => router.back()} aria-label="Go back">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
@@ -108,10 +108,10 @@ export default function SecretDetailPage() {
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-sm font-medium">{key}</span>
                       <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyValue(value as string)} title="Copy decoded value">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyValue(value as string)} title="Copy decoded value" aria-label={`Copy decoded value of ${key}`}>
                           <Copy className="h-3.5 w-3.5" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => toggleReveal(key)} title={isRevealed ? 'Hide' : 'Reveal'}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => toggleReveal(key)} title={isRevealed ? 'Hide' : 'Reveal'} aria-label={`${isRevealed ? 'Hide' : 'Reveal'} value of ${key}`} aria-pressed={isRevealed}>
                           {isRevealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                         </Button>
                       </div>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { sanitizeServerError } from '@/lib/server-error';
 import { getContexts, loadKubeConfig, getClusterServer } from '@/lib/k8s/kubeconfig-manager';
 import { readKubeconfigRaw } from '@/lib/kubeconfig-editor';
 
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ contexts: contextList });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to load kubeconfig';
+    const message = sanitizeServerError(error, 'Failed to load kubeconfig');
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

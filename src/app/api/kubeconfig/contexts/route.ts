@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { sanitizeServerError } from '@/lib/server-error';
 import { listContexts, addContext } from '@/lib/kubeconfig-editor';
+import { invalidateKubeconfigDerivedCaches } from '@/lib/k8s/invalidate-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +10,7 @@ export async function GET() {
     const contexts = await listContexts();
     return NextResponse.json({ contexts });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to list contexts';
+    const message = sanitizeServerError(error, 'Failed to list contexts');
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -36,10 +38,11 @@ export async function POST(req: NextRequest) {
       clientCertificateData,
       clientKeyData,
     });
+    invalidateKubeconfigDerivedCaches();
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to add context';
+    const message = sanitizeServerError(error, 'Failed to add context');
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

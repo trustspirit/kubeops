@@ -81,7 +81,7 @@ export default function ArgoCDAppDetailPage() {
     return (
       <div className="flex flex-col gap-4 p-6">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.push(`/clusters/${clusterId}/argocd`)}>
+          <Button variant="ghost" size="icon" onClick={() => router.push(`/clusters/${clusterId}/argocd`)} aria-label="Go back">
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
@@ -113,7 +113,7 @@ export default function ArgoCDAppDetailPage() {
   return (
     <div className="flex flex-col gap-4 p-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => router.push(`/clusters/${clusterId}/argocd`)}>
+        <Button variant="ghost" size="icon" onClick={() => router.push(`/clusters/${clusterId}/argocd`)} aria-label="Go back">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <Layers3 className="h-5 w-5 text-muted-foreground" />

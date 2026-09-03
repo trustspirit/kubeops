@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { Loader2, RotateCcw } from 'lucide-react';
 
@@ -40,7 +40,8 @@ export function HelmRollbackDialog({
     try {
       await apiClient.post(
         `/api/clusters/${encodeURIComponent(clusterId)}/helm/releases/${encodeURIComponent(releaseName)}/rollback`,
-        { revision, namespace }
+        { revision, namespace },
+        { timeoutMs: LONG_RUNNING_TIMEOUT_MS },
       );
       toast.success(`Release "${releaseName}" rolled back to revision ${revision}`);
       onRolledBack?.();

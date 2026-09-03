@@ -10,6 +10,31 @@ export interface PanelTab {
   container: string;
 }
 
+export interface PanelTabTarget {
+  type: PanelTab['type'];
+  clusterId: string;
+  namespace: string;
+  podName: string;
+  container: string;
+}
+
+/**
+ * Identity of a panel tab. Cluster and namespace are part of the key: two pods
+ * can share a name across clusters or namespaces, and reusing a tab for them
+ * would show one cluster's output under another cluster's label.
+ */
+export function buildPanelTabId(target: PanelTabTarget): string {
+  return [target.type, target.clusterId, target.namespace, target.podName, target.container]
+    .map(encodeURIComponent)
+    .join('|');
+}
+
+/**
+ * Callers describe *what* they want to open; the id is always derived so it can
+ * never drift from the tab's real identity.
+ */
+export type PanelTabInput = Omit<PanelTab, 'id'> & { id?: string };
+
 interface PanelState {
   open: boolean;
   height: number;
@@ -17,7 +42,7 @@ interface PanelState {
   activeTabId: string | null;
   setOpen: (open: boolean) => void;
   setHeight: (height: number) => void;
-  addTab: (tab: PanelTab) => void;
+  addTab: (tab: PanelTabInput) => void;
   removeTab: (id: string) => void;
   setActiveTab: (id: string) => void;
   updateTab: (id: string, updates: Partial<Pick<PanelTab, 'podName' | 'container' | 'title'>>) => void;
@@ -35,15 +60,13 @@ export const usePanelStore = create<PanelState>()((set, get) => ({
 
   addTab: (tab) => {
     const { tabs } = get();
-    // If same tab already exists, just activate it
-    const existing = tabs.find(
-      (t) => t.type === tab.type && t.podName === tab.podName && t.container === tab.container
-    );
-    if (existing) {
-      set({ activeTabId: existing.id, open: true });
+    const id = buildPanelTabId(tab);
+    // If the same target is already open, just activate it.
+    if (tabs.some((t) => t.id === id)) {
+      set({ activeTabId: id, open: true });
       return;
     }
-    set({ tabs: [...tabs, tab], activeTabId: tab.id, open: true });
+    set({ tabs: [...tabs, { ...tab, id }], activeTabId: id, open: true });
   },
 
   removeTab: (id) => {
@@ -60,8 +83,27 @@ export const usePanelStore = create<PanelState>()((set, get) => ({
   setActiveTab: (id) => set({ activeTabId: id }),
 
   updateTab: (id, updates) => {
-    const { tabs } = get();
-    set({ tabs: tabs.map((t) => (t.id === id ? { ...t, ...updates } : t)) });
+    const { tabs, activeTabId } = get();
+    const target = tabs.find((t) => t.id === id);
+    if (!target) return;
+
+    const next = { ...target, ...updates };
+    // Switching pod/container changes the tab's identity, so the id has to move
+    // with it — otherwise a later addTab for the same target opens a duplicate.
+    const nextId = buildPanelTabId(next);
+    if (nextId !== target.id && tabs.some((t) => t.id !== id && t.id === nextId)) {
+      // Merging into an existing tab: drop this one and focus the other.
+      set({
+        tabs: tabs.filter((t) => t.id !== id),
+        activeTabId: activeTabId === id ? nextId : activeTabId,
+      });
+      return;
+    }
+
+    set({
+      tabs: tabs.map((t) => (t.id === id ? { ...next, id: nextId } : t)),
+      activeTabId: activeTabId === id ? nextId : activeTabId,
+    });
   },
 
   toggle: () => set((s) => ({ open: !s.open })),

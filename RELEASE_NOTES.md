@@ -1,3 +1,84 @@
+# v0.7.0 — Correctness, Safety & UX Pass
+
+A broad review-driven release. No new surface area; a lot of things that quietly
+did the wrong thing now do the right one.
+
+## Fixed
+
+- **Cascade delete honours the propagation policy.** Choosing "Orphan" or
+  "Foreground" in the delete dialog had no effect — every delete used the server
+  default. The selected policy is now sent and validated.
+- **Log and terminal tabs no longer collide across clusters.** Tab identity
+  ignored cluster and namespace, so opening logs for `web-0` in two clusters
+  reused one tab and showed the wrong cluster's output under the right label.
+- **A malformed log URL no longer takes the backend down.** An invalid
+  percent-escape threw out of the WebSocket handler and killed the server
+  process, leaving a dead window with no explanation.
+- **Cross-site requests to the local API are rejected.** Any page in any browser
+  on the machine could reach `http://localhost:51230` and trigger state-changing
+  requests without a CORS preflight. All non-GET API requests now require a
+  same-origin `Origin`.
+- **Port-forward processes are cleaned up on quit.** The shutdown hook was
+  reading an empty copy of the registry, so `kubectl port-forward` children
+  outlived the app and kept holding their ports.
+- **Watch streams no longer leak.** Unsubscribing while a watch was still being
+  established left the connection open to the API server forever.
+- **Windows and Linux CLI discovery works.** Tool lookup was hardcoded to
+  `which -a` with `/usr/local/bin` fallbacks, which made Helm unusable on
+  Windows. Lookup is now platform-aware.
+- **Kubeconfig edits take effect immediately.** Merging, adding, renaming or
+  deleting a context did not invalidate any of the caches, so the UI kept
+  serving pre-edit data for up to a minute.
+- **Only one KubeOps instance runs at a time**, and startup verifies that the
+  server on port 51230 is actually ours instead of loading whatever is there.
+- **Non-ASCII log output is no longer mangled.** Log chunks were decoded per
+  network chunk, splitting multi-byte characters.
+- **Log search counts match what is highlighted.** Matches were counted in the
+  raw log but highlighted in escaped HTML, so the "n of m" counter and the
+  navigation disagreed for anything containing `<`, `>` or `&`.
+- Resource kind labels no longer read "ingresse" or "networkpolicie".
+- "View Logs" / "Exec" report why they cannot open instead of doing nothing.
+
+## Improved
+
+- **Alert rules keep running app-wide.** They previously only evaluated while
+  you were looking at the cluster they targeted.
+- **Port forwards are polled**, and a tunnel that dies (pod restart, connection
+  drop) now says so instead of staying green.
+- **Downloading logs fetches the pod's full log** from the cluster rather than
+  silently saving the trimmed on-screen buffer, which is now marked as trimmed.
+- **Log rendering is incremental.** Each chunk is converted once instead of
+  re-parsing the whole 512 KB buffer on every frame.
+- **Cluster health checks respect their cache.** Two independent code paths were
+  re-probing every context in the kubeconfig every 30 seconds.
+- **Table state persists** — sorting, hidden columns, page size and density are
+  remembered per resource type.
+- **Bulk delete**: select rows and delete them together.
+- **Multi-document YAML** is supported in multi-cluster apply, with per-document
+  results.
+- **The command palette searches the whole list.** Namespaces were capped at 10
+  and objects at 50 *before* filtering, making the rest unreachable.
+- **Shortcut hints show `Ctrl` on Windows and Linux** instead of always `⌘`.
+- **Automatic sign-in on launch is now opt-in** (Settings → General → Sign-in);
+  it used to open a browser window unprompted on first run.
+- **The YAML editor** confirms before discarding edits, hides the server-owned
+  `status` block, and offers to reload when a save conflicts.
+- HTTP requests time out instead of spinning forever against an unreachable
+  cluster; long-running Helm and apply operations get a longer budget.
+- WebSocket streams apply backpressure; exec sessions have a server-side
+  keepalive so a dropped connection cannot strand a `kubectl exec`.
+- Accessibility: icon-only buttons have accessible names, and
+  `prefers-reduced-motion` is honoured.
+- Route-level error boundaries keep a failing view from blanking the whole app.
+- A failed macOS in-place update now restores the previous app bundle.
+
+## Developer
+
+- `npm test`, `npm run typecheck` and `npm run verify` exist; CI runs them on
+  every pull request and gates releases on them.
+- macOS Intel (`x64`) builds are produced again — the README documented them but
+  the build config only emitted `arm64`.
+
 # v0.6.0 — ArgoCD Login & Chart Sync
 
 ## What's New

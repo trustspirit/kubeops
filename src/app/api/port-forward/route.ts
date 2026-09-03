@@ -1,30 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { spawn, ChildProcess, execSync } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import {
   createPortForwardId,
   findAvailableLoopbackPort,
   validatePortForwardRequest,
 } from '@/lib/port-forward';
 import { waitForPortForwardReady } from '@/lib/port-forward-process';
+import { getForwards, killAllForwards, type PortForwardInfo } from '@/lib/port-forward-registry';
+import { resolveCli } from '@/lib/cli-path';
 import { sanitizeServerError } from '@/lib/server-error';
 
 export const dynamic = 'force-dynamic';
 
-interface PortForward {
-  id: string;
-  clusterId: string;
-  namespace: string;
-  resourceType: string;
-  resourceName: string;
-  containerPort: number;
-  localPort: number;
-  status: 'starting' | 'active' | 'error';
-  error?: string;
-  pid?: number;
-}
+type PortForward = PortForwardInfo;
 
-// Server-side state for active port forwards
-export const activeForwards = new Map<string, { info: PortForward; proc: ChildProcess }>();
+// Shared across the bundled server and the Next-loaded route module.
+const activeForwards = getForwards();
 const pendingForwardIds = new Set<string>();
 const pendingLocalPorts = new Set<number>();
 let portSelectionQueue = Promise.resolve();
@@ -55,23 +46,12 @@ async function reserveAvailableLocalPort(preferred: number): Promise<number> {
 
 /** Kill all active port forward processes. Called on server shutdown. */
 export function cleanupAllForwards() {
-  for (const [, { proc }] of activeForwards) {
-    try { proc.kill(); } catch { /* ignore */ }
-  }
-  activeForwards.clear();
+  killAllForwards();
   pendingForwardIds.clear();
   pendingLocalPorts.clear();
 }
 
-// Resolve kubectl path
-let kubectlPath = '/usr/local/bin/kubectl';
-try {
-  const paths = execSync('which -a kubectl', { encoding: 'utf-8' }).trim().split('\n');
-  kubectlPath = paths.find(p => !p.includes(' ') && !p.includes('.rd/bin'))
-    || paths.find(p => !p.includes(' '))
-    || paths[0]
-    || kubectlPath;
-} catch { /* use default */ }
+const kubectlPath = resolveCli('kubectl');
 
 // GET - list active port forwards
 export async function GET() {

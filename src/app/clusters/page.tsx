@@ -40,6 +40,7 @@ export default function ClustersPage() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const clusterProviderOverrides = useSettingsStore((state) => state.clusterProviderOverrides);
+  const autoLoginOnLaunch = useSettingsStore((state) => state.autoLoginOnLaunch);
   const { providers } = useAuthProviders();
   const { login: providerLogin } = useProviderLogin();
   const loginOperations = useProviderLoginOperations();
@@ -147,8 +148,10 @@ export default function ClustersPage() {
     (async () => {
       const statuses = await refreshProviderStatuses(providersRef.current);
 
-      // Auto-login once per session for unauthenticated providers
-      if (!autoLoginDone && statuses) {
+      // Auto-login once per session for unauthenticated providers.
+      // Opt-in only: launching the app should not pop a browser window at
+      // someone who never asked for it (Settings → General → Sign-in).
+      if (autoLoginOnLaunch && !autoLoginDone && statuses) {
         autoLoginDone = true;
         const available = providersRef.current.filter(p => p.available);
         for (const p of available) {
@@ -170,7 +173,7 @@ export default function ClustersPage() {
     const id = setInterval(() => refreshProviderStatuses(providersRef.current), 60_000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [providers.length, refreshProviderStatuses, handleProviderLogin]);
+  }, [providers.length, refreshProviderStatuses, handleProviderLogin, autoLoginOnLaunch]);
 
   const { filtered, allTags, grouped, hasGroups } = useClustersFiltering({
     clusters,

@@ -128,13 +128,19 @@ export function useWatch(clusterId: string | null) {
               try { cb(msg.event); } catch { /* ignore */ }
             }
           }
-        } else if (msg.type === 'error' && msg.event) {
-          // Propagate error events to subscribers.
+        } else if (msg.type === 'error') {
+          // Server-side errors may arrive without a payload (for example when
+          // the socket shed events under backpressure). Synthesize one so
+          // subscribers still know to refetch instead of silently drifting.
           const key = subKey(msg.resourceType, msg.namespace);
           const sub = subscriptionsRef.current.get(key);
+          const event: WatchEvent = msg.event ?? {
+            type: 'ERROR',
+            object: { message: msg.error || 'Watch stream error' },
+          };
           if (sub) {
             for (const cb of sub.callbacks) {
-              try { cb(msg.event); } catch { /* ignore */ }
+              try { cb(event); } catch { /* ignore */ }
             }
           }
         }

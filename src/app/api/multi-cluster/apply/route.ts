@@ -22,6 +22,15 @@ interface ApplyResult {
   namespace: string;
   status: 'success' | 'error';
   message?: string;
+  /** Identifies which document in a multi-document manifest this result is for. */
+  resource?: string;
+}
+
+/** Upper bound so one paste cannot fan out into an unbounded number of writes. */
+const MAX_DOCUMENTS = 50;
+
+function describeResource(resource: k8s.KubernetesObject): string {
+  return `${resource.kind}/${resource.metadata?.name}`;
 }
 
 const CLUSTER_SCOPED_KINDS = new Set([
@@ -148,6 +157,52 @@ async function applyToTarget(
   }
 }
 
+interface ParsedManifest {
+  ok: true;
+  documents: k8s.KubernetesObject[];
+}
+
+interface ManifestError {
+  ok: false;
+  error: string;
+}
+
+/**
+ * Parses a manifest that may contain several `---`-separated documents.
+ *
+ * `yaml.load` only accepts a single document and throws on anything else, so
+ * pasting the multi-document output of `kubectl get -o yaml` or a Helm template
+ * used to fail with an opaque "expected a single document" error.
+ */
+function parseManifest(yamlStr: string): ParsedManifest | ManifestError {
+  let raw: unknown[];
+  try {
+    raw = yaml.loadAll(yamlStr);
+  } catch (e: unknown) {
+    return { ok: false, error: `Invalid YAML: ${(e as { message?: string }).message}` };
+  }
+
+  const documents = raw.filter((doc): doc is k8s.KubernetesObject => (
+    doc !== null && doc !== undefined && typeof doc === 'object'
+  ));
+
+  if (documents.length === 0) {
+    return { ok: false, error: 'YAML must contain at least one Kubernetes resource object' };
+  }
+  if (documents.length > MAX_DOCUMENTS) {
+    return { ok: false, error: `Too many documents (${documents.length}); the limit is ${MAX_DOCUMENTS}` };
+  }
+
+  for (const [index, resource] of documents.entries()) {
+    const where = documents.length > 1 ? ` (document ${index + 1})` : '';
+    if (!resource.kind) return { ok: false, error: `Resource must have a "kind" field${where}` };
+    if (!resource.apiVersion) return { ok: false, error: `Resource must have an "apiVersion" field${where}` };
+    if (!resource.metadata?.name) return { ok: false, error: `Resource must have a "metadata.name" field${where}` };
+  }
+
+  return { ok: true, documents };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body: ApplyRequest = await req.json();
@@ -166,35 +221,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Action must be "apply" or "delete"' }, { status: 400 });
     }
 
-    // Parse and validate YAML
-    let resource: k8s.KubernetesObject;
-    try {
-      resource = yaml.load(yamlStr) as k8s.KubernetesObject;
-    } catch (e: unknown) {
-      const yamlErr = e as { message?: string };
-      return NextResponse.json({ error: `Invalid YAML: ${yamlErr.message}` }, { status: 400 });
+    const parsed = parseManifest(yamlStr);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
+    const { documents } = parsed;
+    const multiDocument = documents.length > 1;
 
-    if (!resource || typeof resource !== 'object') {
-      return NextResponse.json({ error: 'YAML must be a valid Kubernetes resource object' }, { status: 400 });
-    }
-
-    if (!resource.kind) {
-      return NextResponse.json({ error: 'Resource must have a "kind" field' }, { status: 400 });
-    }
-
-    if (!resource.apiVersion) {
-      return NextResponse.json({ error: 'Resource must have an "apiVersion" field' }, { status: 400 });
-    }
-
-    if (!resource.metadata?.name) {
-      return NextResponse.json({ error: 'Resource must have a "metadata.name" field' }, { status: 400 });
-    }
-
-    // Apply to all targets in parallel
-    const results = await Promise.all(
-      targets.map((target) => applyToTarget(target, resource, action, dryRun))
-    );
+    // Fan out across targets in parallel, but keep the documents in manifest
+    // order within a target so a Namespace declared first is created first.
+    const results = (await Promise.all(
+      targets.map(async (target) => {
+        const perTarget: ApplyResult[] = [];
+        for (const resource of documents) {
+          const result = await applyToTarget(target, resource, action, dryRun);
+          perTarget.push(multiDocument ? { ...result, resource: describeResource(resource) } : result);
+        }
+        return perTarget;
+      }),
+    )).flat();
 
     const succeeded = results.filter((r) => r.status === 'success').length;
     const failed = results.filter((r) => r.status === 'error').length;
@@ -205,6 +250,7 @@ export async function POST(req: NextRequest) {
         succeeded,
         failed,
         total: results.length,
+        documents: documents.length,
       },
     });
   } catch (error: unknown) {

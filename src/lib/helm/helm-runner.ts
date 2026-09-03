@@ -1,14 +1,7 @@
-import { execSync, spawn } from 'child_process';
-import { isAbsolute } from 'path';
+import { execFileSync, spawn } from 'child_process';
+import { resolveCli } from '../cli-path';
 
-let helmPath = '/usr/local/bin/helm';
-try {
-  const paths = execSync('which -a helm', { encoding: 'utf-8' }).trim().split('\n');
-  const validPaths = paths.filter(p =>
-    isAbsolute(p) && !p.includes(' ') && !p.includes('..') && !p.includes('.rd/bin')
-  );
-  helmPath = validPaths[0] || '/usr/local/bin/helm';
-} catch { /* use default */ }
+const helmPath = resolveCli('helm');
 
 const DEFAULT_TIMEOUT = 120_000; // 2 minutes
 
@@ -62,7 +55,8 @@ export async function runHelm(
 
 export function isHelmAvailable(): boolean {
   try {
-    execSync(`${helmPath} version --short`, { encoding: 'utf-8', timeout: 5000 });
+    // execFileSync, not execSync: no shell means no interpolation of helmPath.
+    execFileSync(helmPath, ['version', '--short'], { encoding: 'utf-8', timeout: 5000 });
     return true;
   } catch {
     return false;

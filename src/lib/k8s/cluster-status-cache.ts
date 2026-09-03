@@ -26,7 +26,23 @@ export function isStatusStale(contextName: string): boolean {
   return !entry || Date.now() - entry.checkedAt > STATUS_CACHE_TTL;
 }
 
-export async function checkClusterStatus(contextName: string): Promise<StatusEntry> {
+export interface CheckOptions {
+  /** Re-check even if a fresh cached result exists (explicit user refresh). */
+  force?: boolean;
+}
+
+export async function checkClusterStatus(
+  contextName: string,
+  options: CheckOptions = {},
+): Promise<StatusEntry> {
+  // Respect the TTL. Without this the cache was written but never read, so
+  // every 30s poll re-probed every context in the kubeconfig — one API call
+  // and, for exec-based auth, one credential-plugin process per cluster.
+  if (!options.force) {
+    const cached = statusCache.get(contextName);
+    if (cached && Date.now() - cached.checkedAt <= STATUS_CACHE_TTL) return cached;
+  }
+
   // Teleport clusters: NEVER invoke the K8s API during background health checks.
   // Even with a valid session, the exec plugin (tsh kube credentials) can trigger
   // browser-based per-cluster re-authorization in Teleport 14+, opening a new
@@ -43,12 +59,18 @@ export async function checkClusterStatus(contextName: string): Promise<StatusEnt
 
   try {
     const api = getCoreV1Api(contextName);
-    await Promise.race([
-      api.getAPIResources(),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Connection timeout')), HEALTH_CHECK_TIMEOUT)
-      ),
-    ]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        api.getAPIResources(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Connection timeout')), HEALTH_CHECK_TIMEOUT);
+        }),
+      ]);
+    } finally {
+      // Otherwise every check leaves a live 5s timer behind.
+      if (timer) clearTimeout(timer);
+    }
     const entry: StatusEntry = { status: 'connected', checkedAt: Date.now() };
     statusCache.set(contextName, entry);
     return entry;
@@ -88,14 +110,17 @@ async function pLimit<T>(tasks: (() => Promise<T>)[], concurrency: number): Prom
 
 const MAX_CONCURRENT_CHECKS = 5;
 
-export async function refreshStatusesInBackground(contextNames: string[]): Promise<void> {
+export async function refreshStatusesInBackground(
+  contextNames: string[],
+  options: CheckOptions = {},
+): Promise<void> {
   if (refreshInProgress) return;
   refreshInProgress = true;
   try {
     // Limit concurrency to prevent overwhelming exec credential plugins
     // (e.g. tsh kube credentials) when many Teleport clusters check at once.
     await pLimit(
-      contextNames.map((name) => () => checkClusterStatus(name)),
+      contextNames.map((name) => () => checkClusterStatus(name, options)),
       MAX_CONCURRENT_CHECKS,
     );
   } finally {

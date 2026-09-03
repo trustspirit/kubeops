@@ -203,6 +203,7 @@ export function CrListPage() {
         columns={columns}
         data={items}
         searchPlaceholder={`Search ${kindLabel.toLowerCase()}...`}
+        viewId={`custom-resources:${crd?.kind ?? kindLabel}`}
       />
     </div>
   );

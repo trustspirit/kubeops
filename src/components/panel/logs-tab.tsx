@@ -1,11 +1,10 @@
 'use client';
-/* eslint-disable react-hooks/set-state-in-effect */
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Pause, Play, Download, ArrowDown, Search, ChevronUp, ChevronDown, X, CaseSensitive, Regex } from 'lucide-react';
+import { Pause, Play, Download, ArrowDown, Search, ChevronUp, ChevronDown, X, CaseSensitive, Regex, Scissors } from 'lucide-react';
 import AnsiToHtml from 'ansi-to-html';
 import type { PanelTab } from '@/stores/panel-store';
 import { usePanelStore } from '@/stores/panel-store';
@@ -13,18 +12,17 @@ import { useResourceList } from '@/hooks/use-resource-list';
 import { useLogSearch } from '@/hooks/use-log-search';
 import { buildWebSocketUrl } from '@/lib/websocket-session';
 import { canRetryStream, getReconnectDelay, isNearScrollBottom } from '@/lib/stream-policy';
+import { LogBuffer } from '@/lib/log-buffer';
+import { downloadPodLogs } from '@/lib/log-download';
 import type { KubeResource } from '@/types/resource';
 
-const MAX_LOG_SIZE = 512 * 1024; // 512KB
+const MAX_LOG_SIZE = 512 * 1024; // 512KB retained in the viewer
 const MAX_RETRIES = 5;
+/** Repaint at most this often; 60fps repaints of a 512KB pre element are wasted work. */
+const RENDER_INTERVAL_MS = 100;
 type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
 
-function trimLogs(logs: string): string {
-  if (logs.length <= MAX_LOG_SIZE) return logs;
-  const trimmed = logs.slice(logs.length - MAX_LOG_SIZE);
-  const firstNewline = trimmed.indexOf('\n');
-  return firstNewline >= 0 ? trimmed.slice(firstNewline + 1) : trimmed;
-}
+const ANSI_OPTIONS = { fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true, stream: true } as const;
 
 interface LogsTabProps {
   tab: PanelTab;
@@ -35,7 +33,10 @@ export function LogsTab({ tab, active = true }: LogsTabProps) {
   const { clusterId, namespace, podName, container } = tab;
   const updateTab = usePanelStore((s) => s.updateTab);
   const [follow, setFollow] = useState(true);
-  const [logs, setLogs] = useState('');
+  const [baseHtml, setBaseHtml] = useState('');
+  const [truncated, setTruncated] = useState(false);
+  const [hasOutput, setHasOutput] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [reconnectNonce, setReconnectNonce] = useState(0);
   const [podRecreated, setPodRecreated] = useState(false);
@@ -47,12 +48,18 @@ export function LogsTab({ tab, active = true }: LogsTabProps) {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const logTargetRef = useRef<string | null>(null);
 
-  // Batching: buffer incoming chunks between animation frames
-  const bufferRef = useRef('');
-  const rafRef = useRef<number>(0);
+  // Batching: buffer incoming chunks between repaints
+  const pendingRef = useRef('');
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Per-instance converter (fresh state per pod/container switch)
-  const converterRef = useRef(new AnsiToHtml({ fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true }));
+  // Per-instance converter (fresh state per pod/container switch). `stream: true`
+  // keeps ANSI state across calls so each chunk can be converted exactly once.
+  const bufferRef = useRef<LogBuffer>(
+    new LogBuffer({
+      maxChars: MAX_LOG_SIZE,
+      convert: (raw) => new AnsiToHtml(ANSI_OPTIONS).toHtml(raw),
+    }),
+  );
 
   // Fetch all pods in namespace to find siblings
   const { data: podsData } = useResourceList({
@@ -98,17 +105,28 @@ export function LogsTab({ tab, active = true }: LogsTabProps) {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const search = useLogSearch({
-    logs,
+    html: baseHtml,
     logRef,
     onScrollToMatch: () => setFollow(false),
   });
 
   const flushBuffer = useCallback(() => {
-    const chunk = bufferRef.current;
+    flushTimerRef.current = null;
+    const chunk = pendingRef.current;
     if (!chunk) return;
-    bufferRef.current = '';
-    setLogs((prev) => trimLogs(prev + chunk));
+    pendingRef.current = '';
+
+    const buffer = bufferRef.current;
+    buffer.append(chunk);
+    setBaseHtml(buffer.html);
+    setTruncated(buffer.truncated);
+    setHasOutput(true);
   }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (flushTimerRef.current) return;
+    flushTimerRef.current = setTimeout(flushBuffer, RENDER_INTERVAL_MS);
+  }, [flushBuffer]);
 
   useEffect(() => {
     if (!container || !active) return;
@@ -118,9 +136,16 @@ export function LogsTab({ tab, active = true }: LogsTabProps) {
       logTargetRef.current = logTarget;
       retryRef.current = 0;
       hasStreamedRef.current = false;
-      bufferRef.current = '';
-      setLogs('');
-      converterRef.current = new AnsiToHtml({ fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true });
+      pendingRef.current = '';
+      // A fresh converter, so ANSI state from the previous container does not
+      // bleed into the new stream.
+      bufferRef.current = new LogBuffer({
+        maxChars: MAX_LOG_SIZE,
+        convert: ((converter) => (raw: string) => converter.toHtml(raw))(new AnsiToHtml(ANSI_OPTIONS)),
+      });
+      setBaseHtml('');
+      setTruncated(false);
+      setHasOutput(false);
     }
 
     let disposed = false;
@@ -150,23 +175,13 @@ export function LogsTab({ tab, active = true }: LogsTabProps) {
           try {
             const msg = JSON.parse(event.data);
             if (msg.type === 'error') {
-              bufferRef.current += `\n[ERROR] ${msg.message}\n`;
-              if (!rafRef.current) {
-                rafRef.current = requestAnimationFrame(() => {
-                  rafRef.current = 0;
-                  flushBuffer();
-                });
-              }
+              pendingRef.current += `\n[ERROR] ${msg.message}\n`;
+              scheduleFlush();
               return;
             }
           } catch { /* not JSON */ }
-          bufferRef.current += event.data;
-          if (!rafRef.current) {
-            rafRef.current = requestAnimationFrame(() => {
-              rafRef.current = 0;
-              flushBuffer();
-            });
-          }
+          pendingRef.current += event.data;
+          scheduleFlush();
         };
         ws.onclose = (event) => {
           if (disposed) return;
@@ -199,25 +214,14 @@ export function LogsTab({ tab, active = true }: LogsTabProps) {
       }
       ws?.close();
       if (wsRef.current === ws) wsRef.current = null;
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-      bufferRef.current = '';
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+      pendingRef.current = '';
     };
-  }, [container, clusterId, namespace, podName, flushBuffer, active, reconnectNonce]);
+  }, [container, clusterId, namespace, podName, scheduleFlush, active, reconnectNonce]);
 
-  // Memoize ANSI conversion — only re-runs when logs change
-  const [baseHtml, setBaseHtml] = useState('Connecting...');
-  useEffect(() => {
-    if (!logs) { setBaseHtml('Connecting...'); return; }
-    setBaseHtml(converterRef.current.toHtml(logs));
-  }, [logs]);
-
-  // Apply search highlighting on top of ANSI-converted HTML
-  const { query, highlightHtml, open: openSearch } = search;
-  const logsHtml = useMemo(
-    () => (query ? highlightHtml(baseHtml) : baseHtml),
-    [baseHtml, query, highlightHtml]
-  );
+  const { open: openSearch, highlightedHtml } = search;
+  const logsHtml = hasOutput ? highlightedHtml : 'Connecting...';
 
   useEffect(() => {
     if (follow && logRef.current) {
@@ -238,14 +242,22 @@ export function LogsTab({ tab, active = true }: LogsTabProps) {
     return () => window.removeEventListener('keydown', handler);
   }, [openSearch]);
 
-  const handleDownload = () => {
-    const blob = new Blob([logs], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${podName}-${container}.log`;
-    a.click();
-    URL.revokeObjectURL(url);
+  // Downloading the on-screen buffer would silently hand the user a truncated
+  // file, so fetch the pod's full log from the API instead.
+  const handleDownload = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await downloadPodLogs({
+        clusterId: decodeURIComponent(clusterId),
+        namespace,
+        podName,
+        container,
+        fallbackText: bufferRef.current.text,
+      });
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const scrollToBottom = () => {
@@ -295,7 +307,8 @@ export function LogsTab({ tab, active = true }: LogsTabProps) {
               onClick={() => {
                 podUidRef.current = currentPodUid;
                 setPodRecreated(false);
-                setLogs((previous) => `${previous}\n--- following recreated pod ---\n`);
+                pendingRef.current += '\n--- following recreated pod ---\n';
+                flushBuffer();
                 hasStreamedRef.current = true;
                 setReconnectNonce((value) => value + 1);
               }}
@@ -312,10 +325,26 @@ export function LogsTab({ tab, active = true }: LogsTabProps) {
           <ArrowDown className="h-3 w-3 mr-1" />
           Bottom
         </Button>
-        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={handleDownload}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-xs"
+          onClick={handleDownload}
+          disabled={downloading}
+          title="Download the pod's full log"
+        >
           <Download className="h-3 w-3 mr-1" />
-          Download
+          {downloading ? 'Downloading…' : 'Download'}
         </Button>
+        {truncated && (
+          <span
+            className="flex items-center gap-1 text-xs text-muted-foreground"
+            title={`Only the most recent ${Math.round(MAX_LOG_SIZE / 1024)}KB is kept in view. Download for the full log.`}
+          >
+            <Scissors className="h-3 w-3" />
+            Trimmed
+          </span>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -387,8 +416,15 @@ export function LogsTab({ tab, active = true }: LogsTabProps) {
               }
             }}
             placeholder="Search logs..."
+            aria-label="Search logs"
+            aria-invalid={Boolean(search.regexError)}
             className="h-6 text-xs flex-1 min-w-0 border-none shadow-none focus-visible:ring-0 px-1"
           />
+          {search.regexError && (
+            <span className="text-xs text-destructive whitespace-nowrap shrink-0" role="alert">
+              Invalid regex
+            </span>
+          )}
           <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
             {search.query ? `${search.matchCount > 0 ? search.currentIndex + 1 : 0}/${search.matchCount}` : ''}
           </span>

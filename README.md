@@ -44,8 +44,8 @@ Download from the **[Releases](https://github.com/trustspirit/kubeops/releases/l
 | --------------------- | ----------------------------- |
 | macOS (Apple Silicon) | `KubeOps-{version}-arm64.dmg` |
 | macOS (Intel)         | `KubeOps-{version}-x64.dmg`   |
-| Linux                 | `KubeOps-{version}.AppImage`  |
-| Windows               | `KubeOps-{version}.exe`       |
+| Linux (x64)           | `KubeOps-{version}.AppImage`  |
+| Windows (x64)         | `KubeOps-{version}.exe`       |
 
 > If macOS shows "developer cannot be verified", run: `xattr -cr /Applications/KubeOps.app`
 
@@ -136,10 +136,13 @@ Interactive flowchart visualizing resource relationships: Ingress → Service �
 
 Every resource list row has a `...` context menu for common operations without navigating to the detail page:
 
-- **Pods** — View Logs, Exec, Delete
+- **Pods** — View Logs, Exec (with a container picker for multi-container pods), Debug, Delete
 - **Deployments / StatefulSets** — Restart, Scale, Delete
 - **DaemonSets** — Restart, Delete
 - **All resources** — Delete, Compare (cross-cluster diff)
+
+Select rows with the checkbox column to delete several resources at once. Table
+sorting, hidden columns, page size and density are remembered per resource type.
 
 ### Live Status Display
 
@@ -151,7 +154,7 @@ Every resource list features searchable, sortable tables with health status badg
 
 ### Pod Terminal & Logs
 
-A resizable bottom panel supports multiple concurrent sessions as tabs. Full PTY-based terminal via `kubectl exec` with keyboard input and resizing. Real-time log streaming with pause/follow toggle, jump-to-bottom, and download. **Log Search** (`Cmd+F` / `Ctrl+F`) with match highlighting, match counter, prev/next navigation, case sensitivity toggle, and regex mode. Sessions persist across page navigation.
+A resizable bottom panel supports multiple concurrent sessions as tabs. Full PTY-based terminal via `kubectl exec` with keyboard input and resizing. Real-time log streaming with pause/follow toggle and jump-to-bottom. The viewer keeps the most recent 512 KB in memory and marks the buffer as `Trimmed` when older output scrolls off; **Download** always fetches the pod's complete log from the cluster, not just what is on screen. **Log Search** (`Cmd+F` / `Ctrl+F`) with match highlighting, match counter, prev/next navigation, case sensitivity toggle, and regex mode. Sessions persist across page navigation and are keyed per cluster, namespace, pod and container, so same-named pods never share a tab.
 
 <!-- Screenshot: Terminal & Logs -->
 
@@ -192,7 +195,7 @@ Four viewing modes for every resource manifest:
 
 ### Command Palette
 
-Press `Cmd+K` (or `Ctrl+K`) to open a fuzzy-search palette. Quickly jump to clusters (with connection status), namespaces, or any resource type.
+Press `Cmd+K` (`Ctrl+K` on Windows and Linux) to open a fuzzy-search palette. Quickly jump to clusters (with connection status), namespaces, or any resource type. Results are filtered across the full list, not just the first page of it.
 
 <!-- Screenshot: Command Palette -->
 
@@ -271,13 +274,20 @@ When a provider is installed and authenticated, the header shows the logged-in u
 
 ![Provider Configuration](docs/screenshots/settings-auth-provider-config.png)
 
+### Sign-in Behaviour
+
+KubeOps never signs you in automatically on launch unless you ask it to — automatic
+sign-in opens a browser window, which is a surprising thing for an app to do at
+startup. Turn it on under **Settings → General → Sign-in**, or use the provider
+button in the header when you want to authenticate.
+
 ### Real-time Watch Updates
 
 Resource lists update in real-time via K8s Watch API over WebSocket. A connection status indicator in the header shows the current state (Live / Reconnecting / Polling mode). Falls back to periodic polling when WebSocket is unavailable.
 
 ### Custom Alert Rules
 
-Define alert rules to monitor resource status changes, restart counts, CPU/memory thresholds, or event patterns. Alerts trigger desktop notifications and in-app toasts. Manage rules and view alert history from Settings.
+Define alert rules to monitor resource status changes, restart counts, CPU/memory thresholds, or event patterns. Alerts trigger desktop notifications and in-app toasts. Rules keep evaluating for every cluster they target while KubeOps is open — you do not have to be looking at that cluster. Manage rules and view alert history from Settings.
 
 ### Event Timeline
 
@@ -319,7 +329,7 @@ Before deleting a resource, see all dependent resources that will be cascade-del
 
 ### Multi-cluster Apply
 
-Apply a single YAML to multiple clusters simultaneously. Stepper dialog with YAML editor, target selection, dry-run validation, and per-target progress tracking.
+Apply a YAML manifest to multiple clusters simultaneously. Multi-document manifests (`---` separated) are supported and reported per document. Stepper dialog with YAML editor, target selection, dry-run validation, and per-target progress tracking.
 
 ### Network Policy Topology
 
@@ -348,13 +358,16 @@ npm run electron:dev
 
 The app opens automatically once the dev server is ready (port 51230).
 
-#### Mock Mode
-
-Run without a real cluster using built-in mock data (3 clusters, various pod states, warning events):
+### Checks
 
 ```bash
-npm run dev:mock     # http://localhost:51230
+npm run typecheck    # tsc --noEmit
+npm run lint         # eslint
+npm test             # node:test suite
+npm run verify       # all three, in order
 ```
+
+CI runs `verify` on every pull request and gates releases on it.
 
 ### Build
 
@@ -378,6 +391,8 @@ Output is written to `dist-electron/`.
 | `Cmd+F` / `Ctrl+F` | Search logs                         |
 | `Cmd+S` / `Ctrl+S` | Review changes (edit mode)          |
 | `Cmd+S` / `Ctrl+S` | Apply changes (review mode)         |
+
+On Windows and Linux the in-app hints show `Ctrl` rather than `⌘`.
 
 ---
 

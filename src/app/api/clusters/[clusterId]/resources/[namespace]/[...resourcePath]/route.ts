@@ -22,6 +22,14 @@ function extractK8sError(error: unknown): { status: number; message: string } {
   return { status, message };
 }
 
+/**
+ * Garbage-collection policies the K8s API accepts on a delete. Anything else is
+ * rejected rather than silently falling back to the server default — the UI
+ * lets the user pick "Orphan", and quietly cascading instead would be worse
+ * than refusing.
+ */
+const PROPAGATION_POLICIES = new Set(['Foreground', 'Background', 'Orphan']);
+
 const API_CLASS_MAP: Record<string, K8sApiConstructor> = {
   CoreV1Api: k8s.CoreV1Api,
   AppsV1Api: k8s.AppsV1Api,
@@ -205,11 +213,20 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: `Cannot delete resource type: ${resourceType}` }, { status: 400 });
   }
 
+  const propagationPolicy = new URL(req.url).searchParams.get('propagationPolicy') ?? undefined;
+  if (propagationPolicy !== undefined && !PROPAGATION_POLICIES.has(propagationPolicy)) {
+    return NextResponse.json(
+      { error: `Invalid propagationPolicy: ${propagationPolicy}` },
+      { status: 400 },
+    );
+  }
+
   try {
     const client = getClient(contextName, config.apiClass);
 
     const args: Record<string, string> = { name: resourceName };
     if (config.namespaced) args.namespace = namespace;
+    if (propagationPolicy) args.propagationPolicy = propagationPolicy;
     const result = await client[config.deleteFn](args);
     return NextResponse.json(result);
   } catch (error: unknown) {

@@ -120,6 +120,7 @@ export default function HelmReleasesPage() {
         columns={clickableColumns}
         data={releases}
         searchPlaceholder="Search releases..."
+        viewId="helm:releases"
       />
 
       <HelmInstallDialog

@@ -36,7 +36,7 @@ export function useClusters() {
 
   // Stream health status updates — each cluster status arrives as its check completes
   // silent=true: background refresh — don't show loading indicators, just swap data
-  const startStatusStream = useCallback((silent = false) => {
+  const startStatusStream = useCallback((silent = false, force = false) => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
@@ -46,7 +46,7 @@ export function useClusters() {
       setIsCheckingStatus(true);
       setCheckedClusters(new Set());
     }
-    const es = new EventSource('/api/clusters/status');
+    const es = new EventSource(`/api/clusters/status${force ? '?force=1' : ''}`);
     eventSourceRef.current = es;
 
     es.onmessage = (event: MessageEvent) => {
@@ -152,8 +152,10 @@ export function useClusters() {
       hasLoadedOnceRef.current = true;
 
       if (isFirstLoad || isManualRefreshRef.current) {
+        const wasManual = isManualRefreshRef.current;
         isManualRefreshRef.current = false;
-        startStatusStream(false);
+        // Only a manual refresh bypasses the server-side status cache.
+        startStatusStream(false, wasManual);
       } else {
         startStatusStream(true);
       }

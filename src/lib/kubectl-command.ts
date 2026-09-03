@@ -42,8 +42,24 @@ export function singularize(resourceType: string): string {
     events: 'event',
     endpoints: 'endpoints',
     namespaces: 'namespace',
+    persistentvolumes: 'persistentvolume',
+    persistentvolumeclaims: 'persistentvolumeclaim',
+    resourcequotas: 'resourcequota',
+    limitranges: 'limitrange',
+    horizontalpodautoscalers: 'horizontalpodautoscaler',
+    verticalpodautoscalers: 'verticalpodautoscaler',
+    poddisruptionbudgets: 'poddisruptionbudget',
+    storageclasses: 'storageclass',
+    customresourcedefinitions: 'customresourcedefinition',
   };
-  return map[resourceType] || resourceType;
+  if (map[resourceType]) return map[resourceType];
+
+  // Fall back to English plural rules rather than chopping the last character,
+  // which turns "ingresses" into "ingresse" and "policies" into "policie".
+  if (/(ses|xes|zes|ches|shes)$/.test(resourceType)) return resourceType.slice(0, -2);
+  if (/ies$/.test(resourceType)) return `${resourceType.slice(0, -3)}y`;
+  if (/[^s]s$/.test(resourceType)) return resourceType.slice(0, -1);
+  return resourceType;
 }
 
 export function kubectlGet(

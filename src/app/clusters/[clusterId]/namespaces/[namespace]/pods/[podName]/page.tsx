@@ -180,7 +180,7 @@ export default function PodDetailPage() {
   return (
     <div className="flex flex-col gap-4 p-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+        <Button variant="ghost" size="icon" onClick={() => router.back()} aria-label="Go back">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
@@ -197,7 +197,6 @@ export default function PodDetailPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => addTab({
-                  id: `logs-${podName}-${containerName}`,
                   type: 'logs',
                   title: `Logs: ${podName}`,
                   clusterId,
@@ -213,7 +212,6 @@ export default function PodDetailPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => addTab({
-                  id: `exec-${podName}-${containerName}`,
                   type: 'exec',
                   title: `Exec: ${podName}`,
                   clusterId,

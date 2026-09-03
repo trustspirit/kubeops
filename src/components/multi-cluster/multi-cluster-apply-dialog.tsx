@@ -35,7 +35,7 @@ import {
 import { useClusters } from '@/hooks/use-clusters';
 import { useNamespaces } from '@/hooks/use-namespaces';
 import { useClusterCatalogStore } from '@/stores/cluster-catalog-store';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
 import { ensureTshKubeLogin } from '@/lib/auth/tsh-kube-login-cache';
 import { cn } from '@/lib/utils';
 import * as yaml from 'js-yaml';
@@ -52,6 +52,8 @@ interface ApplyResult {
   namespace: string;
   status: 'success' | 'error';
   message?: string;
+  /** Set when the manifest held several documents, so rows stay distinguishable. */
+  resource?: string;
 }
 
 interface MultiClusterApplyDialogProps {
@@ -278,13 +280,13 @@ export function MultiClusterApplyDialog({
       }
       const response = await apiClient.post<{
         results: ApplyResult[];
-        summary: { succeeded: number; failed: number; total: number };
+        summary: { succeeded: number; failed: number; total: number; documents: number };
       }>('/api/multi-cluster/apply', {
         targets: runnableTargets,
         yaml: yamlValue,
         action: 'apply',
         dryRun: true,
-      });
+      }, { timeoutMs: LONG_RUNNING_TIMEOUT_MS });
       // Merge any auth-failed targets into the response so they're visible
       // alongside the successful validations.
       setValidationResults([...authFailures, ...response.results]);
@@ -316,13 +318,13 @@ export function MultiClusterApplyDialog({
       }
       const response = await apiClient.post<{
         results: ApplyResult[];
-        summary: { succeeded: number; failed: number; total: number };
+        summary: { succeeded: number; failed: number; total: number; documents: number };
       }>('/api/multi-cluster/apply', {
         targets: runnableTargets,
         yaml: yamlValue,
         action: 'apply',
         dryRun: false,
-      });
+      }, { timeoutMs: LONG_RUNNING_TIMEOUT_MS });
       setApplyResults([...authFailures, ...response.results]);
     } catch (err: unknown) {
       const errObj = err as { message?: string };
@@ -589,6 +591,9 @@ export function MultiClusterApplyDialog({
                         <div className="text-sm font-medium">
                           {result.clusterId}
                           <span className="text-muted-foreground font-normal"> / {result.namespace}</span>
+                          {result.resource && (
+                            <span className="text-muted-foreground font-normal font-mono text-xs"> · {result.resource}</span>
+                          )}
                         </div>
                         {result.message && (
                           <div className="text-xs text-muted-foreground truncate">
@@ -704,6 +709,9 @@ export function MultiClusterApplyDialog({
                           <div className="text-sm font-medium">
                             {result.clusterId}
                             <span className="text-muted-foreground font-normal"> / {result.namespace}</span>
+                            {result.resource && (
+                              <span className="text-muted-foreground font-normal font-mono text-xs"> · {result.resource}</span>
+                            )}
                           </div>
                           {result.message && (
                             <div className="text-xs text-muted-foreground truncate">

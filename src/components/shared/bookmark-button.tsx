@@ -38,6 +38,8 @@ export function BookmarkButton({
       onClick={handleToggle}
       className={cn('h-7 w-7', className)}
       title={bookmarked ? 'Remove bookmark' : 'Add bookmark'}
+      aria-label={bookmarked ? 'Remove bookmark' : 'Add bookmark'}
+      aria-pressed={bookmarked}
     >
       {bookmarked ? (
         <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />

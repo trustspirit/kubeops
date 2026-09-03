@@ -4,6 +4,15 @@ let cachedKubeConfig: k8s.KubeConfig | null = null;
 let lastLoadTime = 0;
 const CACHE_TTL = 30000; // 30 seconds
 
+/**
+ * Drop the cached kubeconfig so the next read picks up on-disk changes.
+ * Call this after anything that writes ~/.kube/config through the app.
+ */
+export function invalidateKubeConfigCache(): void {
+  cachedKubeConfig = null;
+  lastLoadTime = 0;
+}
+
 export function loadKubeConfig(): k8s.KubeConfig {
   const now = Date.now();
   if (cachedKubeConfig && now - lastLoadTime < CACHE_TTL) {

@@ -26,7 +26,7 @@ export function NetworkTopologyDetail({
         <h3 className="text-sm font-semibold truncate">
           {selectedNode ? 'Pod Group Details' : 'Connection Details'}
         </h3>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} aria-label="Close details panel">
           <X className="h-4 w-4" />
         </Button>
       </div>

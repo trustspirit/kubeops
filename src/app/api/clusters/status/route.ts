@@ -8,9 +8,11 @@ export const dynamic = 'force-dynamic';
  * Each event: { name, status, error }
  * Final event: { done: true }
  */
-export async function GET() {
+export async function GET(req: Request) {
   const encoder = new TextEncoder();
   const contexts = getContexts();
+  // Only an explicit user refresh bypasses the status cache.
+  const force = new URL(req.url).searchParams.get('force') === '1';
 
   const stream = new ReadableStream({
     start(controller) {
@@ -43,7 +45,7 @@ export async function GET() {
         while (idx < contexts.length) {
           if (closed) return;
           const ctx = contexts[idx++];
-          const entry = await checkClusterStatus(ctx.name);
+          const entry = await checkClusterStatus(ctx.name, { force });
           const payload = JSON.stringify({
             name: ctx.name,
             status: entry.status,

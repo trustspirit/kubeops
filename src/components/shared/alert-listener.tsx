@@ -1,43 +1,51 @@
 'use client';
 
-import { useEffect, useCallback, useRef } from 'react';
-import { useParams } from 'next/navigation';
-import { useWatchContext } from '@/providers/watch-provider';
+import { useEffect, useCallback, useMemo, useRef } from 'react';
+import { useWatch } from '@/hooks/use-watch';
 import { useAlertStore } from '@/stores/alert-store';
 import { evaluateRules } from '@/lib/alert-evaluator';
 import { toast } from 'sonner';
 import type { WatchEvent } from '@/types/watch';
 
+/** Resource types alert rules can match against. */
+const WATCHED_RESOURCE_TYPES = [
+  'pods',
+  'deployments',
+  'statefulsets',
+  'daemonsets',
+  'replicasets',
+  'jobs',
+  'events',
+  'nodes',
+] as const;
+
 /**
- * Headless component that listens to Watch events and evaluates alert rules.
- * Triggers Sonner toast and desktop Notification on match.
- * Mount this inside the cluster layout.
+ * Evaluates a single cluster's enabled alert rules against its Watch stream.
+ *
+ * One of these is mounted per cluster that has rules, independent of which page
+ * is open. Previously the listener lived in the cluster route layout and only
+ * evaluated rules for the cluster being viewed, so navigating away — or just
+ * sitting on the cluster list — silently stopped every alert.
  */
-export function AlertListener() {
-  const params = useParams();
-  const clusterId = typeof params?.clusterId === 'string' ? decodeURIComponent(params.clusterId) : null;
-  const watchCtx = useWatchContext();
+function ClusterAlertWatcher({ clusterId }: { clusterId: string }) {
+  const { subscribe } = useWatch(clusterId);
   const rules = useAlertStore((s) => s.rules);
   const lastTriggered = useAlertStore((s) => s.lastTriggered);
   const addAlert = useAlertStore((s) => s.addAlert);
   const setLastTriggered = useAlertStore((s) => s.setLastTriggered);
 
-  // Use refs to avoid stale closures in the subscription callback
+  // Refs so the subscription callback never goes stale without resubscribing.
   const rulesRef = useRef(rules);
   const lastTriggeredRef = useRef(lastTriggered);
-  const clusterIdRef = useRef(clusterId);
   useEffect(() => { rulesRef.current = rules; });
   useEffect(() => { lastTriggeredRef.current = lastTriggered; });
-  useEffect(() => { clusterIdRef.current = clusterId; });
 
   const handleWatchEvent = useCallback(
     (event: WatchEvent) => {
       if (event.type === 'BOOKMARK' || event.type === 'ERROR') return;
 
-      // Only evaluate rules for the current cluster
-      const currentClusterId = clusterIdRef.current;
       const enabledRules = rulesRef.current.filter(
-        (r) => r.enabled && r.clusterId === currentClusterId
+        (r) => r.enabled && r.clusterId === clusterId,
       );
       if (enabledRules.length === 0) return;
 
@@ -47,17 +55,15 @@ export function AlertListener() {
         addAlert(alert);
         setLastTriggered(alert.ruleId, alert.timestamp);
 
-        // Sonner toast
         toast.warning(`Alert: ${alert.ruleName}`, {
           description: `${alert.resourceName}: ${alert.message}`,
           duration: 8000,
         });
 
-        // Desktop notification
         if (
-          typeof window !== 'undefined' &&
-          'Notification' in window &&
-          Notification.permission === 'granted'
+          typeof window !== 'undefined'
+          && 'Notification' in window
+          && Notification.permission === 'granted'
         ) {
           try {
             new Notification(`KubeOps Alert: ${alert.ruleName}`, {
@@ -70,42 +76,41 @@ export function AlertListener() {
         }
       }
     },
-    [addAlert, setLastTriggered]
+    [addAlert, setLastTriggered, clusterId],
   );
 
-  // Extract subscribe from context — subscribe is a stable useCallback reference,
-  // so this effect only re-runs when the cluster changes, not on every WebSocket
-  // connectionState transition (connecting/connected/reconnecting).
-  const subscribe = watchCtx?.subscribe;
-
   useEffect(() => {
-    if (!subscribe) return;
-
-    // Subscribe to common resource types for alert evaluation
-    const resourceTypes = [
-      'pods',
-      'deployments',
-      'statefulsets',
-      'daemonsets',
-      'replicasets',
-      'jobs',
-      'events',
-      'nodes',
-    ];
-
-    const unsubscribers: (() => void)[] = [];
-    for (const rt of resourceTypes) {
-      const unsub = subscribe(rt, undefined, handleWatchEvent);
-      unsubscribers.push(unsub);
-    }
-
+    const unsubscribers = WATCHED_RESOURCE_TYPES.map((rt) =>
+      subscribe(rt, undefined, handleWatchEvent),
+    );
     return () => {
-      for (const unsub of unsubscribers) {
-        unsub();
-      }
+      for (const unsub of unsubscribers) unsub();
     };
   }, [subscribe, handleWatchEvent]);
 
-  // Headless: renders nothing
   return null;
+}
+
+/**
+ * Headless component that keeps alert rules running for every cluster that has
+ * at least one enabled rule, regardless of the current route.
+ */
+export function AlertListener() {
+  const rules = useAlertStore((s) => s.rules);
+
+  const clusterIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const rule of rules) {
+      if (rule.enabled && rule.clusterId) ids.add(rule.clusterId);
+    }
+    return [...ids].sort();
+  }, [rules]);
+
+  return (
+    <>
+      {clusterIds.map((clusterId) => (
+        <ClusterAlertWatcher key={clusterId} clusterId={clusterId} />
+      ))}
+    </>
+  );
 }

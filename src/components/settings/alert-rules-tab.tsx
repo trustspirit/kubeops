@@ -84,6 +84,8 @@ export function AlertRulesTab() {
                       size="icon"
                       className="h-7 w-7"
                       onClick={() => toggleRule(rule.id)}
+                      aria-label={`${rule.enabled ? 'Disable' : 'Enable'} alert rule ${rule.name}`}
+                      aria-pressed={rule.enabled}
                     >
                       {rule.enabled ? (
                         <ToggleRight className="h-4 w-4 text-green-500" />
@@ -99,6 +101,7 @@ export function AlertRulesTab() {
                         size="icon"
                         className="h-7 w-7"
                         onClick={() => handleEdit(rule)}
+                        aria-label={`Edit alert rule ${rule.name}`}
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -107,6 +110,7 @@ export function AlertRulesTab() {
                         size="icon"
                         className="h-7 w-7 text-muted-foreground hover:text-destructive"
                         onClick={() => deleteRule(rule.id)}
+                        aria-label={`Delete alert rule ${rule.name}`}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>

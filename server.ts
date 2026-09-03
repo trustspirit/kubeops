@@ -14,6 +14,7 @@ import { handleLogsConnection } from './ws/logs-handler';
 import { handleExecConnection } from './ws/exec-handler';
 import { handleWatchConnection } from './ws/watch-handler';
 import { shutdownAllWatchManagers } from './src/lib/k8s/watch-manager';
+import { killAllForwards } from './src/lib/port-forward-registry';
 import { isAllowedLocalHost, isAllowedWebSocketUpgrade } from './src/lib/local-server-security';
 
 const dev = process.env.NODE_ENV !== 'production';
@@ -106,23 +107,29 @@ app.prepare().then(() => {
     }
   });
 
-  // Cleanup child processes on shutdown
+  // Cleanup child processes on shutdown.
+  //
+  // The registry lives on globalThis rather than in the route module: this
+  // bundle and the Next-loaded route are separate module instances, so
+  // requiring the route here used to hand back an empty map and leave every
+  // `kubectl port-forward` child running after the app quit.
+  let shuttingDown = false;
   const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     console.log('> Shutting down — cleaning up child processes...');
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { cleanupAllForwards } = require('./src/app/api/port-forward/route');
-      cleanupAllForwards();
-    } catch { /* module may not be loaded yet */ }
 
-    // Close all WebSocket connections
+    killAllForwards();
+
+    // Terminating the sockets fires each handler's 'close', which kills the
+    // exec PTYs; give that a tick to run before exiting.
     wssLogs.clients.forEach((ws) => ws.terminate());
     wssExec.clients.forEach((ws) => ws.terminate());
     wssWatch.clients.forEach((ws) => ws.terminate());
     shutdownAllWatchManagers();
 
-    server.close();
-    process.exit(0);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 2000).unref();
   };
 
   process.on('SIGTERM', shutdown);

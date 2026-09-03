@@ -1,28 +1,14 @@
 import { IncomingMessage } from 'http';
 import { WebSocket } from 'ws';
 import { parse } from 'url';
-import { execSync } from 'child_process';
 import * as pty from 'node-pty';
 import { buildKubectlExecArgs, validateExecTarget } from '../src/lib/exec-validation';
+import { resolveCli } from '../src/lib/cli-path';
 import { sanitizeServerError } from '../src/lib/server-error';
 
-// macOS GUI apps don't inherit shell PATH — ensure common tool directories are included
-const EXTRA_PATHS = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'];
-const currentPath = process.env.PATH || '';
-const missingPaths = EXTRA_PATHS.filter(p => !currentPath.split(':').includes(p));
-if (missingPaths.length) {
-  process.env.PATH = [...currentPath.split(':'), ...missingPaths].filter(Boolean).join(':');
-}
+const KEEPALIVE_INTERVAL_MS = 30_000;
 
-// Resolve kubectl path at startup
-let kubectlPath = 'kubectl';
-try {
-  const paths = execSync('which -a kubectl', { encoding: 'utf-8' }).trim().split('\n');
-  kubectlPath = paths.find(p => !p.includes(' ') && !p.includes('.rd/bin'))
-    || paths.find(p => !p.includes(' '))
-    || paths[0]
-    || kubectlPath;
-} catch { /* use default */ }
+const kubectlPath = resolveCli('kubectl');
 console.log(`[Exec] Using kubectl: ${kubectlPath}`);
 
 export function handleExecConnection(ws: WebSocket, req: IncomingMessage) {
@@ -85,9 +71,16 @@ export function handleExecConnection(ws: WebSocket, req: IncomingMessage) {
   let dataSubscription: pty.IDisposable | null = null;
   let exitSubscription: pty.IDisposable | null = null;
 
+  // Without a ping, a socket that dies without a close frame (sleep, network
+  // drop) leaves `kubectl exec` running against the cluster indefinitely.
+  const keepalive = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) ws.ping();
+  }, KEEPALIVE_INTERVAL_MS);
+
   const cleanup = (killProcess: boolean) => {
     if (cleanedUp) return;
     cleanedUp = true;
+    clearInterval(keepalive);
     dataSubscription?.dispose();
     exitSubscription?.dispose();
     ws.off('message', handleMessage);

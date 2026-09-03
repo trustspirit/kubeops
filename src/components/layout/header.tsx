@@ -9,6 +9,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Search, Settings, Download, Sparkles, Loader2, RotateCcw, ExternalLink } from 'lucide-react';
 import { SettingsDialog } from '@/components/settings/settings-dialog';
 import { useAutoUpdate, type UpdatePhase } from '@/hooks/use-auto-update';
+import { useModifierKeyLabel } from '@/hooks/use-modifier-key';
+import { useCommandPaletteStore } from '@/stores/command-palette-store';
 import { getInstallStageCopy } from '@/lib/update-state';
 import { toast } from 'sonner';
 
@@ -110,7 +112,7 @@ export function UpdateIndicator() {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={checkForUpdates}>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={checkForUpdates} aria-label="Check for updates">
             <Sparkles className="h-4 w-4" />
           </Button>
         </TooltipTrigger>
@@ -123,7 +125,7 @@ export function UpdateIndicator() {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-8 w-8" disabled>
+          <Button variant="ghost" size="icon" className="h-8 w-8" disabled aria-label="Checking for updates">
             <Loader2 className="h-4 w-4 animate-spin" />
           </Button>
         </TooltipTrigger>
@@ -136,7 +138,7 @@ export function UpdateIndicator() {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" onClick={downloadUpdate}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" onClick={downloadUpdate} aria-label={`Download update ${version ?? ''}`.trim()}>
             <Download className="h-4 w-4" />
           </Button>
         </TooltipTrigger>
@@ -149,7 +151,7 @@ export function UpdateIndicator() {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-8 w-8 relative" disabled>
+          <Button variant="ghost" size="icon" className="h-8 w-8 relative" disabled aria-label={`Downloading update: ${Math.round(percent ?? 0)}%`}>
             <Download className="h-4 w-4 animate-pulse text-blue-500" />
             <span className="absolute -bottom-1 text-[9px] font-mono text-blue-500">
               {Math.round(percent)}%
@@ -211,7 +213,7 @@ export function UpdateIndicator() {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={checkForUpdates}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={checkForUpdates} aria-label="Update failed — retry check">
             <Sparkles className="h-4 w-4" />
           </Button>
         </TooltipTrigger>
@@ -225,11 +227,14 @@ export function UpdateIndicator() {
 
 export function Header() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const openCommandPalette = useCommandPaletteStore((s) => s.setOpen);
+  const modifierKey = useModifierKeyLabel();
 
   return (
     <header className="electron-header-inset flex h-14 items-center justify-between border-b px-4 drag-region">
       <div className="flex items-center gap-3 no-drag-region">
-        <h1 className="text-lg font-bold tracking-tight">KubeOps</h1>
+        {/* The app name is chrome, not the page heading — pages own their h1. */}
+        <span className="text-lg font-bold tracking-tight">KubeOps</span>
         <ClusterSelector />
         <NamespaceSelector />
       </div>
@@ -238,25 +243,30 @@ export function Header() {
           variant="outline"
           size="sm"
           className="h-8 gap-2 text-muted-foreground"
-          onClick={() => {
-            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }));
-          }}
+          onClick={() => openCommandPalette(true)}
+          aria-label={`Search (${modifierKey}+K)`}
         >
           <Search className="h-3.5 w-3.5" />
           <span className="text-xs">Search</span>
           <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded border bg-muted px-1 font-mono text-[10px] font-medium">
-            <span className="text-xs">&#x2318;</span>K
+            {modifierKey}K
           </kbd>
         </Button>
         <UpdateIndicator />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => setSettingsOpen(true)}
-        >
-          <Settings className="h-4 w-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Open settings"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Settings</TooltipContent>
+        </Tooltip>
         <ThemeToggle />
       </div>
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

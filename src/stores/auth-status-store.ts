@@ -69,7 +69,6 @@ export const useAuthStatusStore = create<AuthStatusState>()(
       clearProviderStatus: (providerId) =>
         set((state) => {
           if (!providerId) return { providerStatuses: {} };
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { [providerId]: _removed, ...rest } = state.providerStatuses;
           return { providerStatuses: rest };
         }),

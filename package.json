@@ -1,6 +1,6 @@
 {
   "name": "kubeops",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "A modern desktop client for Kubernetes cluster management",
   "main": "electron/main.js",
   "repository": {
@@ -34,6 +34,9 @@
     "build": "next build",
     "start": "NODE_ENV=production tsx server.ts",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "verify": "npm run typecheck && npm run lint && npm test",
     "electron:dev": "concurrently -k \"npm run dev\" \"wait-on http://localhost:51230 && electron .\"",
     "electron:build": "npm run build && node scripts/build-server.mjs && electron-builder",
     "electron:build:mac": "npm run build && node scripts/build-server.mjs && electron-builder --mac",

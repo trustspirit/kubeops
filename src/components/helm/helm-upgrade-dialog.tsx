@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 
@@ -82,7 +82,8 @@ export function HelmUpgradeDialog({
           namespace,
           values: values || undefined,
           reuseValues,
-        }
+        },
+        { timeoutMs: LONG_RUNNING_TIMEOUT_MS },
       );
       toast.success(`Release "${releaseName}" upgraded successfully`);
       onUpgraded?.();

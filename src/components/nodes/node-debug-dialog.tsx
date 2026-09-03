@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Bug, Loader2 } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { usePanelStore } from '@/stores/panel-store';
 
@@ -51,14 +51,14 @@ export function NodeDebugDialog({ open, onOpenChange, clusterId, nodeName }: Nod
       const encodedClusterId = encodeURIComponent(clusterId);
       const result = await apiClient.post<{ podName: string; namespace: string; status: string }>(
         `/api/clusters/${encodedClusterId}/nodes/${nodeName}/debug`,
-        { image }
+        { image },
+        { timeoutMs: LONG_RUNNING_TIMEOUT_MS },
       );
 
       toast.success(`Debug pod ${result.podName} is running on ${nodeName}`);
 
       // Open terminal tab in bottom panel
       addTab({
-        id: `exec-${result.podName}-debugger`,
         type: 'exec',
         title: `Debug: ${nodeName}`,
         clusterId: encodedClusterId,

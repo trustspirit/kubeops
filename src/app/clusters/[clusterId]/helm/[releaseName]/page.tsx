@@ -120,7 +120,7 @@ export default function HelmReleaseDetailPage() {
     <div className="flex flex-col gap-4 p-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => router.push(`/clusters/${clusterId}/helm`)}>
+        <Button variant="ghost" size="icon" onClick={() => router.push(`/clusters/${clusterId}/helm`)} aria-label="Go back">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <Ship className="h-5 w-5 text-muted-foreground" />

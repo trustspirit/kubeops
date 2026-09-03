@@ -5,7 +5,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
 import { useSettingsStore } from '@/stores/settings-store';
 import { toast } from 'sonner';
 import { Loader2, RefreshCw, LogIn } from 'lucide-react';
@@ -48,7 +48,7 @@ export function ArgoCDSyncChartDialog({
     setError(null);
     setNeedsLogin(false);
     try {
-      const res = await apiClient.post<CheckResponse>(url, { namespace, server, checkOnly: true });
+      const res = await apiClient.post<CheckResponse>(url, { namespace, server, checkOnly: true }, { timeoutMs: LONG_RUNNING_TIMEOUT_MS });
       setCheck(res);
     } catch (err: unknown) {
       const apiErr = err as { status?: number; message?: string };
@@ -84,7 +84,7 @@ export function ArgoCDSyncChartDialog({
   const handleSync = async () => {
     setSyncing(true);
     try {
-      await apiClient.post(url, { namespace, server, sync: true });
+      await apiClient.post(url, { namespace, server, sync: true }, { timeoutMs: LONG_RUNNING_TIMEOUT_MS });
       toast.success(`${appName}: synced to latest chart`);
       onSynced?.();
       onOpenChange(false);

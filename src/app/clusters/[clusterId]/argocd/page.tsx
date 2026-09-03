@@ -165,6 +165,7 @@ export default function ArgoCDAppsPage() {
         columns={columns}
         data={apps}
         searchPlaceholder="Search ArgoCD apps..."
+        viewId="argocd:applications"
       />
     </div>
   );

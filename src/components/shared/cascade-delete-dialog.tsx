@@ -90,11 +90,11 @@ function getStatusColor(status?: string): string {
   if (s === 'running' || s === 'ready' || s === 'active' || s === 'complete') {
     return 'text-green-600 dark:text-green-400';
   }
+  if (s === 'failed' || s === 'terminating' || s === 'notready' || s === 'not ready') {
+    return 'text-red-600 dark:text-red-400';
+  }
   if (s === 'pending' || s.includes('ready')) {
     return 'text-amber-600 dark:text-amber-400';
-  }
-  if (s === 'failed' || s === 'terminating') {
-    return 'text-red-600 dark:text-red-400';
   }
   return 'text-muted-foreground';
 }
