@@ -11,6 +11,7 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArgoCDActionButtons } from '@/components/argocd/argocd-action-buttons';
+import { ArgoCDServerAppBar } from '@/components/argocd/argocd-server-app-bar';
 import { useSettingsStore } from '@/stores/settings-store';
 import {
   ARGOCD_APPLICATIONS_PLURAL,
@@ -75,6 +76,7 @@ export function ArgoCDWorkloadBar({ clusterId, namespace, resources }: ArgoCDWor
   const hostClusters = useSettingsStore((s) => s.argoCDHostClusters);
   const addHost = useSettingsStore((s) => s.addArgoCDHostCluster);
   const removeHost = useSettingsStore((s) => s.removeArgoCDHostCluster);
+  const argoCDServer = useSettingsStore((s) => s.authProviderConfigs['argocd']?.server?.trim() || '');
   const [manageOpen, setManageOpen] = useState(false);
 
   const candidates = useMemo(() => getWorkloadArgoCDCandidates(resources), [resources]);
@@ -106,8 +108,10 @@ export function ArgoCDWorkloadBar({ clusterId, namespace, resources }: ArgoCDWor
 
   if (candidates.length === 0 || !lookup) return null;
   // A bare Helm `app.kubernetes.io/instance` label is not evidence of Argo CD;
-  // stay quiet unless something Argo-specific points at an app.
-  if (!match && !hasArgoCDSpecificCandidate(candidates)) return null;
+  // stay quiet unless something Argo-specific points at an app (the server
+  // lookup below still tries it, since a hit there confirms it).
+  const argoSpecific = hasArgoCDSpecificCandidate(candidates);
+  if (!match && !argoSpecific && !argoCDServer) return null;
 
   const remote = match && match.hostClusterId !== clusterId;
   const selectableHosts = clusters.filter((c) => c.name !== clusterId && !hostClusters.includes(c.name));
@@ -161,19 +165,35 @@ export function ArgoCDWorkloadBar({ clusterId, namespace, resources }: ArgoCDWor
   );
 
   if (!match) {
-    const searched = hostIds.join(', ');
-    return (
+    const searched = [...hostIds, ...(argoCDServer ? [argoCDServer] : [])].join(', ');
+    const notFound = argoSpecific ? (
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
         <GitBranch className="h-4 w-4 shrink-0" />
         <span className="min-w-0 flex-1">
           Argo CD app <span className="font-mono text-foreground">{candidates[0].name}</span> was not found in{' '}
           <span className="font-mono">{searched}</span>.
           {lookup.failed.length > 0 && ` Could not read ${lookup.failed.map((f) => f.clusterId).join(', ')}.`}
-          {' '}If Argo CD runs on another cluster, add it.
+          {argoCDServer
+            ? ' If Argo CD runs on another cluster, add it.'
+            : ' Set the Argo CD server in Settings > Auth Providers, or add the cluster Argo CD runs on.'}
         </span>
         {manageButton('Choose Argo CD cluster')}
       </div>
-    );
+    ) : null;
+
+    // The Application object is not reachable through kubeconfig (e.g. a root
+    // Argo CD whose cluster is not a context): ask the Argo CD server instead.
+    if (argoCDServer) {
+      return (
+        <ArgoCDServerAppBar
+          server={argoCDServer}
+          candidates={candidates}
+          notFound={notFound}
+          trailing={manageButton()}
+        />
+      );
+    }
+    return notFound;
   }
 
   const sync = match.app.status?.sync?.status;

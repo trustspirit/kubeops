@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { findCli, runCli, extractCliError } from '@/lib/auth/cli-utils';
 import type { ArgoCDApplication } from '@/lib/argocd/helpers';
+import { classifyArgoCDCliError } from '@/lib/argocd/server-app';
 import {
   buildAppGetArgs,
   buildAppSyncArgs,
@@ -36,7 +37,7 @@ export interface ChartSyncPlan {
 }
 
 function isArgocdAuthError(message: string): boolean {
-  return /not logged in|please login|Unauthenticated|invalid session|token is expired|expired token/i.test(message);
+  return classifyArgoCDCliError(message) === 'auth';
 }
 
 // Pure decision logic — no CLI/IO — so it is unit-testable.

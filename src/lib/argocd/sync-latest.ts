@@ -118,9 +118,13 @@ function serverArgs(opts?: ArgoCDServerOpts): string[] {
   return [];
 }
 
-export function buildAppGetArgs(app: string, opts?: ArgoCDServerOpts & { refresh?: boolean }): string[] {
+export function buildAppGetArgs(
+  app: string,
+  opts?: ArgoCDServerOpts & { refresh?: boolean; hardRefresh?: boolean },
+): string[] {
   assertSafeArg(app, 'app name', APP_NAME_RE);
-  return ['app', 'get', app, '-o', 'json', ...(opts?.refresh ? ['--refresh'] : []), ...serverArgs(opts)];
+  const refreshArgs = opts?.hardRefresh ? ['--hard-refresh'] : opts?.refresh ? ['--refresh'] : [];
+  return ['app', 'get', app, '-o', 'json', ...refreshArgs, ...serverArgs(opts)];
 }
 
 export function buildAppSetRevisionArgs(app: string, revision: string, opts?: ArgoCDServerOpts): string[] {

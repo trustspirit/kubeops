@@ -99,6 +99,12 @@ describe('arg builders', () => {
       ['app', 'get', 'web', '-o', 'json', '--refresh', '--server', 'argocd-root.ovdr.io'],
     );
   });
+  it('builds app get args with a hard refresh for a namespaced app', () => {
+    assert.deepEqual(
+      buildAppGetArgs('team-a/web', { server: 'argocd-root.ovdr.io', hardRefresh: true }),
+      ['app', 'get', 'team-a/web', '-o', 'json', '--hard-refresh', '--server', 'argocd-root.ovdr.io'],
+    );
+  });
   it('builds app get args without optionals', () => {
     assert.deepEqual(buildAppGetArgs('web'), ['app', 'get', 'web', '-o', 'json']);
   });
