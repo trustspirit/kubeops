@@ -1,3 +1,42 @@
+# v0.8.0 — Reliability Pass & Argo CD Refresh from Workloads
+
+## Added
+
+- **Refresh Argo CD apps from the workload.** Deployment, StatefulSet, Pod and
+  other resource pages show the Argo CD Application that manages them, with
+  sync/health status and **Refresh / Hard Refresh** buttons. The app is found on
+  the cluster itself or on a central Argo CD cluster you pick once (gear icon on
+  the Argo CD bar); other clusters are never probed automatically.
+
+## Fixed
+
+- **The app no longer freezes during login.** tsh/aws/gcloud/az SSO and Argo CD
+  sync ran synchronously and stalled every terminal, log stream and list until
+  they finished. Double-clicking Login no longer opens two browser flows.
+- **Multi-cluster Apply can create resources.** New resources and custom
+  resources always failed; apply is now Server-Side Apply, with a per-cluster
+  timeout so one unreachable cluster no longer loses everyone's results.
+- **Watches recover after sleep** instead of reconnecting every second.
+- **A broken kubeconfig no longer crashes the backend**, and changes to it reach
+  live watches. Kubeconfig merge renames conflicting clusters/users instead of
+  silently pointing a new context at an existing cluster's credentials.
+- **Pages recover when the network returns** and keep showing the last data
+  with a "Refresh failed" banner instead of a dead error screen.
+- **Terminals and log tabs survive** collapsing the panel and switching clusters;
+  logs resume without gaps or duplicates, and the last unterminated line shows.
+- **Safer destructive actions:** bulk delete only deletes rows you can see;
+  dialogs can't be dismissed (and resubmitted) while a request runs; the target
+  cluster is shown on Helm, Argo CD and node-debug dialogs; unsaved YAML edits
+  survive tab switches.
+- **Helm:** operations that run long no longer leave releases stuck in
+  `pending-*`; pending releases are listed; errors return proper statuses.
+- Port forwards that die are reported with kubectl's reason; Windows quit no
+  longer leaves kubectl processes behind; a failed macOS update reopens the app.
+
+## Internal
+
+- 245 -> 410 tests.
+
 # v0.7.2 — Background Monitoring
 
 ## Fixed
