@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft } from 'lucide-react';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
+import { ErrorDisplay } from '@/components/shared/error-display';
 import { buildWebSocketUrl } from '@/lib/websocket-session';
 import { canRetryStream, getReconnectDelay } from '@/lib/stream-policy';
 
@@ -33,7 +34,7 @@ export default function PodExecPage() {
   const namespace = params.namespace as string;
   const podName = params.podName as string;
 
-  const { data: pod } = useResourceDetail({
+  const { data: pod, error: podError, mutate: mutatePod } = useResourceDetail({
     clusterId: decodeURIComponent(clusterId),
     namespace,
     resourceType: 'pods',
@@ -274,7 +275,10 @@ export default function PodExecPage() {
     setReconnectNonce((value) => value + 1);
   };
 
-  if (!pod) return <LoadingSkeleton />;
+  if (!pod) {
+    if (podError) return <ErrorDisplay error={podError} onRetry={() => mutatePod()} clusterId={clusterId} />;
+    return <LoadingSkeleton />;
+  }
 
   return (
     <div className="flex flex-col h-full">

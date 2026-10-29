@@ -1,4 +1,4 @@
-import { execFileSync } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
 import path, { delimiter } from 'path';
 
 /**
@@ -91,4 +91,29 @@ export function isCliAvailable(name: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Non-blocking `which`/`where` lookup.
+ *
+ * The sync variants above are fine at module load, but auth status polls run
+ * them on every request; a slow PATH (network home directory, antivirus on
+ * Windows) would stall the whole server event loop for each one.
+ *
+ * Resolves to `null` when the tool is not on PATH.
+ */
+export function findCliOnPath(name: string): Promise<string | null> {
+  ensureToolPath();
+  const lookup = isWindows() ? 'where' : 'which';
+  const args = isWindows() ? [name] : ['-a', name];
+  return new Promise((resolve) => {
+    const child = execFile(lookup, args, { encoding: 'utf-8', timeout: 5_000, windowsHide: true }, (err, stdout) => {
+      if (err) {
+        resolve(null);
+        return;
+      }
+      resolve(pickCliPath(String(stdout).split(/\r?\n/), '', process.platform) || null);
+    });
+    child.stdin?.end();
+  });
 }

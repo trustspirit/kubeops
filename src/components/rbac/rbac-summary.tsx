@@ -274,6 +274,42 @@ export function RBACSummary({ entries, isLoading }: RBACSummaryProps) {
                                       ))}
                                     </div>
                                   </div>
+                                  {rule.resourceNames && rule.resourceNames.length > 0 && (
+                                    <div className="flex items-start gap-2">
+                                      <span className="text-muted-foreground w-20 shrink-0 font-medium">
+                                        Names only:
+                                      </span>
+                                      <div className="flex flex-wrap gap-1">
+                                        {rule.resourceNames.map((rn) => (
+                                          <Badge
+                                            key={rn}
+                                            variant="outline"
+                                            className="text-[10px] py-0 h-4 font-mono"
+                                          >
+                                            {rn}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {rule.nonResourceURLs && rule.nonResourceURLs.length > 0 && (
+                                    <div className="flex items-start gap-2">
+                                      <span className="text-muted-foreground w-20 shrink-0 font-medium">
+                                        URLs:
+                                      </span>
+                                      <div className="flex flex-wrap gap-1">
+                                        {rule.nonResourceURLs.map((url) => (
+                                          <Badge
+                                            key={url}
+                                            variant="outline"
+                                            className="text-[10px] py-0 h-4 font-mono"
+                                          >
+                                            {url}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
                                   <div className="flex items-start gap-2">
                                     <span className="text-muted-foreground w-20 shrink-0 font-medium">
                                       API Groups:

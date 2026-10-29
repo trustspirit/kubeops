@@ -38,6 +38,10 @@ export function useClusters() {
   // silent=true: background refresh — don't show loading indicators, just swap data
   const startStatusStream = useCallback((silent = false, force = false) => {
     if (eventSourceRef.current) {
+      // A background refresh must not replace a stream that is still running:
+      // the replaced stream never reports `done`, which left the first-load
+      // spinner (and the disabled Refresh button) stuck forever.
+      if (silent) return;
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
@@ -49,7 +53,14 @@ export function useClusters() {
     const es = new EventSource(`/api/clusters/status${force ? '?force=1' : ''}`);
     eventSourceRef.current = es;
 
+    const finish = () => {
+      es.close();
+      if (eventSourceRef.current === es) eventSourceRef.current = null;
+      if (!silent) setIsCheckingStatus(false);
+    };
+
     es.onmessage = (event: MessageEvent) => {
+      if (eventSourceRef.current !== es) return;
       const update = JSON.parse(event.data as string) as {
         done?: boolean;
         name?: string;
@@ -59,9 +70,7 @@ export function useClusters() {
 
       if (update.done) {
         setLastStatusUpdateAt(Date.now());
-        es.close();
-        eventSourceRef.current = null;
-        if (!silent) setIsCheckingStatus(false);
+        finish();
         return;
       }
 
@@ -87,9 +96,11 @@ export function useClusters() {
     };
 
     es.onerror = () => {
-      es.close();
-      eventSourceRef.current = null;
-      if (!silent) setIsCheckingStatus(false);
+      if (eventSourceRef.current !== es) {
+        es.close();
+        return;
+      }
+      finish();
     };
   }, [mutate]);
 

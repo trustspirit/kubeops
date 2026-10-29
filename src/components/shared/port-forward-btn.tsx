@@ -18,8 +18,9 @@ interface PortForwardBtnProps {
 }
 
 export function PortForwardBtn({ clusterId, namespace, resourceType, resourceName, port }: PortForwardBtnProps) {
-  const { forwards, markStopped } = usePortForwards();
+  const { forwards, markStopped, unmarkStopped } = usePortForwards();
   const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const active = findMatchingPortForward(forwards, {
     clusterId,
     namespace,
@@ -39,15 +40,20 @@ export function PortForwardBtn({ clusterId, namespace, resourceType, resourceNam
   };
 
   const stop = async () => {
-    if (!active) return;
+    if (!active || stopping) return;
+    setStopping(true);
     try {
-      // Suppress the "stopped unexpectedly" warning for a deliberate stop.
+      // Suppress the "stopped unexpectedly" warning before the DELETE so a poll
+      // landing mid-request is not read as a drop; undone if the stop fails.
       markStopped(active.id);
       await apiClient.delete(`/api/port-forward?id=${encodeURIComponent(active.id)}`);
       globalMutate('/api/port-forward');
       toast.success('Port forward stopped');
     } catch (err: unknown) {
+      unmarkStopped(active.id);
       toast.error(`Failed to stop port forward: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setStopping(false);
     }
   };
 
@@ -63,6 +69,7 @@ export function PortForwardBtn({ clusterId, namespace, resourceType, resourceNam
           size="icon"
           className="h-6 w-6"
           onClick={stop}
+          disabled={stopping}
           aria-label={`Stop port forward for ${resourceName} on local port ${active.localPort}`}
         >
           <X className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />

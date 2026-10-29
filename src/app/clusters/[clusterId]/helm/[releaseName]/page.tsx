@@ -3,7 +3,7 @@
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useHelmReleaseDetail } from '@/hooks/use-helm-release-detail';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
-import { ErrorDisplay } from '@/components/shared/error-display';
+import { ErrorDisplay, RefreshFailedBanner } from '@/components/shared/error-display';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { HelmUpgradeDialog } from '@/components/helm/helm-upgrade-dialog';
@@ -76,7 +76,7 @@ export default function HelmReleaseDetailPage() {
   }, [valuesData]);
 
   if (isLoading) return <LoadingSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
+  if (error && !detail) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
   if (!detail) return null;
 
   const releaseDetail = detail as HelmReleaseDetail;
@@ -118,6 +118,7 @@ export default function HelmReleaseDetailPage() {
 
   return (
     <div className="flex flex-col gap-4 p-6">
+      {error && detail && <RefreshFailedBanner error={error} onRetry={() => mutate()} />}
       {/* Header */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => router.push(`/clusters/${clusterId}/helm`)} aria-label="Go back">

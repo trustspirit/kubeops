@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
+import { extractK8sError, isObjectNotFound } from '@/lib/k8s/error-handling';
+import { k8sRawRequest, messageFromStatusBody, type RawResponse } from '@/lib/k8s/raw-request';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,89 +12,28 @@ interface RouteParams {
   }>;
 }
 
-function extractK8sError(error: unknown): { status: number; message: string } {
-  const err = error as Record<string, unknown>;
-  const response = err?.response as Record<string, unknown> | undefined;
-  const raw = err?.statusCode || response?.statusCode || err?.code;
-  const status = typeof raw === 'number' && raw >= 200 && raw <= 599 ? raw : 500;
-  let body = err?.body as Record<string, unknown> | string | undefined;
-  if (typeof body === 'string') {
-    try { body = JSON.parse(body) as Record<string, unknown>; } catch { /* keep as string */ }
-  }
-  const message = (typeof body === 'object' ? (body as Record<string, unknown>)?.message : body) || (err?.message as string) || 'Request failed';
-  return { status, message: String(message) };
-}
-
 function buildApiPath(group: string, version: string, plural: string, namespace?: string, name?: string): string {
-  const base = `/apis/${group}/${version}`;
+  const e = encodeURIComponent;
+  const base = `/apis/${e(group)}/${e(version)}`;
   if (namespace && namespace !== '_' && namespace !== '_all') {
-    const path = `${base}/namespaces/${namespace}/${plural}`;
-    return name ? `${path}/${name}` : path;
+    const path = `${base}/namespaces/${e(namespace)}/${e(plural)}`;
+    return name ? `${path}/${e(name)}` : path;
   }
-  const path = `${base}/${plural}`;
-  return name ? `${path}/${name}` : path;
+  const path = `${base}/${e(plural)}`;
+  return name ? `${path}/${e(name)}` : path;
 }
 
 async function makeK8sRequest(
   contextName: string,
   method: string,
   apiPath: string,
-  body?: Record<string, unknown>
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<{ status: number; data: any }> {
+  body?: Record<string, unknown>,
+): Promise<RawResponse> {
   const kc = getKubeConfigForContext(contextName);
-  const cluster = kc.getCurrentCluster();
-  if (!cluster) throw new Error('Cluster not found');
-
-  const opts: Record<string, unknown> = {};
-  await kc.applyToHTTPSOptions(opts);
-
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const https = require('https');
-  const urlObj = new URL(`${cluster.server}${apiPath}`);
-
-  return new Promise((resolve, reject) => {
-    const reqData = body ? JSON.stringify(body) : undefined;
-    const contentType = method === 'PATCH'
-      ? 'application/merge-patch+json'
-      : 'application/json';
-
-    const reqOpts: Record<string, unknown> = {
-      hostname: urlObj.hostname,
-      port: urlObj.port || 443,
-      path: urlObj.pathname + urlObj.search,
-      method,
-      headers: {
-        'Content-Type': contentType,
-        Accept: 'application/json',
-        ...(reqData ? { 'Content-Length': Buffer.byteLength(reqData) } : {}),
-      },
-      ca: opts.ca,
-      cert: opts.cert,
-      key: opts.key,
-      rejectUnauthorized: !cluster.skipTLSVerify,
-    };
-
-    // Apply auth headers (bearer token, etc.)
-    if (opts.headers) {
-      Object.assign(reqOpts.headers as Record<string, string>, opts.headers);
-    }
-
-    const request = https.request(reqOpts, (res: { statusCode: number; on: (event: string, cb: (data?: string) => void) => void }) => {
-      let responseBody = '';
-      res.on('data', (chunk?: string) => { responseBody += chunk ?? ''; });
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(responseBody);
-          resolve({ status: res.statusCode, data: parsed });
-        } catch {
-          resolve({ status: res.statusCode, data: responseBody });
-        }
-      });
-    });
-    request.on('error', reject);
-    if (reqData) request.write(reqData);
-    request.end();
+  return k8sRawRequest(kc, method, apiPath, {
+    body,
+    // Custom resources don't support strategic merge patch.
+    contentType: method === 'PATCH' ? 'application/merge-patch+json' : 'application/json',
   });
 }
 
@@ -115,7 +56,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json(data);
     }
     return NextResponse.json(
-      { error: data?.message || 'Request failed' },
+      { error: messageFromStatusBody(data, 'Request failed') },
       { status }
     );
   } catch (error: unknown) {
@@ -145,7 +86,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json(data);
     }
     return NextResponse.json(
-      { error: data?.message || 'Update failed' },
+      { error: messageFromStatusBody(data, 'Update failed') },
       { status }
     );
   } catch (error: unknown) {
@@ -175,7 +116,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json(data);
     }
     return NextResponse.json(
-      { error: data?.message || 'Patch failed' },
+      { error: messageFromStatusBody(data, 'Patch failed') },
       { status }
     );
   } catch (error: unknown) {
@@ -203,8 +144,13 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     if (status >= 200 && status < 300) {
       return NextResponse.json(data);
     }
+    // Deleting something that is already gone is the outcome the caller wanted;
+    // a retried or double-clicked delete must not surface as an error.
+    if (isObjectNotFound(status, data, name)) {
+      return NextResponse.json({ success: true, alreadyDeleted: true });
+    }
     return NextResponse.json(
-      { error: data?.message || 'Delete failed' },
+      { error: messageFromStatusBody(data, 'Delete failed') },
       { status }
     );
   } catch (error: unknown) {

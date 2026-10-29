@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runHelm, isValidNamespace, isValidChartRef } from '@/lib/helm/helm-runner';
-import { requireHelm, withTempValuesFile } from '@/lib/helm/helpers';
+import { runHelmMutation, isValidNamespace, isValidChartRef } from '@/lib/helm/helm-runner';
+import { requireHelm, requireReleaseName, withTempValuesFile, helmErrorResponse } from '@/lib/helm/helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,12 +9,15 @@ interface RouteParams {
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams) {
-  const helmCheck = requireHelm();
+  const helmCheck = await requireHelm();
   if (helmCheck) return helmCheck;
 
   const { clusterId, name } = await params;
   const contextName = decodeURIComponent(clusterId);
   const releaseName = decodeURIComponent(name);
+
+  const nameCheck = requireReleaseName(releaseName);
+  if (nameCheck) return nameCheck;
 
   let body: { chart?: string; namespace?: string; values?: string; reuseValues?: boolean };
   try {
@@ -33,7 +36,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 
   return withTempValuesFile(values, async (tmpFile) => {
-    const args = ['upgrade', releaseName, chart, '-n', namespace, '--output', 'json'];
+    const args = ['upgrade', '-n', namespace, '--output', 'json'];
 
     if (reuseValues) {
       args.push('--reuse-values');
@@ -43,14 +46,13 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       args.push('-f', tmpFile);
     }
 
-    const result = await runHelm(args, contextName);
+    args.push('--', releaseName, chart);
+
+    const result = await runHelmMutation(args, contextName);
 
     if (result.code !== 0) {
       console.error(`[Helm] upgrade ${releaseName} failed: ${result.stderr}`);
-      return NextResponse.json(
-        { error: result.stderr || `Failed to upgrade release "${releaseName}"` },
-        { status: 500 }
-      );
+      return helmErrorResponse(result, `Failed to upgrade release "${releaseName}"`);
     }
 
     try {

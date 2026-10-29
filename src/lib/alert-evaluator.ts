@@ -133,6 +133,17 @@ function evaluateCondition(condition: AlertCondition, resource: WatchEventObject
   }
 }
 
+/**
+ * Cooldowns are tracked per rule *and* resource: a per-rule cooldown let the
+ * first crashing pod silence the same rule for every other pod.
+ */
+export function getAlertCooldownKey(ruleId: string, resource: WatchEventObject | undefined): string {
+  const metadata = resource?.metadata;
+  const identity = metadata?.uid
+    || `${resource?.kind || ''}/${metadata?.namespace || ''}/${metadata?.name || 'unknown'}`;
+  return `${ruleId}:${identity}`;
+}
+
 export function evaluateRules(
   rules: AlertRule[],
   watchEvent: WatchEvent,
@@ -178,7 +189,7 @@ export function evaluateRules(
     if (rule.namespace && rule.namespace !== resourceNamespace) continue;
 
     // Cooldown check
-    const lastTime = lastTriggered[rule.id] || 0;
+    const lastTime = lastTriggered[getAlertCooldownKey(rule.id, resource)] || 0;
     if (now - lastTime < rule.cooldown * 1000) continue;
 
     const result = evaluateCondition(rule.condition, resource);

@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
 import { useResourceList } from '@/hooks/use-resource-list';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
-import { ErrorDisplay } from '@/components/shared/error-display';
+import { ErrorDisplay, RefreshFailedBanner } from '@/components/shared/error-display';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,7 @@ import { ResourceTreeView } from '@/components/shared/resource-tree';
 import { useResourceTree } from '@/hooks/use-resource-tree';
 import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
 import type { KubeResource, ContainerSpec, ContainerStatus, KubeEvent } from '@/types/resource';
+import { ArgoCDWorkloadBar } from '@/components/argocd/argocd-workload-bar';
 
 export default function DeploymentDetailPage() {
   const params = useParams();
@@ -88,7 +89,7 @@ export default function DeploymentDetailPage() {
   );
 
   if (isLoading) return <LoadingSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
+  if (error && !dep) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
   if (!dep) return null;
 
   const metadata = dep.metadata || {};
@@ -164,6 +165,7 @@ export default function DeploymentDetailPage() {
 
   return (
     <div className="flex flex-col gap-4 p-6">
+      {error && dep && <RefreshFailedBanner error={error} onRetry={() => mutate()} />}
       {/* Header */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => router.back()} aria-label="Go back">
@@ -195,6 +197,8 @@ export default function DeploymentDetailPage() {
           </Button>
         </div>
       </div>
+
+      <ArgoCDWorkloadBar clusterId={decodedClusterId} namespace={namespace} resources={[dep]} />
 
       <Tabs defaultValue="overview">
         <TabsList>
@@ -450,7 +454,8 @@ export default function DeploymentDetailPage() {
         </TabsContent>
 
         {/* YAML */}
-        <TabsContent value="yaml" className="mt-4">
+        {/* Kept mounted so unsaved YAML edits survive switching tabs. */}
+        <TabsContent value="yaml" forceMount className="mt-4 data-[state=inactive]:hidden">
           <YamlEditor
             data={dep}
             apiUrl={`/api/clusters/${clusterId}/resources/${namespace}/deployments/${name}`}

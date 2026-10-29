@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as k8s from '@kubernetes/client-node';
 import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
+import { extractK8sError } from '@/lib/k8s/error-handling';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,19 +20,6 @@ interface DependentNode {
   namespace?: string;
   status?: string;
   dependents: DependentNode[];
-}
-
-function extractK8sError(error: unknown): { status: number; message: string } {
-  const err = error as { statusCode?: number; response?: { statusCode?: number }; code?: number; body?: string | { message?: string }; message?: string };
-  const raw = err?.statusCode || err?.response?.statusCode || err?.code;
-  const status = (typeof raw === 'number' && raw >= 200 && raw <= 599) ? raw : 500;
-  let body = err?.body;
-  if (typeof body === 'string') {
-    try { body = JSON.parse(body) as { message?: string }; } catch { /* keep as string */ }
-  }
-  const bodyMsg = typeof body === 'object' && body !== null ? (body as { message?: string }).message : undefined;
-  const message = bodyMsg || err?.message || 'Request failed';
-  return { status, message };
 }
 
 function getResourceStatus(resource: k8s.KubernetesObject): string {
@@ -69,6 +57,12 @@ interface ResourceCache {
   pods: k8s.V1Pod[];
   replicaSets: k8s.V1ReplicaSet[];
   jobs: k8s.V1Job[];
+  /**
+   * Lists that could not be read (e.g. RBAC forbids listing jobs). The tree is
+   * then a lower bound, and the caller must say so rather than show "no
+   * dependents" before a cascading delete.
+   */
+  failed: string[];
 }
 
 async function prefetchResources(
@@ -77,16 +71,26 @@ async function prefetchResources(
   batchApi: k8s.BatchV1Api,
   namespace: string,
 ): Promise<ResourceCache> {
+  const failed: string[] = [];
+  const tolerate = <T>(kind: string, p: Promise<{ items: T[] }>): Promise<{ items: T[] }> =>
+    p.catch((error: unknown) => {
+      const { status, message } = extractK8sError(error);
+      console.warn(`[Dependents] list ${kind} in ${namespace} failed: ${status} ${message}`);
+      failed.push(kind);
+      return { items: [] as T[] };
+    });
+
   const [podsResult, rsResult, jobsResult] = await Promise.all([
-    coreApi.listNamespacedPod({ namespace }).catch(() => ({ items: [] as k8s.V1Pod[] })),
-    appsApi.listNamespacedReplicaSet({ namespace }).catch(() => ({ items: [] as k8s.V1ReplicaSet[] })),
-    batchApi.listNamespacedJob({ namespace }).catch(() => ({ items: [] as k8s.V1Job[] })),
+    tolerate<k8s.V1Pod>('pods', coreApi.listNamespacedPod({ namespace })),
+    tolerate<k8s.V1ReplicaSet>('replicasets', appsApi.listNamespacedReplicaSet({ namespace })),
+    tolerate<k8s.V1Job>('jobs', batchApi.listNamespacedJob({ namespace })),
   ]);
 
   return {
     pods: podsResult.items || [],
     replicaSets: rsResult.items || [],
     jobs: jobsResult.items || [],
+    failed: failed.sort(),
   };
 }
 
@@ -251,7 +255,12 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       dependents,
     };
 
-    return NextResponse.json({ tree, totalCount });
+    return NextResponse.json({
+      tree,
+      totalCount,
+      incomplete: cache.failed.length > 0,
+      failed: cache.failed,
+    });
   } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[Dependents] GET dependents for ${resourceType}/${name} in ${namespace}: ${status} ${message}`);

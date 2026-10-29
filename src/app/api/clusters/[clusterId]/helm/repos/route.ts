@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runHelm, isValidHelmName, isValidRepoUrl } from '@/lib/helm/helm-runner';
-import { requireHelm, parseHelmJson } from '@/lib/helm/helpers';
+import { requireHelm, parseHelmJson, helmErrorResponse } from '@/lib/helm/helpers';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const helmCheck = requireHelm();
+  const helmCheck = await requireHelm();
   if (helmCheck) return helmCheck;
 
   const result = await runHelm(['repo', 'list', '--output', 'json']);
@@ -16,10 +16,7 @@ export async function GET() {
       return NextResponse.json({ repos: [] });
     }
     console.error(`[Helm] repo list failed: ${result.stderr}`);
-    return NextResponse.json(
-      { error: result.stderr || 'Failed to list Helm repos' },
-      { status: 500 }
-    );
+    return helmErrorResponse(result, 'Failed to list Helm repos');
   }
 
   const repos = parseHelmJson(result.stdout) ?? [];
@@ -27,7 +24,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const helmCheck = requireHelm();
+  const helmCheck = await requireHelm();
   if (helmCheck) return helmCheck;
 
   let body: { name?: string; url?: string };
@@ -50,13 +47,10 @@ export async function POST(req: NextRequest) {
   }
 
   // Add repo
-  const addResult = await runHelm(['repo', 'add', name, url]);
+  const addResult = await runHelm(['repo', 'add', '--', name, url]);
   if (addResult.code !== 0) {
     console.error(`[Helm] repo add ${name} failed: ${addResult.stderr}`);
-    return NextResponse.json(
-      { error: addResult.stderr || `Failed to add repo "${name}"` },
-      { status: 500 }
-    );
+    return helmErrorResponse(addResult, `Failed to add repo "${name}"`);
   }
 
   // Update repos

@@ -62,26 +62,42 @@ const MAX_STALE_PRESERVE = 90_000; // 90 s — max time to trust a stale 'valid:
  * Checks whether the current Teleport session is valid by running
  * `tsh status --format=json`. The result is cached for SESSION_CACHE_TTL.
  *
- * Uses execFileSync (blocking, max 10 s) — acceptable because the call is
- * cheap and we only run it once per health-check cycle thanks to caching.
+ * Asynchronous: a slow `tsh status` used to block the whole server for up to
+ * 10 s. Concurrent health checks share one in-flight probe instead of each
+ * spawning their own.
  *
  * On failure (timeout, parse error), preserves the previous cached value
  * to avoid falsely marking a valid session as expired.
  */
-export function isTshSessionValid(): boolean {
+export function isTshSessionValid(): Promise<boolean> {
   if (sessionCache && Date.now() - sessionCache.checkedAt < SESSION_CACHE_TTL) {
-    return sessionCache.valid;
+    return Promise.resolve(sessionCache.valid);
   }
+  if (sessionProbe) return sessionProbe;
 
-  const path = findCli('tsh');
+  const probe = probeTshSession().finally(() => {
+    if (sessionProbe === probe) sessionProbe = null;
+  });
+  sessionProbe = probe;
+  return probe;
+}
+
+let sessionProbe: Promise<boolean> | null = null;
+// Bumped by invalidateTshSessionCache so a probe that started before a login
+// cannot overwrite the cache with its pre-login answer.
+let sessionGeneration = 0;
+
+async function probeTshSession(): Promise<boolean> {
+  const generation = sessionGeneration;
+  const path = await findCli('tsh');
   if (!path) {
     const now = Date.now();
-    sessionCache = { valid: false, checkedAt: now, lastSuccessAt: now };
+    if (generation === sessionGeneration) sessionCache = { valid: false, checkedAt: now, lastSuccessAt: now };
     return false;
   }
 
   try {
-    const output = runCli(path, ['status', '--format=json'], 10_000);
+    const output = await runCli(path, ['status', '--format=json'], 10_000);
     const data = JSON.parse(output);
     const active = data?.active;
     // Check both username presence and session expiry — tsh status can return
@@ -92,9 +108,10 @@ export function isTshSessionValid(): boolean {
       if (expiry > 0 && expiry < Date.now()) valid = false;
     }
     const now = Date.now();
-    sessionCache = { valid, checkedAt: now, lastSuccessAt: now };
+    if (generation === sessionGeneration) sessionCache = { valid, checkedAt: now, lastSuccessAt: now };
     return valid;
   } catch {
+    if (generation !== sessionGeneration) return sessionCache?.valid ?? false;
     // On failure, preserve previous state — don't flip a valid session to invalid
     // just because tsh was temporarily slow or busy.
     // But limit how long we trust a stale 'true' — after MAX_STALE_PRESERVE from
@@ -117,4 +134,6 @@ export function isTshSessionValid(): boolean {
  */
 export function invalidateTshSessionCache(): void {
   sessionCache = null;
+  sessionProbe = null;
+  sessionGeneration += 1;
 }

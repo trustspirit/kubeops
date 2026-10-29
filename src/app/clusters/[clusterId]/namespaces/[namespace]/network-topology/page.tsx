@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import { useNetworkTopology } from '@/hooks/use-network-topology';
 import { NetworkTopologyView } from '@/components/network/network-topology';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
-import { ErrorDisplay } from '@/components/shared/error-display';
+import { ErrorDisplay, RefreshFailedBanner } from '@/components/shared/error-display';
 import { Badge } from '@/components/ui/badge';
 import { ShieldAlert, ShieldOff } from 'lucide-react';
 
@@ -20,12 +20,13 @@ export default function NetworkTopologyPage() {
   });
 
   if (isLoading && !data) return <LoadingSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
+  if (error && !data) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
 
   const topoData = data || { podGroups: [], edges: [], isolatedPods: [], defaultDeny: { ingress: false, egress: false } };
 
   return (
     <div className="flex flex-col gap-4 p-6 h-full">
+      {error && data && <RefreshFailedBanner error={error} onRetry={() => mutate()} />}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Network Topology</h1>

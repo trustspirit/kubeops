@@ -1,7 +1,8 @@
 'use client';
 /* eslint-disable react-hooks/set-state-in-effect */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import useSWR from 'swr';
 import {
   Dialog,
   DialogContent,
@@ -25,20 +26,8 @@ import {
   type AlertRuleValidationErrors,
   validateAlertRuleDraft,
 } from '@/lib/alert-rule-validation';
-
-const RESOURCE_TYPES = [
-  { value: 'pods', label: 'Pods' },
-  { value: 'deployments', label: 'Deployments' },
-  { value: 'statefulsets', label: 'StatefulSets' },
-  { value: 'daemonsets', label: 'DaemonSets' },
-  { value: 'replicasets', label: 'ReplicaSets' },
-  { value: 'jobs', label: 'Jobs' },
-  { value: 'cronjobs', label: 'CronJobs' },
-  { value: 'services', label: 'Services' },
-  { value: 'events', label: 'Events' },
-  { value: 'nodes', label: 'Nodes' },
-  { value: 'horizontalpodautoscalers', label: 'HPA' },
-];
+import { ALERT_RESOURCE_TYPE_OPTIONS } from '@/lib/monitor-targets';
+import type { ClusterInfo } from '@/types/cluster';
 
 const CONDITION_TYPES: { value: ConditionType; label: string }[] = [
   { value: 'status_change', label: 'Status Change' },
@@ -63,6 +52,10 @@ interface AlertRuleDialogProps {
 
 export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialogProps) {
   const { addRule, updateRule } = useAlertStore();
+  // Same cache entry as useClusters(), without starting its status stream.
+  const { data: clustersData, isLoading: clustersLoading } = useSWR<{ clusters: ClusterInfo[] }>(
+    open ? '/api/clusters' : null,
+  );
 
   const [name, setName] = useState('');
   const [clusterId, setClusterId] = useState('');
@@ -98,7 +91,23 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
     setErrors({});
   }, [editRule, open]);
 
+  // A rule whose cluster has since been renamed or removed keeps its value
+  // selectable instead of being silently changed.
+  const clusterOptions = useMemo(() => {
+    const names = (clustersData?.clusters ?? []).map((c) => c.name);
+    const current = clusterId.trim();
+    if (current && !names.includes(current)) names.unshift(current);
+    return names;
+  }, [clustersData, clusterId]);
+  const knownClusterNames = useMemo(
+    () => new Set((clustersData?.clusters ?? []).map((c) => c.name)),
+    [clustersData],
+  );
+
   const handleSave = () => {
+    const trimmedName = name.trim();
+    const trimmedClusterId = clusterId.trim();
+    const trimmedNamespace = namespace.trim();
     const validation = validateAlertRuleDraft({
       name,
       clusterId,
@@ -115,10 +124,10 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
 
     const rule: AlertRule = {
       id: editRule?.id || `rule-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name,
+      name: trimmedName,
       enabled: editRule?.enabled ?? true,
-      clusterId,
-      namespace: namespace || undefined,
+      clusterId: trimmedClusterId,
+      namespace: trimmedNamespace || undefined,
       resourceType,
       condition: {
         type: conditionType,
@@ -168,12 +177,25 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">Cluster ID</label>
-              <Input
-                placeholder="my-cluster"
-                value={clusterId}
-                onChange={(e) => setClusterId(e.target.value)}
-              />
+              <label className="text-xs text-muted-foreground" id="alert-rule-cluster-label">Cluster</label>
+              <Select value={clusterId || undefined} onValueChange={setClusterId}>
+                <SelectTrigger className="w-full" aria-labelledby="alert-rule-cluster-label">
+                  <SelectValue placeholder={clustersLoading ? 'Loading clusters…' : 'Select a cluster'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {clusterOptions.length === 0 && (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                      {clustersLoading ? 'Loading clusters…' : 'No clusters found'}
+                    </div>
+                  )}
+                  {clusterOptions.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                      {clustersData && !knownClusterNames.has(option) ? ' (not in kubeconfig)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {errors.clusterId && <p className="text-xs text-destructive">{errors.clusterId}</p>}
             </div>
             <div className="space-y-1.5">
@@ -193,7 +215,7 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {RESOURCE_TYPES.map((rt) => (
+                {ALERT_RESOURCE_TYPE_OPTIONS.map((rt) => (
                   <SelectItem key={rt.value} value={rt.value}>
                     {rt.label}
                   </SelectItem>

@@ -18,7 +18,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Bug, Loader2, AlertTriangle } from 'lucide-react';
+import { DialogContextList } from '@/components/shared/confirm-dialog';
 import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
+import { guardOpenChange } from '@/lib/dialog-busy';
 import { toast } from 'sonner';
 import { usePanelStore } from '@/stores/panel-store';
 
@@ -53,6 +55,7 @@ export function PodDebugDialog({
   const { addTab } = usePanelStore();
 
   const handleStart = async () => {
+    if (loading) return;
     setLoading(true);
     setError(null);
 
@@ -84,10 +87,6 @@ export function PodDebugDialog({
       const errObj = err as { message?: string };
       const message = errObj?.message || 'Failed to inject debug container';
       setError(message);
-      // Show K8s version warning if relevant
-      if (message.includes('1.25')) {
-        setError(message);
-      }
       toast.error(message);
     } finally {
       setLoading(false);
@@ -95,8 +94,8 @@ export function PodDebugDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={guardOpenChange(loading, onOpenChange)}>
+      <DialogContent busy={loading}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Bug className="h-5 w-5" />
@@ -107,6 +106,8 @@ export function PodDebugDialog({
             Requires Kubernetes 1.25 or later.
           </DialogDescription>
         </DialogHeader>
+
+        <DialogContextList entries={{ cluster: clusterId, namespace, pod: podName }} />
 
         <div className="space-y-4 py-2">
           <div className="space-y-2">

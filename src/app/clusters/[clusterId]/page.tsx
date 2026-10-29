@@ -8,7 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { ErrorDisplay } from '@/components/shared/error-display';
-import { Server, Box, Layers, Network, AlertTriangle, RefreshCw, Plug, ExternalLink, Globe, Clock, Gauge, Ship } from 'lucide-react';
+import { getErrorPresentation } from '@/lib/error-presentation';
+import { Server, Box, Layers, Network, AlertTriangle, RefreshCw, Plug, ExternalLink, Globe, Clock, Gauge, Ship, Loader2 } from 'lucide-react';
 import { useNamespaceStore } from '@/stores/namespace-store';
 import Link from 'next/link';
 import { PortForwardBtn } from '@/components/shared/port-forward-btn';
@@ -92,6 +93,29 @@ function parseMemoryForOverview(val: string): number {
   return parseInt(val) / (1024 * 1024);
 }
 
+type LoadError = Error & { status?: number };
+
+function describeCardError(error: LoadError): string {
+  if (error.status === 403) return 'No permission';
+  if (error.status === 401) return 'Login required';
+  return 'Failed to load';
+}
+
+/** Per-card notice so one forbidden list does not take the whole overview down. */
+function CardLoadError({ label, error, onRetry }: { label: string; error: LoadError; onRetry: () => void }) {
+  const presentation = getErrorPresentation(error.message, error.status);
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-sm" role="status">
+      <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-600" />
+      <span className="min-w-0 flex-1">
+        <span className="font-medium">Could not load {label}.</span>{' '}
+        <span className="text-muted-foreground">{presentation.summary}</span>
+      </span>
+      <Button variant="outline" size="sm" className="h-7" onClick={onRetry}>Retry</Button>
+    </div>
+  );
+}
+
 export default function ClusterOverviewPage() {
   const params = useParams();
   const clusterId = params.clusterId as string;
@@ -102,16 +126,21 @@ export default function ClusterOverviewPage() {
   const nsLabel = isAllNs ? 'All Namespaces' : namespace;
 
   // Core data (always fetch immediately)
-  const { data: health, error: healthError, isValidating: healthValidating } = useSWR(`/api/clusters/${clusterId}/health`, {
-    ...OVERVIEW_LIVE_SWR_OPTIONS,
-    errorRetryCount: 3,
-    errorRetryInterval: 2000,
-  });
-  const { data: nodesData } = useSWR(`/api/clusters/${clusterId}/nodes`, OVERVIEW_LIVE_SWR_OPTIONS);
-  const { data: podsData } = useSWR(`/api/clusters/${clusterId}/resources/${namespace}/pods`, OVERVIEW_LIVE_SWR_OPTIONS);
+  // Transient failures keep retrying with backoff (see SWRProvider), so the
+  // page recovers on its own after a VPN drop.
+  const {
+    data: health,
+    error: healthError,
+    isValidating: healthValidating,
+    mutate: mutateHealth,
+  } = useSWR(`/api/clusters/${clusterId}/health`, OVERVIEW_LIVE_SWR_OPTIONS);
+  const { data: nodesData, error: nodesError, mutate: mutateNodes } = useSWR(`/api/clusters/${clusterId}/nodes`, OVERVIEW_LIVE_SWR_OPTIONS);
+  const { data: podsData, error: podsError, mutate: mutatePods } = useSWR(`/api/clusters/${clusterId}/resources/${namespace}/pods`, OVERVIEW_LIVE_SWR_OPTIONS);
 
-  // Secondary data (fetch after core data is loaded to reduce initial request burst)
-  const coreLoaded = !!health && !!nodesData && !!podsData;
+  // Secondary data waits only for the cluster to be reachable, to reduce the
+  // initial request burst. Gating on nodes/pods as well would leave every card
+  // empty forever for users who may not list nodes cluster-wide.
+  const coreLoaded = !!health;
   const { data: deploymentsData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/deployments` : null, OVERVIEW_LIVE_SWR_OPTIONS);
   const { data: statefulsetData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/statefulsets` : null, OVERVIEW_LIVE_SWR_OPTIONS);
   const { data: daemonsetData } = useSWR(coreLoaded ? `/api/clusters/${clusterId}/resources/${namespace}/daemonsets` : null, OVERVIEW_LIVE_SWR_OPTIONS);
@@ -123,7 +152,9 @@ export default function ClusterOverviewPage() {
 
   // Don't show error while SWR is still retrying — Teleport exec plugin
   // often fails on the first call (empty key file) but succeeds on retry.
-  if (healthError && !healthValidating && !health) return <ErrorDisplay error={healthError} clusterId={decodedClusterId} />;
+  if (healthError && !healthValidating && !health) {
+    return <ErrorDisplay error={healthError} onRetry={() => mutateHealth()} clusterId={clusterId} />;
+  }
 
   const nodes = nodesData?.items || [];
   const pods = podsData?.items || [];
@@ -235,8 +266,8 @@ export default function ClusterOverviewPage() {
   }).slice(0, 8);
 
   const stats = [
-    { label: 'Nodes', value: `${readyNodes.length}/${nodes.length}`, sub: 'Ready', icon: Server, href: `/clusters/${clusterId}/nodes`, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-    { label: 'Pods', value: `${runningPods.length}/${pods.length}`, sub: 'Running', icon: Box, href: `/clusters/${clusterId}/namespaces/${namespace}/pods`, color: 'text-green-500', bg: 'bg-green-500/10' },
+    { label: 'Nodes', value: nodesError && !nodesData ? '—' : `${readyNodes.length}/${nodes.length}`, sub: nodesError && !nodesData ? describeCardError(nodesError) : 'Ready', icon: Server, href: `/clusters/${clusterId}/nodes`, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+    { label: 'Pods', value: podsError && !podsData ? '—' : `${runningPods.length}/${pods.length}`, sub: podsError && !podsData ? describeCardError(podsError) : 'Running', icon: Box, href: `/clusters/${clusterId}/namespaces/${namespace}/pods`, color: 'text-green-500', bg: 'bg-green-500/10' },
     { label: 'Deployments', value: deployments.length, sub: `${workloads[0].ready} ready`, icon: Layers, href: `/clusters/${clusterId}/namespaces/${namespace}/deployments`, color: 'text-purple-500', bg: 'bg-purple-500/10' },
     { label: 'Services', value: services.length, sub: `${ingresses.length} ingress`, icon: Network, href: `/clusters/${clusterId}/namespaces/${namespace}/services`, color: 'text-orange-500', bg: 'bg-orange-500/10' },
   ];
@@ -253,7 +284,14 @@ export default function ClusterOverviewPage() {
         <div>
           <h1 className="text-2xl font-bold">{decodedClusterId}</h1>
           <div className="flex items-center gap-2 mt-1">
-            <StatusBadge status={health?.status === 'connected' ? 'Connected' : 'Error'} />
+            {health ? (
+              <StatusBadge status={health.status === 'connected' ? 'Connected' : 'Error'} />
+            ) : (
+              <Badge variant="outline" className="gap-1 text-muted-foreground" role="status">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Checking…
+              </Badge>
+            )}
             <span className="text-sm text-muted-foreground">{nsLabel}</span>
             <span className="text-xs text-muted-foreground ml-2">
               {configmaps.length} ConfigMaps / {secrets.length} Secrets
@@ -268,8 +306,19 @@ export default function ClusterOverviewPage() {
         </Button>
       </div>
 
+      {(nodesError && !nodesData) || (podsError && !podsData) ? (
+        <div className="flex flex-col gap-2">
+          {nodesError && !nodesData && (
+            <CardLoadError label="nodes" error={nodesError} onRetry={() => mutateNodes()} />
+          )}
+          {podsError && !podsData && (
+            <CardLoadError label="pods" error={podsError} onRetry={() => mutatePods()} />
+          )}
+        </div>
+      ) : null}
+
       {/* Workload Health Summary */}
-      {coreLoaded && (
+      {coreLoaded && podsData && (
         <WorkloadHealthSummary
           clusterId={clusterId}
           namespace={namespace}

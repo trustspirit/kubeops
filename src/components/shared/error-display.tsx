@@ -110,3 +110,32 @@ export function ErrorDisplay({ error, onRetry, clusterId }: ErrorDisplayProps) {
     </div>
   );
 }
+
+interface RefreshFailedBannerProps {
+  error: Error & { status?: number };
+  onRetry?: () => void | Promise<unknown>;
+  className?: string;
+}
+
+/**
+ * Non-blocking notice for a failed background refresh: the page keeps showing
+ * the last successful data instead of being replaced by a full-page error.
+ */
+export function RefreshFailedBanner({ error, onRetry, className }: RefreshFailedBannerProps) {
+  const feedback = getErrorPresentation(error.message, error.status);
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-sm ${className ?? ''}`}
+      role="status"
+    >
+      <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-600" />
+      <span className="min-w-0 flex-1">
+        <span className="font-medium">Refresh failed.</span>{' '}
+        <span className="text-muted-foreground">Showing the last successful data. {feedback.summary}</span>
+      </span>
+      {onRetry && (
+        <Button variant="outline" size="sm" className="h-7" onClick={() => void onRetry()}>Retry</Button>
+      )}
+    </div>
+  );
+}

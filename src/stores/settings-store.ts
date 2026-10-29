@@ -25,6 +25,16 @@ interface SettingsState {
   clusterProviderOverrides: Record<string, string>;
   setClusterProviderOverride: (clusterId: string, providerId: string) => void;
   removeClusterProviderOverride: (clusterId: string) => void;
+
+  /**
+   * Clusters (kubeconfig contexts) that run Argo CD and manage other clusters.
+   * Workload pages look their Application up there as well as in their own
+   * cluster. Chosen explicitly rather than scanned: probing every context can
+   * trigger an SSO re-authorization per Teleport cluster.
+   */
+  argoCDHostClusters: string[];
+  addArgoCDHostCluster: (clusterId: string) => void;
+  removeArgoCDHostCluster: (clusterId: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -55,6 +65,18 @@ export const useSettingsStore = create<SettingsState>()(
           delete rest[clusterId];
           return { clusterProviderOverrides: rest };
         }),
+
+      argoCDHostClusters: [],
+      addArgoCDHostCluster: (clusterId) =>
+        set((state) => (
+          state.argoCDHostClusters.includes(clusterId)
+            ? state
+            : { argoCDHostClusters: [...state.argoCDHostClusters, clusterId] }
+        )),
+      removeArgoCDHostCluster: (clusterId) =>
+        set((state) => ({
+          argoCDHostClusters: state.argoCDHostClusters.filter((id) => id !== clusterId),
+        })),
     }),
     {
       name: 'kubeops-settings',

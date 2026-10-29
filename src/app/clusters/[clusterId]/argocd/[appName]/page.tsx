@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
-import { ErrorDisplay } from '@/components/shared/error-display';
+import { ErrorDisplay, RefreshFailedBanner } from '@/components/shared/error-display';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { YamlEditor } from '@/components/shared/yaml-editor';
 import { useCustomResourceDetail } from '@/hooks/use-custom-resource-detail';
@@ -40,7 +40,7 @@ export default function ArgoCDAppDetailPage() {
   const decodedClusterId = decodeURIComponent(clusterId);
   const namespaceParam = searchParams.get('namespace') || undefined;
 
-  const { data: allAppsData, error: listError, isLoading: listLoading } = useCustomResourceList({
+  const { data: allAppsData, error: listError, isLoading: listLoading, mutate: mutateList } = useCustomResourceList({
     clusterId: namespaceParam ? null : decodedClusterId,
     group: ARGOCD_GROUP,
     version: ARGOCD_VERSION,
@@ -76,7 +76,7 @@ export default function ArgoCDAppDetailPage() {
   });
 
   if (!namespaceParam && listLoading) return <LoadingSkeleton />;
-  if (!namespaceParam && listError) return <ErrorDisplay error={listError} onRetry={() => router.refresh()} clusterId={clusterId} />;
+  if (!namespaceParam && listError && !allAppsData) return <ErrorDisplay error={listError} onRetry={() => mutateList()} clusterId={clusterId} />;
   if (!namespaceParam && ambiguousMatches.length > 1) {
     return (
       <div className="flex flex-col gap-4 p-6">
@@ -97,7 +97,7 @@ export default function ArgoCDAppDetailPage() {
   }
 
   if (isLoading) return <LoadingSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
+  if (error && !data) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
   if (!data || !resolvedNamespace) return null;
 
   const app = data as ArgoCDApplication;
@@ -112,6 +112,7 @@ export default function ArgoCDAppDetailPage() {
 
   return (
     <div className="flex flex-col gap-4 p-6">
+      {error && data && <RefreshFailedBanner error={error} onRetry={() => mutate()} />}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => router.push(`/clusters/${clusterId}/argocd`)} aria-label="Go back">
           <ArrowLeft className="h-4 w-4" />
@@ -187,7 +188,8 @@ export default function ArgoCDAppDetailPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="yaml" className="mt-4">
+        {/* Kept mounted so unsaved YAML edits survive switching tabs. */}
+        <TabsContent value="yaml" forceMount className="mt-4 data-[state=inactive]:hidden">
           <YamlEditor
             data={app}
             apiUrl={apiUrl}

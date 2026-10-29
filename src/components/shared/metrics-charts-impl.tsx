@@ -8,6 +8,7 @@ import { Cpu, MemoryStick, Network, HardDrive } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
 } from 'recharts';
+import { createCounterRateState, readCounterRates, updateCounterRates, type CounterRateState } from './metrics-rate';
 
 interface MetricsPoint {
   time: string;
@@ -84,8 +85,7 @@ interface PodMetricsProps {
 }
 
 export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: PodMetricsProps) {
-  const prevNetRef = useRef<{ rx: number; tx: number; ts: number } | null>(null);
-  const prevFsRef = useRef<{ read: number; write: number; ts: number } | null>(null);
+  const rateStateRef = useRef<CounterRateState>(createCounterRateState(4));
   const [history, setHistory] = useState<MetricsPoint[]>([]);
 
   const { data } = useSWR(
@@ -100,6 +100,19 @@ export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: Po
   );
   const promUnavailable = promError?.status === 404;
 
+  // Network & FS rates follow the Prometheus sample, which changes far less
+  // often than we poll; recompute them only when it does.
+  useEffect(() => {
+    if (!promData || promData.error) return;
+    rateStateRef.current = updateCounterRates(
+      rateStateRef.current,
+      [promData.netRxBytes || 0, promData.netTxBytes || 0, promData.fsReadBytes || 0, promData.fsWriteBytes || 0],
+      Date.now(),
+    );
+  }, [promData]);
+
+  // One chart point per metrics-server sample. Appending on Prometheus updates
+  // too produced duplicate points.
   useEffect(() => {
     if (!data?.containers) return;
     const containers = data.containers || [];
@@ -111,34 +124,8 @@ export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: Po
       totalMem += parseMemory(usage?.memory || '0');
     });
 
-    // Network & FS rate from Prometheus (cumulative counters → rate)
-    let netRx = 0, netTx = 0, fsRead = 0, fsWrite = 0;
-    if (promData && !promData.error) {
-      const rxBytes = promData.netRxBytes || 0;
-      const txBytes = promData.netTxBytes || 0;
-      const now = Date.now();
-      if (prevNetRef.current) {
-        const dt = (now - prevNetRef.current.ts) / 1000;
-        if (dt > 0) {
-          netRx = Math.max(0, (rxBytes - prevNetRef.current.rx) / 1024 / dt);
-          netTx = Math.max(0, (txBytes - prevNetRef.current.tx) / 1024 / dt);
-        }
-      }
-      prevNetRef.current = { rx: rxBytes, tx: txBytes, ts: now };
-
-      const readB = promData.fsReadBytes || 0;
-      const writeB = promData.fsWriteBytes || 0;
-      if (prevFsRef.current) {
-        const dt = (now - prevFsRef.current.ts) / 1000;
-        if (dt > 0) {
-          fsRead = Math.max(0, (readB - prevFsRef.current.read) / 1024 / dt);
-          fsWrite = Math.max(0, (writeB - prevFsRef.current.write) / 1024 / dt);
-        }
-      }
-      prevFsRef.current = { read: readB, write: writeB, ts: now };
-    }
-
     const now = new Date();
+    const [netRx, netTx, fsRead, fsWrite] = readCounterRates(rateStateRef.current, now.getTime());
     const point: MetricsPoint = {
       time: now.toLocaleTimeString('en', { hour12: false, minute: '2-digit', second: '2-digit' }),
       cpu: Math.round(totalCpu * 10) / 10,
@@ -149,9 +136,8 @@ export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: Po
       fsWrite: Math.round(fsWrite * 10) / 10,
     };
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setHistory((prev) => [...prev, point].slice(-60)); // Keep 5 min at 5s interval // Keep 5 min at 5s interval
-  }, [data, promData]);
+    setHistory((prev) => [...prev, point].slice(-60)); // Keep 5 min at 5s interval
+  }, [data]);
 
   if (history.length === 0) {
     return (

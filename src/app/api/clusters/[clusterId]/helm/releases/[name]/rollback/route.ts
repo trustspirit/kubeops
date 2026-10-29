@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runHelm, isValidNamespace } from '@/lib/helm/helm-runner';
-import { requireHelm } from '@/lib/helm/helpers';
+import { runHelmMutation, isValidNamespace, parseRevision } from '@/lib/helm/helm-runner';
+import { requireHelm, requireReleaseName, helmErrorResponse } from '@/lib/helm/helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,38 +9,39 @@ interface RouteParams {
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams) {
-  const helmCheck = requireHelm();
+  const helmCheck = await requireHelm();
   if (helmCheck) return helmCheck;
 
   const { clusterId, name } = await params;
   const contextName = decodeURIComponent(clusterId);
   const releaseName = decodeURIComponent(name);
 
-  let body: { revision?: number; namespace?: string };
+  const nameCheck = requireReleaseName(releaseName);
+  if (nameCheck) return nameCheck;
+
+  let body: { revision?: unknown; namespace?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { revision, namespace } = body;
+  const { namespace } = body;
+  const revision = parseRevision(body.revision);
 
-  if (!revision) {
-    return NextResponse.json({ error: 'revision is required' }, { status: 400 });
+  if (revision === null) {
+    return NextResponse.json({ error: 'revision must be a positive integer' }, { status: 400 });
   }
   if (!namespace || !isValidNamespace(namespace)) {
     return NextResponse.json({ error: 'Valid namespace is required (lowercase alphanumeric and hyphens)' }, { status: 400 });
   }
 
-  const args = ['rollback', releaseName, String(revision), '-n', namespace];
-  const result = await runHelm(args, contextName);
+  const args = ['rollback', '-n', namespace, '--', releaseName, String(revision)];
+  const result = await runHelmMutation(args, contextName);
 
   if (result.code !== 0) {
     console.error(`[Helm] rollback ${releaseName} to ${revision} failed: ${result.stderr}`);
-    return NextResponse.json(
-      { error: result.stderr || `Failed to rollback release "${releaseName}" to revision ${revision}` },
-      { status: 500 }
-    );
+    return helmErrorResponse(result, `Failed to rollback release "${releaseName}" to revision ${revision}`);
   }
 
   return NextResponse.json({ success: true, message: result.stdout.trim() || `Rolled back "${releaseName}" to revision ${revision}` });

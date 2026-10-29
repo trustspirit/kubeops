@@ -1,8 +1,18 @@
+export interface RBACRule {
+  apiGroups: string[];
+  resources: string[];
+  verbs: string[];
+  /** When set, the rule only applies to these named objects. */
+  resourceNames?: string[];
+  /** Non-resource endpoints (e.g. /healthz, /metrics) — ClusterRoles only. */
+  nonResourceURLs?: string[];
+}
+
 export interface RBACEntry {
   subject: { kind: string; name: string; namespace?: string };
   role: { kind: string; name: string };
   namespace: string;
-  rules: Array<{ apiGroups: string[]; resources: string[]; verbs: string[] }>;
+  rules: RBACRule[];
   bindingName: string;
   bindingKind: string;
 }

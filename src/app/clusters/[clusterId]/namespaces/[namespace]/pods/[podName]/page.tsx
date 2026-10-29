@@ -3,13 +3,13 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
-import { ErrorDisplay } from '@/components/shared/error-display';
+import { ErrorDisplay, RefreshFailedBanner } from '@/components/shared/error-display';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AgeDisplay } from '@/components/shared/age-display';
-import { ArrowLeft, Terminal, ScrollText, Trash2, KeyRound, GitCompare, Bug, Ship, GitBranch } from 'lucide-react';
+import { ArrowLeft, Terminal, ScrollText, Trash2, KeyRound, GitCompare, Bug, Ship } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { usePanelStore } from '@/stores/panel-store';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -25,18 +25,9 @@ import { PodWatchButton } from '@/components/pods/pod-watch-button';
 import { ResourceTreeView } from '@/components/shared/resource-tree';
 import { useResourceTree } from '@/hooks/use-resource-tree';
 import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
-import { useCustomResourceList } from '@/hooks/use-custom-resource-list';
 import type { KubeOwnerReference, ContainerSpec, ContainerStatus } from '@/types/resource';
 import { findHelmReleaseRef } from '@/lib/helm/sync-latest';
-import {
-  ARGOCD_APPLICATIONS_PLURAL,
-  ARGOCD_GROUP,
-  ARGOCD_VERSION,
-  findArgoCDApplicationRefForResource,
-  getArgoCDAppHref,
-  getArgoCDAppNameCandidates,
-  type ArgoCDApplication,
-} from '@/lib/argocd/helpers';
+import { ArgoCDWorkloadBar } from '@/components/argocd/argocd-workload-bar';
 import { useSWRConfig } from 'swr';
 import { isResourceListCacheKey } from '@/lib/resource-freshness';
 
@@ -128,27 +119,11 @@ export default function PodDetailPage() {
     () => findHelmReleaseRef(pod, [ownerRS, rootOwnerResource]),
     [pod, ownerRS, rootOwnerResource],
   );
-  const argoCDAppNameCandidates = useMemo(() => getArgoCDAppNameCandidates(pod), [pod]);
-  const { data: argoCDAppsData } = useCustomResourceList({
-    clusterId: argoCDAppNameCandidates.length > 0 ? decodedClusterId : null,
-    group: ARGOCD_GROUP,
-    version: ARGOCD_VERSION,
-    plural: ARGOCD_APPLICATIONS_PLURAL,
-    refreshInterval: 30000,
-    enabled: argoCDAppNameCandidates.length > 0,
-  });
-  const argoCDAppRef = useMemo(
-    () => findArgoCDApplicationRefForResource(
-      pod,
-      (argoCDAppsData?.items || []) as ArgoCDApplication[],
-    ),
-    [pod, argoCDAppsData],
-  );
 
   // Watch for restarts on this single pod
 
   if (isLoading) return <LoadingSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
+  if (error && !pod) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
   if (!pod) return null;
 
   const metadata = pod.metadata || {};
@@ -177,6 +152,7 @@ export default function PodDetailPage() {
 
   return (
     <div className="flex flex-col gap-4 p-6">
+      {error && pod && <RefreshFailedBanner error={error} onRetry={() => mutate()} />}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => router.back()} aria-label="Go back">
           <ArrowLeft className="h-4 w-4" />
@@ -238,21 +214,14 @@ export default function PodDetailPage() {
               <Ship className="h-4 w-4 mr-1" />Helm Release
             </Button>
           )}
-          {argoCDAppRef && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(getArgoCDAppHref(clusterId, argoCDAppRef.name, argoCDAppRef.namespace))}
-            >
-              <GitBranch className="h-4 w-4 mr-1" />ArgoCD App
-            </Button>
-          )}
           <PodWatchButton clusterId={decodedClusterId} namespace={namespace} podName={podName} />
           <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
             <Trash2 className="h-4 w-4 mr-1" />Delete
           </Button>
         </div>
       </div>
+
+      <ArgoCDWorkloadBar clusterId={decodedClusterId} namespace={namespace} resources={[pod, ownerRS, rootOwnerResource]} />
 
       <Tabs defaultValue="overview">
         <TabsList>
@@ -453,7 +422,8 @@ export default function PodDetailPage() {
 
         </TabsContent>
 
-        <TabsContent value="yaml" className="mt-4">
+        {/* Kept mounted so unsaved YAML edits survive switching tabs. */}
+        <TabsContent value="yaml" forceMount className="mt-4 data-[state=inactive]:hidden">
           <YamlEditor
             data={pod}
             apiUrl={`/api/clusters/${clusterId}/resources/${namespace}/pods/${podName}`}

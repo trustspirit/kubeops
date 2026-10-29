@@ -3,24 +3,29 @@ import * as k8s from '@kubernetes/client-node';
 import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
 import { getResourceConfig } from '@/lib/k8s/resource-api';
 import { parsePropagationPolicy } from '@/lib/delete-options';
+import { extractK8sError, isObjectNotFound } from '@/lib/k8s/error-handling';
+import { parseListPaging } from '@/lib/k8s/list-paging';
+import {
+  k8sRawRequest,
+  messageFromStatusBody,
+  RawRequestError,
+  resolvePatchContentType,
+} from '@/lib/k8s/raw-request';
 import type { K8sApiConstructor } from '@/types/resource';
 
 export const dynamic = 'force-dynamic';
 
-function extractK8sError(error: unknown): { status: number; message: string } {
-  const err = error as Record<string, unknown>;
-  const response = err?.response as Record<string, unknown> | undefined;
-  const raw = err?.statusCode || response?.statusCode || err?.code;
-  const status = (typeof raw === 'number' && raw >= 200 && raw <= 599) ? raw : 500;
+const API_PREFIX: Record<string, string> = {
+  CoreV1Api: '/api/v1',
+  AppsV1Api: '/apis/apps/v1',
+  BatchV1Api: '/apis/batch/v1',
+  NetworkingV1Api: '/apis/networking.k8s.io/v1',
+  RbacAuthorizationV1Api: '/apis/rbac.authorization.k8s.io/v1',
+  AutoscalingV2Api: '/apis/autoscaling/v2',
+};
 
-  // error.body can be a parsed object or a raw JSON string
-  let body = err?.body as Record<string, unknown> | string | undefined;
-  if (typeof body === 'string') {
-    try { body = JSON.parse(body) as Record<string, unknown>; } catch { /* keep as string */ }
-  }
-
-  const message = String((typeof body === 'object' ? (body as Record<string, unknown>)?.message : body) || (err?.message as string) || 'Request failed');
-  return { status, message };
+function missingName(resourceType: string) {
+  return NextResponse.json({ error: `A ${resourceType} name is required` }, { status: 400 });
 }
 
 const API_CLASS_MAP: Record<string, K8sApiConstructor> = {
@@ -68,13 +73,19 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       const result = await client[config.getFn](args);
       return NextResponse.json(result);
     } else {
+      // Paging is opt-in (?limit=&continue=): callers that sort the full list
+      // client-side (e.g. events by time) would silently lose items otherwise.
+      const paging = parseListPaging(req.nextUrl.searchParams);
+      if (!paging.ok) {
+        return NextResponse.json({ error: paging.error }, { status: 400 });
+      }
       // Use "all namespaces" API when namespace is _all
       const isAllNamespaces = namespace === '_all' && config.namespaced && config.listAllFn;
       if (isAllNamespaces) {
-        const result = await client[config.listAllFn!]();
+        const result = await client[config.listAllFn!]({ ...paging.args });
         return NextResponse.json(result);
       }
-      const args: Record<string, string> = {};
+      const args: Record<string, string | number> = { ...paging.args };
       if (config.namespaced) args.namespace = namespace;
       const result = await client[config.listFn](args);
       return NextResponse.json(result);
@@ -96,6 +107,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
   if (!config || !config.replaceFn) {
     return NextResponse.json({ error: `Cannot update resource type: ${resourceType}` }, { status: 400 });
   }
+  if (!resourceName) return missingName(resourceType);
 
   try {
     const body = await req.json();
@@ -112,6 +124,13 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
   }
 }
 
+/**
+ * PATCH body is sent to the API server as-is. The patch flavour follows the
+ * request's Content-Type:
+ *   - application/merge-patch+json            RFC 7386 merge patch (e.g. `{"spec":{"replicas":3}}`)
+ *   - application/json-patch+json             RFC 6902 JSON patch (array of ops)
+ *   - application/strategic-merge-patch+json  strategic merge (default, also for plain application/json)
+ */
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const { clusterId, namespace, resourcePath } = await params;
   const contextName = decodeURIComponent(clusterId);
@@ -122,72 +141,34 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   if (!config || !config.replaceFn) {
     return NextResponse.json({ error: `Cannot patch resource type: ${resourceType}` }, { status: 400 });
   }
+  if (!resourceName) return missingName(resourceType);
+
+  const contentType = resolvePatchContentType(req.headers.get('content-type'), 'application/strategic-merge-patch+json');
 
   try {
-    const body = await req.json();
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+    if (contentType === 'application/json-patch+json' ? !Array.isArray(body) : (typeof body !== 'object' || body === null || Array.isArray(body))) {
+      return NextResponse.json({ error: `Patch body does not match ${contentType}` }, { status: 400 });
+    }
+
     const kc = getKubeConfigForContext(contextName);
-
-    // Use strategic merge patch via raw K8s API
-    const cluster = kc.getCurrentCluster();
-    if (!cluster) throw new Error('Cluster not found');
-    const opts: Record<string, unknown> = {};
-    await kc.applyToHTTPSOptions(opts);
-
-    const apiPrefix = config.apiClass === 'CoreV1Api' ? '/api/v1' :
-      config.apiClass === 'AppsV1Api' ? '/apis/apps/v1' :
-      config.apiClass === 'BatchV1Api' ? '/apis/batch/v1' :
-      config.apiClass === 'NetworkingV1Api' ? '/apis/networking.k8s.io/v1' :
-      config.apiClass === 'RbacAuthorizationV1Api' ? '/apis/rbac.authorization.k8s.io/v1' :
-      config.apiClass === 'AutoscalingV2Api' ? '/apis/autoscaling/v2' : '/api/v1';
-
+    const apiPrefix = API_PREFIX[config.apiClass] || '/api/v1';
+    const e = encodeURIComponent;
     const patchPath = config.namespaced
-      ? `${apiPrefix}/namespaces/${namespace}/${resourceType}/${resourceName}`
-      : `${apiPrefix}/${resourceType}/${resourceName}`;
+      ? `${apiPrefix}/namespaces/${e(namespace)}/${resourceType}/${e(resourceName)}`
+      : `${apiPrefix}/${resourceType}/${e(resourceName)}`;
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const https = require('https');
-    const urlObj = new URL(`${cluster.server}${patchPath}`);
-    const result = await new Promise<Record<string, unknown>>((resolve, reject) => {
-      const patchData = JSON.stringify(body);
-      const patchHeaders: Record<string, string | number> = {
-        'Content-Type': 'application/strategic-merge-patch+json',
-        'Content-Length': Buffer.byteLength(patchData),
-      };
-      // Forward authorization headers (bearer token, etc.)
-      const optsHeaders = opts.headers as Record<string, string> | undefined;
-      if (optsHeaders) {
-        Object.assign(patchHeaders, optsHeaders);
-      }
-      const reqOpts = {
-        hostname: urlObj.hostname,
-        port: urlObj.port || 443,
-        path: urlObj.pathname,
-        method: 'PATCH',
-        headers: patchHeaders,
-        ca: opts.ca, cert: opts.cert, key: opts.key,
-        rejectUnauthorized: !cluster.skipTLSVerify,
-        timeout: 30000, // 30s request timeout to prevent hanging
-      };
-      const request = https.request(reqOpts, (res: { statusCode: number; on: (event: string, cb: (data?: string) => void) => void }) => {
-        let responseBody = '';
-        res.on('data', (chunk?: string) => { responseBody += chunk ?? ''; });
-        res.on('end', () => {
-          if (res.statusCode >= 200 && res.statusCode < 300) {
-            try { resolve(JSON.parse(responseBody)); } catch { resolve({}); }
-          } else {
-            reject({ code: res.statusCode, message: responseBody });
-          }
-        });
-      });
-      request.on('timeout', () => {
-        request.destroy(new Error('PATCH request timed out'));
-      });
-      request.on('error', reject);
-      request.write(patchData);
-      request.end();
-    });
-
-    return NextResponse.json(result);
+    const { status, data } = await k8sRawRequest(kc, 'PATCH', patchPath, { body, contentType });
+    if (status < 200 || status >= 300) {
+      // The API server answers with a Status object; surface its message, not the raw JSON.
+      throw new RawRequestError(messageFromStatusBody(data, `Patch failed with HTTP ${status}`), status, data);
+    }
+    return NextResponse.json(data && typeof data === 'object' ? data : {});
   } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
     console.error(`[K8s API] PATCH ${resourceType}/${resourceName} in ${namespace}: ${status} ${message}`);
@@ -205,6 +186,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   if (!config || !config.deleteFn) {
     return NextResponse.json({ error: `Cannot delete resource type: ${resourceType}` }, { status: 400 });
   }
+  if (!resourceName) return missingName(resourceType);
 
   const parsedPolicy = parsePropagationPolicy(new URL(req.url).searchParams.get('propagationPolicy'));
   if (!parsedPolicy.ok) {
@@ -222,6 +204,11 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json(result);
   } catch (error: unknown) {
     const { status, message } = extractK8sError(error);
+    // Already gone is the outcome the caller asked for: a retried or
+    // double-submitted delete must not surface as a failure.
+    if (isObjectNotFound(status, (error as { body?: unknown })?.body, resourceName)) {
+      return NextResponse.json({ success: true, alreadyDeleted: true });
+    }
     console.error(`[K8s API] DELETE ${resourceType}/${resourceName} in ${namespace}: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });
   }

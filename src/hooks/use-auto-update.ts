@@ -1,51 +1,39 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useReducer } from 'react';
-import type { UpdateStatus } from '@/types/electron';
-import {
-  initialUpdateState,
-  reduceUpdateState,
-} from '@/lib/update-state';
+import { useEffect, useCallback } from 'react';
+import { ensureUpdateBridge, runInstallOnce, useUpdateStore } from '@/stores/update-store';
 
 export type { UpdatePhase } from '@/lib/update-state';
 
 export function useAutoUpdate() {
-  const [state, dispatch] = useReducer(reduceUpdateState, initialUpdateState);
-  const [appVersion, setAppVersion] = useState<string | null>(null);
-  const { phase, version, percent, errorMessage, installStage } = state;
+  const phase = useUpdateStore((s) => s.phase);
+  const version = useUpdateStore((s) => s.version);
+  const percent = useUpdateStore((s) => s.percent);
+  const errorMessage = useUpdateStore((s) => s.errorMessage);
+  const installStage = useUpdateStore((s) => s.installStage);
+  const appVersion = useUpdateStore((s) => s.appVersion);
+  const dispatch = useUpdateStore((s) => s.dispatch);
 
-  const api = typeof window !== 'undefined' ? window.electronUpdater : undefined;
-  const isAvailable = !!api;
-  const apiRef = useRef(api);
-  const installPromiseRef = useRef<Promise<void> | null>(null);
-  useEffect(() => { apiRef.current = api; });
+  const isAvailable = typeof window !== 'undefined' && !!window.electronUpdater;
 
-  useEffect(() => {
-    apiRef.current?.getAppVersion().then(setAppVersion).catch(() => {});
-  }, []);
-
-  // Event listener for push-based status updates (download progress, auto-check at startup)
-  useEffect(() => {
-    if (!apiRef.current) return;
-
-    const unsubscribe = apiRef.current.onUpdateStatus((status: UpdateStatus) => {
-      dispatch({ type: 'status-received', status });
-    });
-
-    return unsubscribe;
-  }, []);
+  // One app-lifetime subscription, shared by every instance of this hook.
+  useEffect(() => { ensureUpdateBridge(); }, []);
 
   useEffect(() => {
     if (phase !== 'not-available') return;
-    const timer = setTimeout(() => dispatch({ type: 'dismissed' }), 3000);
+    const timer = setTimeout(() => {
+      // Another instance (or a new check) may have moved on already.
+      if (useUpdateStore.getState().phase === 'not-available') dispatch({ type: 'dismissed' });
+    }, 3000);
     return () => clearTimeout(timer);
-  }, [phase]);
+  }, [phase, dispatch]);
 
   // checkForUpdates uses IPC return value as primary, event listener as fallback
   const checkForUpdates = useCallback(() => {
-    if (!apiRef.current) return;
+    const api = window.electronUpdater;
+    if (!api) return;
     dispatch({ type: 'check-requested' });
-    apiRef.current.checkForUpdates()
+    api.checkForUpdates()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .then((info: any) => {
         if (!info) {
@@ -60,24 +48,28 @@ export function useAutoUpdate() {
           message: err instanceof Error ? err.message : 'Update check failed',
         });
       });
-  }, []);
+  }, [dispatch]);
 
   const downloadUpdate = useCallback(() => {
-    if (!apiRef.current) return;
+    const api = window.electronUpdater;
+    if (!api) return;
     dispatch({ type: 'download-requested' });
-    apiRef.current.downloadUpdate().catch((err: unknown) => {
+    api.downloadUpdate().catch((err: unknown) => {
       dispatch({
         type: 'operation-failed',
         message: err instanceof Error ? err.message : 'Download failed',
       });
     });
-  }, []);
+  }, [dispatch]);
 
   const quitAndInstall = useCallback(async () => {
-    if (!apiRef.current || installPromiseRef.current) return;
-    dispatch({ type: 'install-requested' });
-    const promise = apiRef.current.quitAndInstall();
-    installPromiseRef.current = promise;
+    const api = window.electronUpdater;
+    if (!api) return;
+    const promise = runInstallOnce(() => {
+      dispatch({ type: 'install-requested' });
+      return api.quitAndInstall();
+    });
+    if (!promise) return;
     try {
       await promise;
     } catch (err: unknown) {
@@ -86,14 +78,12 @@ export function useAutoUpdate() {
         type: 'operation-failed',
         message: `Install failed: ${message}`,
       });
-    } finally {
-      installPromiseRef.current = null;
     }
-  }, []);
+  }, [dispatch]);
 
   const dismiss = useCallback(() => {
     dispatch({ type: 'dismissed' });
-  }, []);
+  }, [dispatch]);
 
   return {
     phase,

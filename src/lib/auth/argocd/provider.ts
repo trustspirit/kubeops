@@ -12,21 +12,21 @@ export const argocdProvider: AuthProvider = {
   icon: 'GitMerge',
 
   async checkAvailability(): Promise<AuthProviderAvailability> {
-    const path = findCli('argocd');
+    const path = await findCli('argocd');
     if (!path) return { available: false };
-    const version = getCliVersion(path, ['version', '--client', '--short']);
+    const version = await getCliVersion(path, ['version', '--client', '--short']);
     return { available: true, path, version };
   },
 
   async getStatus(config: Record<string, string>): Promise<AuthProviderStatus> {
-    const path = findCli('argocd');
+    const path = await findCli('argocd');
     if (!path) {
       lastKnownStatus = { authenticated: false };
       lastKnownStatusAt = Date.now();
       return lastKnownStatus;
     }
     try {
-      const output = runCli(path, buildUserInfoArgs({ server: config.server }), 10_000);
+      const output = await runCli(path, buildUserInfoArgs({ server: config.server }), 10_000);
       const data = JSON.parse(output);
       if (!data?.loggedIn) {
         lastKnownStatus = { authenticated: false };
@@ -45,11 +45,11 @@ export const argocdProvider: AuthProvider = {
   },
 
   async login(config: Record<string, string>): Promise<{ success: boolean; output?: string; error?: string }> {
-    const path = findCli('argocd');
+    const path = await findCli('argocd');
     if (!path) return { success: false, error: 'argocd not found in PATH' };
     if (!config.server) return { success: false, error: 'server is required' };
     try {
-      const output = runCli(
+      const output = await runCli(
         path,
         buildLoginArgs({
           server: config.server,
@@ -59,6 +59,7 @@ export const argocdProvider: AuthProvider = {
           grpcWeb: config.grpcWeb,
         }),
         120_000,
+        { label: 'Login' },
       );
       return { success: true, output };
     } catch (err: unknown) {

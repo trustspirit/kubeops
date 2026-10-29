@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
 import { useResourceList } from '@/hooks/use-resource-list';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
-import { ErrorDisplay } from '@/components/shared/error-display';
+import { ErrorDisplay, RefreshFailedBanner } from '@/components/shared/error-display';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ import { ResourceTreeView } from '@/components/shared/resource-tree';
 import { useResourceTree } from '@/hooks/use-resource-tree';
 import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
 import type { KubeResource, ContainerSpec, ContainerStatus } from '@/types/resource';
+import { ArgoCDWorkloadBar } from '@/components/argocd/argocd-workload-bar';
 
 export default function StatefulSetDetailPage() {
   const params = useParams();
@@ -67,7 +68,7 @@ export default function StatefulSetDetailPage() {
   });
 
   if (isLoading) return <LoadingSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
+  if (error && !sts) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
   if (!sts) return null;
 
   const metadata = sts.metadata || {};
@@ -128,6 +129,7 @@ export default function StatefulSetDetailPage() {
 
   return (
     <div className="flex flex-col gap-4 p-6">
+      {error && sts && <RefreshFailedBanner error={error} onRetry={() => mutate()} />}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => router.back()} aria-label="Go back">
           <ArrowLeft className="h-4 w-4" />
@@ -157,6 +159,8 @@ export default function StatefulSetDetailPage() {
           </Button>
         </div>
       </div>
+
+      <ArgoCDWorkloadBar clusterId={decodedClusterId} namespace={namespace} resources={[sts]} />
 
       <Tabs defaultValue="overview">
         <TabsList>
@@ -309,7 +313,8 @@ export default function StatefulSetDetailPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="yaml" className="mt-4">
+        {/* Kept mounted so unsaved YAML edits survive switching tabs. */}
+        <TabsContent value="yaml" forceMount className="mt-4 data-[state=inactive]:hidden">
           <YamlEditor
             data={sts}
             apiUrl={`/api/clusters/${clusterId}/resources/${namespace}/statefulsets/${name}`}

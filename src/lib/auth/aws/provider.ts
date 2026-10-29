@@ -1,7 +1,7 @@
 import type { AuthProvider, AuthProviderAvailability, AuthProviderStatus, AuthConfigField } from '../types';
-import { findCli, getCliVersion, runCli, extractCliError } from '../cli-utils';
+import { findCli, getCliVersion, runCli, extractCliError, findUnsafeCliValue } from '../cli-utils';
 
-function getAwsPath(): string | null {
+function getAwsPath(): Promise<string | null> {
   return findCli('aws');
 }
 
@@ -19,7 +19,7 @@ async function checkAwsStatus(awsPath: string, profile?: string): Promise<AuthPr
   try {
     const args = ['sts', 'get-caller-identity', '--output', 'json'];
     if (profile) args.push('--profile', profile);
-    const output = runCli(awsPath, args, 5_000);
+    const output = await runCli(awsPath, args, 5_000);
     const data = JSON.parse(output);
     const status: AuthProviderStatus = {
       authenticated: true,
@@ -42,35 +42,37 @@ export const awsSsoProvider: AuthProvider = {
   icon: 'Cloud',
 
   async checkAvailability(): Promise<AuthProviderAvailability> {
-    const path = getAwsPath();
+    const path = await getAwsPath();
     if (!path) return { available: false };
-    const version = getCliVersion(path, ['--version']);
+    const version = await getCliVersion(path, ['--version']);
     return { available: true, path, version };
   },
 
   async getStatus(config: Record<string, string>): Promise<AuthProviderStatus> {
-    const path = getAwsPath();
+    const path = await getAwsPath();
     if (!path) return { authenticated: false };
     return checkAwsStatus(path, config.profile);
   },
 
   async login(config: Record<string, string>) {
-    const path = getAwsPath();
+    const path = await getAwsPath();
     if (!path) return { success: false, error: 'aws CLI not found in PATH' };
 
-    try {
-      const { profile, region, clusterName } = config;
+    const { profile, region, clusterName } = config;
+    const unsafe = findUnsafeCliValue({ profile, region, clusterName });
+    if (unsafe) return { success: false, error: `Invalid ${unsafe}` };
 
+    try {
       // Step 1: SSO login
       const ssoArgs = ['sso', 'login'];
       if (profile) ssoArgs.push('--profile', profile);
-      runCli(path, ssoArgs, 120_000);
+      await runCli(path, ssoArgs, 120_000, { label: 'Login' });
 
       // Step 2: Update kubeconfig if cluster info provided
       if (clusterName && region) {
         const kubeconfigArgs = ['eks', 'update-kubeconfig', '--name', clusterName, '--region', region];
         if (profile) kubeconfigArgs.push('--profile', profile);
-        runCli(path, kubeconfigArgs, 30_000);
+        await runCli(path, kubeconfigArgs, 30_000);
       }
 
       return { success: true };
@@ -94,28 +96,28 @@ export const awsIamProvider: AuthProvider = {
   icon: 'Cloud',
 
   async checkAvailability(): Promise<AuthProviderAvailability> {
-    const iamAuth = findCli('aws-iam-authenticator');
-    const awsCli = getAwsPath();
+    const iamAuth = await findCli('aws-iam-authenticator');
+    const awsCli = await getAwsPath();
     const path = iamAuth || awsCli;
     if (!path) return { available: false };
     return { available: true, path };
   },
 
   async getStatus(config: Record<string, string>): Promise<AuthProviderStatus> {
-    const path = getAwsPath();
+    const path = await getAwsPath();
     if (!path) return { authenticated: false };
     return checkAwsStatus(path, config.profile);
   },
 
   async login(config: Record<string, string>) {
-    const path = getAwsPath();
+    const path = await getAwsPath();
     if (!path) return { success: false, error: 'aws CLI not found in PATH' };
 
     try {
       const { profile } = config;
       const args = ['sts', 'get-caller-identity', '--output', 'json'];
       if (profile) args.push('--profile', profile);
-      runCli(path, args, 10_000);
+      await runCli(path, args, 10_000);
       return { success: true };
     } catch (err: unknown) {
       return { success: false, error: extractCliError(err, 'AWS IAM authentication failed') };

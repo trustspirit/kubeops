@@ -1,11 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { DialogContextList } from '@/components/shared/confirm-dialog';
 import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
+import { guardOpenChange } from '@/lib/dialog-busy';
 import { useSettingsStore } from '@/stores/settings-store';
 import { toast } from 'sonner';
 import { Loader2, RefreshCw, LogIn } from 'lucide-react';
@@ -40,17 +42,22 @@ export function ArgoCDSyncChartDialog({
   const [check, setCheck] = useState<CheckResponse | null>(null);
   const [needsLogin, setNeedsLogin] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Drops a check response that arrives after the dialog closed or re-ran.
+  const checkIdRef = useRef(0);
 
   const url = `/api/clusters/${encodeURIComponent(clusterId)}/argocd/apps/${encodeURIComponent(appName)}/sync-chart-latest`;
 
   const runCheck = useCallback(async () => {
+    const checkId = ++checkIdRef.current;
     setLoading(true);
     setError(null);
     setNeedsLogin(false);
     try {
       const res = await apiClient.post<CheckResponse>(url, { namespace, server, checkOnly: true }, { timeoutMs: LONG_RUNNING_TIMEOUT_MS });
+      if (checkId !== checkIdRef.current) return;
       setCheck(res);
     } catch (err: unknown) {
+      if (checkId !== checkIdRef.current) return;
       const apiErr = err as { status?: number; message?: string };
       if (apiErr?.status === 401) {
         setNeedsLogin(true);
@@ -58,13 +65,16 @@ export function ArgoCDSyncChartDialog({
         setError(apiErr?.message || 'Check failed');
       }
     } finally {
-      setLoading(false);
+      if (checkId === checkIdRef.current) setLoading(false);
     }
   }, [url, namespace, server]);
 
   useEffect(() => {
     if (open) void runCheck();
-    else { setCheck(null); setError(null); setNeedsLogin(false); }
+    else {
+      checkIdRef.current += 1;
+      setCheck(null); setError(null); setNeedsLogin(false); setLoading(false);
+    }
   }, [open, runCheck]);
 
   const handleLogin = async () => {
@@ -82,6 +92,7 @@ export function ArgoCDSyncChartDialog({
   };
 
   const handleSync = async () => {
+    if (syncing) return;
     setSyncing(true);
     try {
       await apiClient.post(url, { namespace, server, sync: true }, { timeoutMs: LONG_RUNNING_TIMEOUT_MS });
@@ -96,8 +107,8 @@ export function ArgoCDSyncChartDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={guardOpenChange(syncing, onOpenChange)}>
+      <DialogContent busy={syncing}>
         <DialogHeader>
           <DialogTitle>Sync chart to latest — {appName}</DialogTitle>
           <DialogDescription>
@@ -105,6 +116,8 @@ export function ArgoCDSyncChartDialog({
             {currentVersion && <> (currently <span className="font-mono">{currentVersion}</span>)</>}
           </DialogDescription>
         </DialogHeader>
+
+        <DialogContextList entries={{ cluster: clusterId, namespace, application: appName }} />
 
         <div className="space-y-2 text-sm">
           {loading && <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Checking…</div>}
@@ -142,7 +155,7 @@ export function ArgoCDSyncChartDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={syncing}>Close</Button>
           <Button onClick={handleSync} disabled={syncing || loading || !check?.updateAvailable}>
             {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Update &amp; Sync

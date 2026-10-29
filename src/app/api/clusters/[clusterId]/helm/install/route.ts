@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runHelm, isValidHelmName, isValidNamespace, isValidChartRef } from '@/lib/helm/helm-runner';
-import { requireHelm, withTempValuesFile } from '@/lib/helm/helpers';
-import { sanitizeServerError } from '@/lib/server-error';
+import { runHelmMutation, isValidHelmName, isValidNamespace, isValidChartRef } from '@/lib/helm/helm-runner';
+import { requireHelm, withTempValuesFile, helmErrorResponse } from '@/lib/helm/helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +9,7 @@ interface RouteParams {
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams) {
-  const helmCheck = requireHelm();
+  const helmCheck = await requireHelm();
   if (helmCheck) return helmCheck;
 
   const { clusterId } = await params;
@@ -36,7 +35,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 
   return withTempValuesFile(values, async (tmpFile) => {
-    const args = ['install', releaseName, chart, '-n', namespace, '--output', 'json'];
+    const args = ['install', '-n', namespace, '--output', 'json'];
 
     if (createNamespace !== false) {
       args.push('--create-namespace');
@@ -46,14 +45,13 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       args.push('-f', tmpFile);
     }
 
-    const result = await runHelm(args, contextName);
+    args.push('--', releaseName, chart);
+
+    const result = await runHelmMutation(args, contextName);
 
     if (result.code !== 0) {
       console.error(`[Helm] install ${releaseName} failed: ${result.stderr}`);
-      return NextResponse.json(
-        { error: sanitizeServerError(result.stderr, `Failed to install chart "${chart}" as "${releaseName}"`) },
-        { status: 500 }
-      );
+      return helmErrorResponse(result, `Failed to install chart "${chart}" as "${releaseName}"`);
     }
 
     try {

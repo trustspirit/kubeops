@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   buildHelmSyncLatestArgs,
+  findCurrentChartVersion,
   findHelmReleaseRef,
+  isPendingReleaseStatus,
   isSameChartVersion,
   parseHelmListChart,
   selectLatestChartSearchResult,
@@ -86,14 +88,15 @@ describe('buildHelmSyncLatestArgs', () => {
 
     assert.deepEqual(args, [
       'upgrade',
-      'api',
-      'platform/api',
       '-n',
       'workloads',
       '--output',
       'json',
       '--reuse-values',
       '--dependency-update',
+      '--',
+      'api',
+      'platform/api',
     ]);
   });
 
@@ -105,7 +108,34 @@ describe('buildHelmSyncLatestArgs', () => {
       version: '1.2.3',
     });
 
-    assert.deepEqual(args.slice(-2), ['--version', '1.2.3']);
+    const at = args.indexOf('--version');
+    assert.deepEqual(args.slice(at, at + 2), ['--version', '1.2.3']);
+    // Flags must precede the `--` separator or helm reads them as positionals.
+    assert.ok(at < args.indexOf('--'));
+  });
+});
+
+describe('findCurrentChartVersion', () => {
+  const entries = [
+    { name: 'api-worker', chart: 'api-worker-9.9.9', status: 'deployed' },
+    { name: 'api', chart: 'api-1.2.3', status: 'pending-upgrade' },
+  ];
+
+  it('reads the version of the exact release, not a prefix match', () => {
+    assert.deepEqual(findCurrentChartVersion(entries, 'api'), { version: '1.2.3', status: 'pending-upgrade' });
+  });
+
+  it('returns null when the release is not listed', () => {
+    assert.equal(findCurrentChartVersion(entries, 'missing'), null);
+  });
+});
+
+describe('isPendingReleaseStatus', () => {
+  it('flags pending-* states only', () => {
+    assert.equal(isPendingReleaseStatus('pending-install'), true);
+    assert.equal(isPendingReleaseStatus('pending-rollback'), true);
+    assert.equal(isPendingReleaseStatus('deployed'), false);
+    assert.equal(isPendingReleaseStatus(undefined), false);
   });
 });
 

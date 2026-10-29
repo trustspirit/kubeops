@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useResourceList } from '@/hooks/use-resource-list';
 import { DataTable } from '@/components/shared/data-table';
 import { ListSkeleton } from '@/components/shared/loading-skeleton';
-import { ErrorDisplay } from '@/components/shared/error-display';
+import { ErrorDisplay, RefreshFailedBanner } from '@/components/shared/error-display';
 import { COLUMN_MAP } from './resource-columns';
 import { RESOURCE_LABELS } from '@/lib/constants';
 import { ColumnDef, CellContext } from '@tanstack/react-table';
@@ -17,8 +17,7 @@ import { getKubeResourceRowId } from '@/lib/resource-sync';
 import { WatchStatusIndicator } from '@/components/shared/watch-status-indicator';
 import { FreshnessIndicator } from '@/components/shared/freshness-indicator';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
-import { getErrorPresentation } from '@/lib/error-presentation';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { BulkDeleteButton } from '@/components/resources/bulk-delete-button';
 
 interface ResourceListPageProps {
@@ -38,7 +37,10 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
 
   const { data, error, isLoading, isValidating, lastUpdatedAt, mutate } = useResourceList({
     clusterId: decodedClusterId || null,
-    namespace: clusterScoped ? '_' : (multiNs ? '_all' : namespace),
+    namespace: clusterScoped ? '_' : namespace,
+    // Each selected namespace is fetched on its own: namespace-scoped users are
+    // forbidden from listing across all namespaces.
+    namespaces: multiNs ? selectedNs : undefined,
     resourceType,
   });
 
@@ -128,19 +130,7 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
           </Button>
         </div>
       </div>
-      {error && data && (() => {
-        const feedback = getErrorPresentation(error.message, error.status);
-        return (
-          <div className="flex items-center gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-sm" role="status">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-600" />
-            <span className="min-w-0 flex-1">
-              <span className="font-medium">Refresh failed.</span>{' '}
-              <span className="text-muted-foreground">Showing the last successful data. {feedback.summary}</span>
-            </span>
-            <Button variant="outline" size="sm" className="h-7" onClick={() => void mutate()}>Retry</Button>
-          </div>
-        );
-      })()}
+      {error && data && <RefreshFailedBanner error={error} onRetry={() => mutate()} />}
       <DataTable
         columns={allColumns}
         data={items}

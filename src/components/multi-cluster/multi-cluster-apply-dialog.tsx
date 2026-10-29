@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useSWRConfig } from 'swr';
 import {
   Dialog,
   DialogContent,
@@ -31,42 +32,50 @@ import {
   CheckCircle2,
   XCircle,
   PlayCircle,
+  RotateCcw,
 } from 'lucide-react';
 import { useClusters } from '@/hooks/use-clusters';
 import { useNamespaces } from '@/hooks/use-namespaces';
 import { useClusterCatalogStore } from '@/stores/cluster-catalog-store';
 import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
 import { ensureTshKubeLogin } from '@/lib/auth/tsh-kube-login-cache';
+import { guardOpenChange } from '@/lib/dialog-busy';
+import { describeResource, parseManifest } from '@/lib/manifest';
+import {
+  allSucceeded,
+  failedTargets,
+  mergeRetriedRows,
+  reconcileResults,
+  rowKey,
+  snapshotKey,
+  summarizeRows,
+  targetKey,
+  type ApplyResult,
+  type ApplyRow,
+  type ApplyTarget,
+} from '@/lib/multi-cluster-apply';
 import { cn } from '@/lib/utils';
-import * as yaml from 'js-yaml';
 
 // === Types ===
-
-interface ApplyTarget {
-  clusterId: string;
-  namespace: string;
-}
-
-interface ApplyResult {
-  clusterId: string;
-  namespace: string;
-  status: 'success' | 'error';
-  message?: string;
-  /** Set when the manifest held several documents, so rows stay distinguishable. */
-  resource?: string;
-}
 
 interface MultiClusterApplyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Seed for the editor. Read only when the dialog opens: callers pass live,
+   * polled data, and re-seeding on every poll used to reset the wizard
+   * mid-apply.
+   */
   initialYaml?: string;
 }
 
-const STEPS = ['YAML', 'Targets', 'Validate', 'Apply'] as const;
-
-function targetKey(target: ApplyTarget): string {
-  return `${target.clusterId}\u0000${target.namespace}`;
+/** Rows for one run, tagged with the (targets, YAML) snapshot they answer. */
+interface RunRows {
+  key: string;
+  rows: ApplyRow[];
 }
+
+const STEPS = ['YAML', 'Targets', 'Validate', 'Apply'] as const;
 
 // === Namespace selector for a single cluster ===
 
@@ -102,6 +111,60 @@ function ClusterNamespaceSelector({
   );
 }
 
+// === One result row ===
+
+function ResultRowView({ row, showResource }: { row: ApplyRow; showResource: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div
+      className={cn(
+        'flex items-start gap-3 rounded-md border p-2.5',
+        row.status === 'success'
+          ? 'border-green-500/30 bg-green-500/5'
+          : 'border-red-500/30 bg-red-500/5'
+      )}
+    >
+      {row.status === 'success' ? (
+        <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
+      ) : (
+        <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium">
+          {row.clusterId}
+          <span className="text-muted-foreground font-normal"> / {row.namespace}</span>
+          {showResource && (
+            <span className="text-muted-foreground font-normal font-mono text-xs"> · {row.resource}</span>
+          )}
+          {row.timedOut && (
+            <Badge
+              variant="outline"
+              className="ml-2 text-[10px] py-0 h-4 border-amber-500/50 text-amber-600 dark:text-amber-400"
+              title="The request timed out; the change may or may not have been applied"
+            >
+              outcome unknown
+            </Badge>
+          )}
+        </div>
+        {row.message && (
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            title={expanded ? undefined : row.message}
+            aria-expanded={expanded}
+            className={cn(
+              'block w-full text-left text-xs text-muted-foreground hover:text-foreground',
+              expanded ? 'whitespace-pre-wrap break-words' : 'truncate'
+            )}
+          >
+            {row.message}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // === Main Dialog ===
 
 export function MultiClusterApplyDialog({
@@ -115,30 +178,43 @@ export function MultiClusterApplyDialog({
   const [selectedTargets, setSelectedTargets] = useState<Map<string, string>>(new Map());
   const [search, setSearch] = useState('');
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
-  const [validationResults, setValidationResults] = useState<ApplyResult[]>([]);
+  const [validation, setValidation] = useState<RunRows | null>(null);
   const [validating, setValidating] = useState(false);
-  const [applyResults, setApplyResults] = useState<ApplyResult[]>([]);
+  const [applied, setApplied] = useState<RunRows | null>(null);
   const [applying, setApplying] = useState(false);
+
+  // Bumped by every dry run and on every reopen; a response whose id is no
+  // longer current answers a question nobody is asking any more.
+  const requestIdRef = useRef(0);
+  // Synchronous double-submit guard: `applying` state lags a fast double click.
+  const applyingRef = useRef(false);
+  const wasOpenRef = useRef(false);
 
   const { clusters } = useClusters();
   const { getClusterMeta } = useClusterCatalogStore();
+  const { mutate: mutateCache } = useSWRConfig();
 
   const step = STEPS[currentStep];
 
-  // Reset state when dialog opens
+  // Reset only on the closed → open transition. `initialYaml` is derived from
+  // polled data by callers, so resetting whenever it changed restarted the
+  // wizard every few seconds — including in the middle of an apply.
   useEffect(() => {
-    if (open) {
+    if (open && !wasOpenRef.current) {
+      requestIdRef.current += 1;
       setCurrentStep(0);
       setYamlValue(initialYaml);
       setYamlError(null);
       setSelectedTargets(new Map());
       setSearch('');
       setShowFavoritesOnly(false);
-      setValidationResults([]);
+      setValidation(null);
       setValidating(false);
-      setApplyResults([]);
-      setApplying(false);
+      setApplied(null);
+      // `applying` is deliberately not reset: the dialog cannot be closed
+      // while an apply runs, and clearing the flag would re-enable Apply.
     }
+    wasOpenRef.current = open;
   }, [open, initialYaml]);
 
   // Filter clusters
@@ -169,37 +245,34 @@ export function MultiClusterApplyDialog({
     }));
   }, [selectedTargets]);
 
-  useEffect(() => {
-    setValidationResults([]);
-    setApplyResults([]);
-  }, [targets, yamlValue]);
+  const manifest = useMemo(() => parseManifest(yamlValue), [yamlValue]);
+  const resources = useMemo(
+    () => (manifest.ok ? manifest.documents.map(describeResource) : []),
+    [manifest]
+  );
+  const multiDocument = resources.length > 1;
+  const currentKey = useMemo(() => snapshotKey(targets, yamlValue), [targets, yamlValue]);
+
+  // Results only count for the exact selection and YAML they were run with.
+  const validationRows = useMemo(
+    () => (validation?.key === currentKey ? validation.rows : []),
+    [validation, currentKey]
+  );
+  const applyRows = useMemo(
+    () => (applied?.key === currentKey ? applied.rows : []),
+    [applied, currentKey]
+  );
 
   // === Step handlers ===
 
   const validateYaml = useCallback((): boolean => {
-    try {
-      const parsed = yaml.load(yamlValue);
-      if (!parsed || typeof parsed !== 'object') {
-        setYamlError('YAML must be a valid Kubernetes resource object');
-        return false;
-      }
-      const resource = parsed as Record<string, unknown>;
-      if (!resource.kind) {
-        setYamlError('Resource must have a "kind" field');
-        return false;
-      }
-      if (!resource.apiVersion) {
-        setYamlError('Resource must have an "apiVersion" field');
-        return false;
-      }
-      setYamlError(null);
-      return true;
-    } catch (e: unknown) {
-      const yamlErr = e as { message?: string };
-      setYamlError(`Invalid YAML: ${yamlErr.message || 'Unknown parse error'}`);
+    if (!manifest.ok) {
+      setYamlError(manifest.error);
       return false;
     }
-  }, [yamlValue]);
+    setYamlError(null);
+    return true;
+  }, [manifest]);
 
   const handleNext = useCallback(() => {
     if (currentStep === 0) {
@@ -242,130 +315,126 @@ export function MultiClusterApplyDialog({
     });
   }, []);
 
-  // Preflight: ensure every selected target has a valid per-cluster credential.
-  // For Teleport clusters the server-side `kubectl apply` will fail with an
-  // auth error if `tsh kube login <cluster>` has never run; doing this here
-  // surfaces the failure per-target instead of as a single opaque API error.
-  // No-op (cheap detect call) for non-tsh providers; cached for repeat clicks.
-  const preflightAuth = useCallback(async (): Promise<ApplyResult[]> => {
-    const failures: ApplyResult[] = [];
+  /**
+   * Runs one apply (or dry run) for `runTargets` and lays the outcome onto the
+   * expected (target × document) grid.
+   *
+   * Preflight: ensure every target has a valid per-cluster credential. For
+   * Teleport clusters the server-side apply fails with an auth error if
+   * `tsh kube login <cluster>` has never run; doing this here surfaces the
+   * failure per target instead of as one opaque API error. No-op (cheap
+   * detect call) for non-tsh providers; cached for repeat clicks.
+   */
+  const runApply = useCallback(async (
+    runTargets: ApplyTarget[],
+    yamlText: string,
+    runResources: string[],
+    dryRun: boolean,
+  ): Promise<ApplyRow[]> => {
+    const targetFailures: ApplyResult[] = [];
     await Promise.all(
-      targets.map(async (t) => {
+      runTargets.map(async (t) => {
         try {
           await ensureTshKubeLogin(t.clusterId);
         } catch (err) {
-          const message = err instanceof Error ? err.message : 'tsh kube login failed';
-          failures.push({
-            clusterId: t.clusterId,
-            namespace: t.namespace,
+          targetFailures.push({
+            ...t,
             status: 'error',
-            message,
+            message: err instanceof Error ? err.message : 'tsh kube login failed',
           });
         }
       })
     );
-    return failures;
-  }, [targets]);
+    const failedKeys = new Set(targetFailures.map(targetKey));
+    const runnable = runTargets.filter((t) => !failedKeys.has(targetKey(t)));
+
+    let results: ApplyResult[] = [];
+    if (runnable.length > 0) {
+      try {
+        const response = await apiClient.post<{ results?: ApplyResult[] }>('/api/multi-cluster/apply', {
+          targets: runnable,
+          yaml: yamlText,
+          action: 'apply',
+          dryRun,
+        }, { timeoutMs: LONG_RUNNING_TIMEOUT_MS });
+        results = response.results ?? [];
+      } catch (err: unknown) {
+        const message = err instanceof Error && err.message
+          ? err.message
+          : dryRun ? 'Validation request failed' : 'Apply request failed';
+        for (const t of runnable) targetFailures.push({ ...t, status: 'error', message });
+      }
+    }
+    return reconcileResults(runTargets, runResources, results, targetFailures);
+  }, []);
 
   const handleValidate = useCallback(async () => {
+    if (!manifest.ok || targets.length === 0) return;
+    const requestId = ++requestIdRef.current;
+    const key = currentKey;
     setValidating(true);
-    setValidationResults([]);
+    setValidation(null);
     try {
-      const authFailures = await preflightAuth();
-      const authFailureKeys = new Set(authFailures.map((f) => targetKey(f)));
-      const runnableTargets = targets.filter((t) => !authFailureKeys.has(targetKey(t)));
-      if (authFailures.length === targets.length) {
-        setValidationResults(authFailures);
-        return;
-      }
-      const response = await apiClient.post<{
-        results: ApplyResult[];
-        summary: { succeeded: number; failed: number; total: number; documents: number };
-      }>('/api/multi-cluster/apply', {
-        targets: runnableTargets,
-        yaml: yamlValue,
-        action: 'apply',
-        dryRun: true,
-      }, { timeoutMs: LONG_RUNNING_TIMEOUT_MS });
-      // Merge any auth-failed targets into the response so they're visible
-      // alongside the successful validations.
-      setValidationResults([...authFailures, ...response.results]);
-    } catch (err: unknown) {
-      const errObj = err as { message?: string };
-      setValidationResults(
-        targets.map((t) => ({
-          clusterId: t.clusterId,
-          namespace: t.namespace,
-          status: 'error' as const,
-          message: errObj.message || 'Validation request failed',
-        }))
-      );
+      const rows = await runApply(targets, yamlValue, resources, true);
+      if (requestId !== requestIdRef.current) return;
+      setValidation({ key, rows });
     } finally {
-      setValidating(false);
+      if (requestId === requestIdRef.current) setValidating(false);
     }
-  }, [targets, yamlValue, preflightAuth]);
+  }, [manifest.ok, targets, yamlValue, resources, currentKey, runApply]);
 
-  const handleApply = useCallback(async () => {
+  const revalidateTargets = useCallback((runTargets: ApplyTarget[]) => {
+    const prefixes = runTargets.map((t) => `/api/clusters/${encodeURIComponent(t.clusterId)}/`);
+    void mutateCache(
+      (key) => typeof key === 'string' && prefixes.some((prefix) => key.startsWith(prefix)),
+    ).catch(() => {
+      // The apply itself succeeded; polling will reconcile the views.
+    });
+  }, [mutateCache]);
+
+  const handleApply = useCallback(async (retryFailedOnly = false) => {
+    if (applyingRef.current || !manifest.ok) return;
+    const key = currentKey;
+    const runTargets = retryFailedOnly ? failedTargets(applyRows, targets) : targets;
+    if (runTargets.length === 0) return;
+
+    applyingRef.current = true;
     setApplying(true);
-    setApplyResults([]);
     try {
-      const authFailures = await preflightAuth();
-      const authFailureKeys = new Set(authFailures.map((f) => targetKey(f)));
-      const runnableTargets = targets.filter((t) => !authFailureKeys.has(targetKey(t)));
-      if (authFailures.length === targets.length) {
-        setApplyResults(authFailures);
-        return;
-      }
-      const response = await apiClient.post<{
-        results: ApplyResult[];
-        summary: { succeeded: number; failed: number; total: number; documents: number };
-      }>('/api/multi-cluster/apply', {
-        targets: runnableTargets,
-        yaml: yamlValue,
-        action: 'apply',
-        dryRun: false,
-      }, { timeoutMs: LONG_RUNNING_TIMEOUT_MS });
-      setApplyResults([...authFailures, ...response.results]);
-    } catch (err: unknown) {
-      const errObj = err as { message?: string };
-      setApplyResults(
-        targets.map((t) => ({
-          clusterId: t.clusterId,
-          namespace: t.namespace,
-          status: 'error' as const,
-          message: errObj.message || 'Apply request failed',
-        }))
-      );
+      const rows = await runApply(runTargets, yamlValue, resources, false);
+      setApplied((prev) => (
+        retryFailedOnly && prev?.key === key
+          ? { key, rows: mergeRetriedRows(prev.rows, rows) }
+          : { key, rows }
+      ));
+      revalidateTargets(runTargets);
     } finally {
+      applyingRef.current = false;
       setApplying(false);
     }
-  }, [targets, yamlValue, preflightAuth]);
+  }, [manifest.ok, currentKey, applyRows, targets, yamlValue, resources, runApply, revalidateTargets]);
 
-  const applySummary = useMemo(() => {
-    const succeeded = applyResults.filter((r) => r.status === 'success').length;
-    const failed = applyResults.filter((r) => r.status === 'error').length;
-    return { succeeded, failed, total: applyResults.length };
-  }, [applyResults]);
+  const applySummary = useMemo(() => summarizeRows(applyRows), [applyRows]);
 
-  const canProceedToApply = useMemo(() => {
-    return (
-      validationResults.length === targets.length &&
-      validationResults.every((r) => r.status === 'success')
-    );
-  }, [targets.length, validationResults]);
+  const canProceedToApply = useMemo(
+    () => allSucceeded(validationRows, targets, resources),
+    [validationRows, targets, resources]
+  );
+
+  const expectedRows = targets.length * resources.length;
 
   // === Render ===
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
+    <Dialog open={open} onOpenChange={guardOpenChange(applying, onOpenChange)}>
+      <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col" busy={applying}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Globe className="h-5 w-5" />
             Apply to Multiple Clusters
           </DialogTitle>
           <DialogDescription>
-            Deploy resources across multiple clusters at once.
+            Deploy resources across multiple clusters at once. Multi-document manifests (separated by <code>---</code>) are supported.
           </DialogDescription>
         </DialogHeader>
 
@@ -547,7 +616,6 @@ export function MultiClusterApplyDialog({
               </div>
             </div>
           )}
-
           {/* Step 3: Validation */}
           {step === 'Validate' && (
             <div className="space-y-3">
@@ -566,47 +634,20 @@ export function MultiClusterApplyDialog({
                   {validating ? 'Validating...' : 'Run Dry Run'}
                 </Button>
                 <span className="text-xs text-muted-foreground">
-                  Validates against {targets.length} target{targets.length !== 1 ? 's' : ''} without applying changes
+                  Validates {resources.length} resource{resources.length !== 1 ? 's' : ''} against{' '}
+                  {targets.length} target{targets.length !== 1 ? 's' : ''} without applying changes
                 </span>
               </div>
 
-              {validationResults.length > 0 && (
+              {validationRows.length > 0 && (
                 <div className="space-y-1">
-                  {validationResults.map((result) => (
-                    <div
-                      key={`${result.clusterId}-${result.namespace}`}
-                      className={cn(
-                        'flex items-center gap-3 rounded-md border p-2.5',
-                        result.status === 'success'
-                          ? 'border-green-500/30 bg-green-500/5'
-                          : 'border-red-500/30 bg-red-500/5'
-                      )}
-                    >
-                      {result.status === 'success' ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-red-500 shrink-0" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium">
-                          {result.clusterId}
-                          <span className="text-muted-foreground font-normal"> / {result.namespace}</span>
-                          {result.resource && (
-                            <span className="text-muted-foreground font-normal font-mono text-xs"> · {result.resource}</span>
-                          )}
-                        </div>
-                        {result.message && (
-                          <div className="text-xs text-muted-foreground truncate">
-                            {result.message}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                  {validationRows.map((row) => (
+                    <ResultRowView key={rowKey(row, row.resource)} row={row} showResource={multiDocument} />
                   ))}
                 </div>
               )}
 
-              {validationResults.length === 0 && !validating && (
+              {validationRows.length === 0 && !validating && (
                 <div className="rounded-md border bg-muted/20 p-8 text-center">
                   <p className="text-sm text-muted-foreground">
                     Click &quot;Run Dry Run&quot; to validate the resource against all selected targets.
@@ -614,7 +655,7 @@ export function MultiClusterApplyDialog({
                 </div>
               )}
 
-              {validationResults.length > 0 && !canProceedToApply && (
+              {validationRows.length > 0 && !canProceedToApply && (
                 <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
                   Resolve validation errors before applying.
                 </div>
@@ -625,44 +666,44 @@ export function MultiClusterApplyDialog({
           {/* Step 4: Apply & Results */}
           {step === 'Apply' && (
             <div className="space-y-3">
-              {applyResults.length === 0 && (
+              {applyRows.length === 0 && !applying && (
                 <div className="rounded-md border bg-muted/20 p-8 text-center space-y-3">
                   <p className="text-sm text-muted-foreground">
-                    Ready to apply to {targets.length} target{targets.length !== 1 ? 's' : ''}.
+                    Ready to apply {resources.length} resource{resources.length !== 1 ? 's' : ''} to{' '}
+                    {targets.length} target{targets.length !== 1 ? 's' : ''} ({expectedRows} change{expectedRows !== 1 ? 's' : ''}).
                   </p>
                   <Button
-                    onClick={handleApply}
+                    onClick={() => void handleApply()}
                     disabled={applying}
                     className="gap-1"
                   >
-                    {applying ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <PlayCircle className="h-4 w-4" />
-                    )}
-                    {applying ? 'Applying...' : 'Apply Now'}
+                    <PlayCircle className="h-4 w-4" />
+                    Apply Now
                   </Button>
                 </div>
               )}
 
-              {applying && applyResults.length === 0 && (
+              {applying && applyRows.length === 0 && (
                 <div className="space-y-1">
-                  {targets.map((target) => (
+                  {targets.flatMap((target) => resources.map((resource) => (
                     <div
-                      key={`${target.clusterId}-${target.namespace}`}
+                      key={rowKey(target, resource)}
                       className="flex items-center gap-3 rounded-md border p-2.5"
                     >
                       <Loader2 className="h-4 w-4 animate-spin text-muted-foreground shrink-0" />
                       <div className="text-sm">
                         {target.clusterId}
                         <span className="text-muted-foreground"> / {target.namespace}</span>
+                        {multiDocument && (
+                          <span className="text-muted-foreground font-mono text-xs"> · {resource}</span>
+                        )}
                       </div>
                     </div>
-                  ))}
+                  )))}
                 </div>
               )}
 
-              {applyResults.length > 0 && (
+              {applyRows.length > 0 && (
                 <>
                   {/* Summary */}
                   <div className="flex items-center gap-3 rounded-md border p-3">
@@ -673,7 +714,7 @@ export function MultiClusterApplyDialog({
                     ) : (
                       <AlertTriangle className="h-5 w-5 text-yellow-500 shrink-0" />
                     )}
-                    <div className="text-sm">
+                    <div className="text-sm flex-1">
                       <span className="font-medium">
                         {applySummary.succeeded} succeeded
                       </span>
@@ -686,40 +727,28 @@ export function MultiClusterApplyDialog({
                         of {applySummary.total} total
                       </span>
                     </div>
+                    {applySummary.failed > 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1"
+                        onClick={() => void handleApply(true)}
+                        disabled={applying}
+                      >
+                        {applying ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        )}
+                        {applying ? 'Retrying...' : 'Retry failed'}
+                      </Button>
+                    )}
                   </div>
 
                   {/* Per-target results */}
                   <div className="space-y-1">
-                    {applyResults.map((result) => (
-                      <div
-                        key={`${result.clusterId}-${result.namespace}`}
-                        className={cn(
-                          'flex items-center gap-3 rounded-md border p-2.5',
-                          result.status === 'success'
-                            ? 'border-green-500/30 bg-green-500/5'
-                            : 'border-red-500/30 bg-red-500/5'
-                        )}
-                      >
-                        {result.status === 'success' ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-                        ) : (
-                          <XCircle className="h-4 w-4 text-red-500 shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium">
-                            {result.clusterId}
-                            <span className="text-muted-foreground font-normal"> / {result.namespace}</span>
-                            {result.resource && (
-                              <span className="text-muted-foreground font-normal font-mono text-xs"> · {result.resource}</span>
-                            )}
-                          </div>
-                          {result.message && (
-                            <div className="text-xs text-muted-foreground truncate">
-                              {result.message}
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                    {applyRows.map((row) => (
+                      <ResultRowView key={rowKey(row, row.resource)} row={row} showResource={multiDocument} />
                     ))}
                   </div>
                 </>
@@ -739,8 +768,8 @@ export function MultiClusterApplyDialog({
             )}
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              {applyResults.length > 0 ? 'Done' : 'Cancel'}
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={applying}>
+              {applyRows.length > 0 ? 'Done' : 'Cancel'}
             </Button>
             {currentStep < STEPS.length - 1 && (
               <Button
@@ -748,7 +777,7 @@ export function MultiClusterApplyDialog({
                 disabled={
                   (currentStep === 0 && !yamlValue.trim()) ||
                   (currentStep === 1 && targets.length === 0) ||
-                  (currentStep === 2 && !canProceedToApply)
+                  (currentStep === 2 && (!canProceedToApply || validating))
                 }
                 className="gap-1"
               >

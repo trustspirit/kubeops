@@ -11,6 +11,8 @@ interface WatchContextValue {
     callback: WatchEventCallback,
   ) => () => void;
   connectionState: WatchConnectionState;
+  /** The cluster this connection watches. Lists for other clusters must not subscribe through it. */
+  clusterId: string | null;
 }
 
 const WatchContext = createContext<WatchContextValue | null>(null);
@@ -27,8 +29,8 @@ export function WatchProvider({ children }: { children: ReactNode }) {
   // Without this, every render of WatchProvider creates a new object reference,
   // causing all useContext(WatchContext) consumers to re-render.
   const contextValue = useMemo(
-    () => ({ subscribe, connectionState }),
-    [subscribe, connectionState]
+    () => ({ subscribe, connectionState, clusterId }),
+    [subscribe, connectionState, clusterId]
   );
 
   return (

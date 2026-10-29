@@ -162,7 +162,8 @@ export function CrDetailPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="yaml" className="mt-4">
+        {/* Kept mounted so unsaved YAML edits survive switching tabs. */}
+        <TabsContent value="yaml" forceMount className="mt-4 data-[state=inactive]:hidden">
           <YamlEditor
             data={resource}
             apiUrl={yamlApiUrl}

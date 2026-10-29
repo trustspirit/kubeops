@@ -177,6 +177,13 @@ export function handleLogsConnection(ws: WebSocket, req: IncomingMessage) {
   logStream.on('end', () => {
     const rest = decoder.end();
     if (rest && ws.readyState === WebSocket.OPEN) ws.send(rest);
+    // The API server closed the stream (container exited, or follow=false
+    // finished). Close cleanly so the client shows "disconnected" instead of
+    // sitting on an open socket that will never carry data again. A JSON
+    // `{type:'end'}` frame is deliberately not sent: the log views render any
+    // non-'error' JSON as log text. The close code/reason carries the signal.
+    if (ws.readyState === WebSocket.OPEN) ws.close(1000, 'Log stream ended');
+    cleanup();
   });
 
   logStream.on('error', (err) => {

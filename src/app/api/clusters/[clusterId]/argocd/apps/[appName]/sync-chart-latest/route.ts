@@ -70,7 +70,7 @@ export function planChartSync(
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams) {
-  const argocdPath = findCli('argocd');
+  const argocdPath = await findCli('argocd');
   if (!argocdPath) {
     return NextResponse.json(
       { error: 'argocd CLI not found. Install it and run login from Settings > Auth Providers.' },
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   let appJson: Pick<ArgoCDApplication, 'spec' | 'status'>;
   try {
-    const out = runCli(argocdPath, buildAppGetArgs(app, { server, refresh: true }), 60_000);
+    const out = await runCli(argocdPath, buildAppGetArgs(app, { server, refresh: true }), 60_000, { label: 'Reading the ArgoCD app' });
     appJson = JSON.parse(out);
   } catch (err: unknown) {
     const message = extractCliError(err, `Failed to read ArgoCD app "${app}"`);
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 
   try {
-    const out = runCli(argocdPath, buildAppSyncArgs(app, { server }), 300_000);
+    const out = await runCli(argocdPath, buildAppSyncArgs(app, { server }), 300_000, { label: 'ArgoCD sync' });
     return NextResponse.json({ ...plan, synced: true, output: out.trim() });
   } catch (err: unknown) {
     const message = extractCliError(err, `Failed to sync ArgoCD app "${app}"`);

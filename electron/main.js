@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const net = require('net');
 const http = require('http');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 
@@ -12,6 +13,14 @@ const iconPath = path.join(__dirname, '..', 'resources', 'icon.png');
 // Sent by the server on startup so we can tell our own server apart from an
 // unrelated process that happens to be sitting on the same port.
 const HEALTH_PATH = '/api/session';
+// Production only: the server answers 200 here only when the request carries
+// the token we handed it at spawn time. Any nonce-bearing response used to be
+// accepted, so an orphaned server from a previous run got silently adopted.
+const LAUNCH_PATH = '/__kubeops/launch';
+const LAUNCH_TOKEN = crypto.randomBytes(32).toString('hex');
+// Must match EXIT_ADDRESS_IN_USE in server.ts.
+const EXIT_ADDRESS_IN_USE = 98;
+const SERVER_SHUTDOWN_GRACE_MS = 3000;
 
 let mainWindow = null;
 let serverProcess = null;
@@ -155,25 +164,37 @@ async function macOSManualInstall() {
   const scriptContent = [
     '#!/bin/bash',
     `PID=${process.pid}`,
+    'echo "[$(date)] waiting for KubeOps (pid $PID) to exit"',
     'while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done',
     // Move the old bundle aside instead of deleting it up front: if the
     // replacement move fails, the user still has a working app to restore.
     'BACKUP="$1.old-$$"',
-    'mv "$1" "$BACKUP" || exit 1',
-    'if ! mv "$2" "$1"; then mv "$BACKUP" "$1"; rm -rf "$3"; open "$1"; exit 1; fi',
+    // If even the backup move fails, reopen the untouched old app rather than
+    // leaving the user with nothing running.
+    'mv "$1" "$BACKUP" || { echo "[$(date)] could not move old app aside"; rm -rf "$3"; open "$1"; exit 1; }',
+    'if ! mv "$2" "$1"; then echo "[$(date)] could not move new app into place; restoring"; mv "$BACKUP" "$1"; rm -rf "$3"; open "$1"; exit 1; fi',
     'rm -rf "$BACKUP"',
     'rm -rf "$3"',
     'xattr -cr "$1" 2>/dev/null',
+    'echo "[$(date)] update installed"',
     'open "$1"',
   ].join('\n');
   fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 });
 
-  // Run the install script detached with paths as arguments (not interpolated)
-  const child = require('child_process').spawn(
-    scriptPath,
-    [appBundlePath, newAppPath, tempDir],
-    { detached: true, stdio: 'ignore' }
-  );
+  // Run the install script detached with paths as arguments (not interpolated).
+  // Output goes to a log file: with stdio ignored, a failed swap left no trace.
+  ensureLogDir();
+  const installLog = fs.openSync(path.join(LOG_DIR, 'update-install.log'), 'a');
+  let child;
+  try {
+    child = require('child_process').spawn(
+      scriptPath,
+      [appBundlePath, newAppPath, tempDir],
+      { detached: true, stdio: ['ignore', installLog, installLog] }
+    );
+  } finally {
+    fs.closeSync(installLog);
+  }
   child.unref();
 
   sendUpdateStatus({ status: 'installing', stage: 'restarting' });
@@ -273,12 +294,18 @@ function setupUpdaterIPC() {
     }
   });
 
+  // A double-click on "Restart & install" used to extract the zip twice into
+  // the same temp dir and spawn two install scripts racing each other.
+  let installInFlight = false;
   ipcMain.handle('updater:install', async () => {
+    if (installInFlight) return;
+    installInFlight = true;
     sendUpdateStatus({ status: 'installing', stage: 'preparing' });
     if (process.platform === 'darwin') {
       try {
         await macOSManualInstall();
       } catch (err) {
+        installInFlight = false;
         writeErrorLog('updater:install:manual', err);
         // Don't fallback to quitAndInstall — it will also fail on unsigned builds.
         // Throw so the renderer can show the "Manual Update" UI.
@@ -287,7 +314,14 @@ function setupUpdaterIPC() {
       }
     } else {
       sendUpdateStatus({ status: 'installing', stage: 'restarting' });
-      autoUpdater.quitAndInstall(false, true);
+      try {
+        autoUpdater.quitAndInstall(false, true);
+      } catch (err) {
+        installInFlight = false;
+        writeErrorLog('updater:install', err);
+        sendUpdateStatus({ status: 'error', message: `Install failed: ${err.message}` });
+        throw err;
+      }
     }
   });
 
@@ -496,14 +530,23 @@ function buildMenu() {
  */
 function isOurServer(port) {
   return new Promise((resolve) => {
+    // Dev: the server is started separately (`npm run dev`) and has no launch
+    // token, so a nonce-bearing /api/session is the best we can check.
+    const options = isDev
+      ? { host: 'localhost', port, path: HEALTH_PATH, method: 'GET', timeout: 2000 }
+      : {
+          host: 'localhost', port, path: LAUNCH_PATH, method: 'GET', timeout: 2000,
+          headers: { 'x-kubeops-launch-token': LAUNCH_TOKEN },
+        };
     const req = http.request(
-      { host: 'localhost', port, path: HEALTH_PATH, method: 'GET', timeout: 2000 },
+      options,
       (res) => {
         let body = '';
         res.on('data', (chunk) => { body += chunk; });
         res.on('end', () => {
           try {
-            resolve(Boolean(JSON.parse(body).nonce));
+            const parsed = JSON.parse(body);
+            resolve(isDev ? Boolean(parsed.nonce) : res.statusCode === 200 && parsed.ok === true);
           } catch {
             resolve(false);
           }
@@ -529,7 +572,10 @@ function waitForServer(port, maxRetries = 60) {
           return;
         }
         if (++retries >= maxRetries) {
-          reject(new Error(`Port ${port} is in use by another application`));
+          reject(new Error(
+            `Port ${port} is in use by another application (or by a KubeOps process from an earlier run). `
+            + 'Quit it and start KubeOps again.',
+          ));
         } else {
           setTimeout(tryConnect, 500);
         }
@@ -567,9 +613,22 @@ function startProductionServer() {
       NODE_ENV: 'production',
       PORT: String(PORT),
       ELECTRON_RUN_AS_NODE: '1',
+      // Identity proof for isOurServer, and the pid the server watches so it
+      // exits instead of lingering as an orphan if we crash.
+      KUBEOPS_LAUNCH_TOKEN: LAUNCH_TOKEN,
+      KUBEOPS_PARENT_PID: String(process.pid),
     },
+    // stdin stays a pipe on purpose: the server treats its closing as "parent
+    // died" and reads an explicit "shutdown" line from it on quit.
     stdio: 'pipe',
   });
+  serverProcess.stdin?.on('error', () => { /* server already gone */ });
+
+  // Rejects as soon as the server dies during startup, instead of making the
+  // user wait out every waitForServer retry with a vague "failed to start".
+  let rejectStartup = null;
+  const startupFailed = new Promise((_, reject) => { rejectStartup = reject; });
+  let ready = false;
 
   serverProcess.stdout?.on('data', (d) => process.stdout.write(d));
   serverProcess.stderr?.on('data', (d) => {
@@ -587,6 +646,12 @@ function startProductionServer() {
       writeErrorLog('server:exit', `Server exited with code ${code}, signal ${signal}`);
     }
     serverProcess = null;
+    if (!ready) {
+      rejectStartup(new Error(code === EXIT_ADDRESS_IN_USE
+        ? `Port ${PORT} is already in use by another application (or by a KubeOps process from an earlier run). Quit it and start KubeOps again.`
+        : `The KubeOps background service exited during startup (code ${code}, signal ${signal}).`));
+      return;
+    }
     if (!isQuitting && mainWindow && !mainWindow.isDestroyed()) {
       // The window is still up but every request from now on would fail with a
       // blank page and no explanation.
@@ -599,7 +664,32 @@ function startProductionServer() {
     }
   });
 
-  return waitForServer(PORT);
+  return Promise.race([waitForServer(PORT), startupFailed]).then(() => { ready = true; });
+}
+
+/**
+ * Ask the server to shut down cleanly (it kills port-forward and exec
+ * children on the way out), then force it after a grace period. On Windows
+ * kill() is TerminateProcess: no signal handler runs, so without the stdin
+ * request every `kubectl port-forward` child was orphaned on quit.
+ */
+function stopServerGracefully() {
+  const proc = serverProcess;
+  if (!proc || proc.exitCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      try { proc.kill(); } catch { /* already gone */ }
+      resolve();
+    }, SERVER_SHUTDOWN_GRACE_MS);
+    proc.once('exit', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    try { proc.stdin?.write('shutdown\n'); } catch { /* pipe closed */ }
+    if (process.platform !== 'win32') {
+      try { proc.kill('SIGTERM'); } catch { /* already gone */ }
+    }
+  });
 }
 
 app.whenReady().then(async () => {
@@ -636,6 +726,8 @@ app.whenReady().then(async () => {
   } catch (err) {
     writeErrorLog('main:startup', err);
     console.error('Failed to start KubeOps:', err);
+    // Quitting silently looked like the app simply never opened.
+    dialog.showErrorBox('KubeOps could not start', err.message || String(err));
     app.quit();
   }
 
@@ -652,10 +744,19 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+let serverStopped = false;
+let serverStopping = null;
+app.on('before-quit', (event) => {
   isQuitting = true;
-  if (serverProcess) {
-    serverProcess.kill();
+  if (serverStopped || !serverProcess) return;
+  // Hold the quit until the server has cleaned up its children. A repeated
+  // quit (or electron-updater's quitAndInstall) re-enters here and waits on
+  // the same stop.
+  event.preventDefault();
+  if (serverStopping) return;
+  serverStopping = stopServerGracefully().finally(() => {
+    serverStopped = true;
     serverProcess = null;
-  }
+    app.quit();
+  });
 });

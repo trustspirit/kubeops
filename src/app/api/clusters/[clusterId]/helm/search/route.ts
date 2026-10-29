@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runHelm, sanitizeSearchKeyword } from '@/lib/helm/helm-runner';
-import { requireHelm, parseHelmJson } from '@/lib/helm/helpers';
+import { requireHelm, parseHelmJson, helmErrorResponse } from '@/lib/helm/helpers';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  const helmCheck = requireHelm();
+  const helmCheck = await requireHelm();
   if (helmCheck) return helmCheck;
 
   const { searchParams } = new URL(req.url);
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ results: [] });
   }
 
-  const args = ['search', source, keyword, '--output', 'json'];
+  const args = ['search', source, '--output', 'json', '--', keyword];
   const result = await runHelm(args);
 
   if (result.code !== 0) {
@@ -30,10 +30,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ results: [] });
     }
     console.error(`[Helm] search ${source} "${keyword}" failed: ${result.stderr}`);
-    return NextResponse.json(
-      { error: result.stderr || `Failed to search charts for "${keyword}"` },
-      { status: 500 }
-    );
+    return helmErrorResponse(result, `Failed to search charts for "${keyword}"`);
   }
 
   const results = parseHelmJson(result.stdout) ?? [];

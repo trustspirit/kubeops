@@ -31,7 +31,19 @@ export function usePortForwards() {
     const current = new Map(forwards.map((f) => [f.id, f] as const));
 
     for (const [id, previous] of knownRef.current) {
-      if (current.has(id)) continue;
+      const now = current.get(id);
+      // The server keeps a died forward listed with status 'error' (and the
+      // kubectl reason) for a while, so treat that transition as the drop.
+      if (now && now.status === 'error' && previous.status !== 'error') {
+        if (stoppedByUser.delete(id)) continue;
+        toast.warning('Port forward stopped', {
+          id: `pf-lost-${id}`,
+          description: `localhost:${previous.localPort} → ${previous.resourceName}:${previous.containerPort} failed${now.error ? `: ${now.error}` : '.'}`,
+        });
+        continue;
+      }
+      if (now) continue;
+      if (previous.status === 'error') continue;
       if (stoppedByUser.delete(id)) continue;
       toast.warning('Port forward stopped', {
         id: `pf-lost-${id}`,
@@ -42,10 +54,19 @@ export function usePortForwards() {
     knownRef.current = current;
   }, [data, forwards]);
 
-  /** Mark an id as intentionally stopped so its removal is not reported. */
+  /**
+   * Mark an id as intentionally stopped so its removal is not reported. Call it
+   * before the DELETE so a poll landing mid-request is not read as a drop, and
+   * undo it with `unmarkStopped` if the stop fails.
+   */
   const markStopped = useCallback((id: string) => {
     stoppedByUser.add(id);
   }, []);
 
-  return { forwards, mutate, markStopped };
+  /** Undo {@link markStopped} when the stop request itself failed. */
+  const unmarkStopped = useCallback((id: string) => {
+    stoppedByUser.delete(id);
+  }, []);
+
+  return { forwards, mutate, markStopped, unmarkStopped };
 }

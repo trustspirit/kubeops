@@ -3,6 +3,21 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import type { AlertRule, AlertEvent } from '@/types/alert';
 
 const MAX_HISTORY = 500;
+/** Cooldown entries are per rule+resource, so bound them like history. */
+const MAX_COOLDOWN_ENTRIES = 2_000;
+
+function isCooldownKeyForRule(key: string, ruleId: string): boolean {
+  return key === ruleId || key.startsWith(`${ruleId}:`);
+}
+
+/** Keeps the most recent entries once the map outgrows its bound. */
+export function pruneCooldowns(entries: Record<string, number>, max = MAX_COOLDOWN_ENTRIES): Record<string, number> {
+  const keys = Object.keys(entries);
+  if (keys.length <= max) return entries;
+  return Object.fromEntries(
+    Object.entries(entries).sort((a, b) => b[1] - a[1]).slice(0, max),
+  );
+}
 
 interface AlertState {
   rules: AlertRule[];
@@ -21,8 +36,8 @@ interface AlertState {
   markAllRead: () => void;
   clearHistory: () => void;
 
-  // Cooldown
-  setLastTriggered: (ruleId: string, timestamp: number) => void;
+  // Cooldown, keyed by `getAlertCooldownKey(ruleId, resource)`
+  setLastTriggered: (cooldownKey: string, timestamp: number) => void;
 
   // Computed
   unreadCount: () => number;
@@ -47,9 +62,11 @@ export const useAlertStore = create<AlertState>()(
 
       deleteRule: (id) => {
         set((state) => {
-          // Clean up lastTriggered entry when a rule is deleted to prevent
+          // Clean up the rule's cooldown entries when it is deleted to prevent
           // unbounded growth of orphan entries in localStorage
-          const { [id]: _removed, ...remainingTriggered } = state.lastTriggered;
+          const remainingTriggered = Object.fromEntries(
+            Object.entries(state.lastTriggered).filter(([key]) => !isCooldownKeyForRule(key, id)),
+          );
           return {
             rules: state.rules.filter((r) => r.id !== id),
             lastTriggered: remainingTriggered,
@@ -89,9 +106,9 @@ export const useAlertStore = create<AlertState>()(
         set({ history: [] });
       },
 
-      setLastTriggered: (ruleId, timestamp) => {
+      setLastTriggered: (cooldownKey, timestamp) => {
         set((state) => ({
-          lastTriggered: { ...state.lastTriggered, [ruleId]: timestamp },
+          lastTriggered: pruneCooldowns({ ...state.lastTriggered, [cooldownKey]: timestamp }),
         }));
       },
 

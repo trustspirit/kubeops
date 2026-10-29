@@ -1,32 +1,18 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
 import { useLogSearch } from '@/hooks/use-log-search';
-import { buildWebSocketUrl } from '@/lib/websocket-session';
-import { canRetryStream, getReconnectDelay, isNearScrollBottom } from '@/lib/stream-policy';
+import { describeLogConnection, listLogContainerNames, logConnectionDotClass, MAX_LOG_SIZE, useLogStream } from '@/hooks/use-log-stream';
+import { isNearScrollBottom } from '@/lib/stream-policy';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Pause, Play, Download, Search, ChevronUp, ChevronDown, X, CaseSensitive, Regex, Scissors } from 'lucide-react';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
-import { LogBuffer } from '@/lib/log-buffer';
+import { ErrorDisplay } from '@/components/shared/error-display';
 import { downloadPodLogs } from '@/lib/log-download';
-import AnsiToHtml from 'ansi-to-html';
-
-const MAX_LOG_SIZE = 512 * 1024; // 512KB retained in the viewer
-const MAX_RETRIES = 5;
-/** Repaint at most this often instead of on every incoming chunk. */
-const RENDER_INTERVAL_MS = 100;
-type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
-
-const ANSI_OPTIONS = { fg: '#cdd6f4', bg: '#1e1e2e', escapeXML: true, stream: true } as const;
-
-function createLogBuffer(): LogBuffer {
-  const converter = new AnsiToHtml(ANSI_OPTIONS);
-  return new LogBuffer({ maxChars: MAX_LOG_SIZE, convert: (raw) => converter.toHtml(raw) });
-}
 
 export default function PodLogsPage() {
   const params = useParams();
@@ -35,32 +21,24 @@ export default function PodLogsPage() {
   const namespace = params.namespace as string;
   const podName = params.podName as string;
 
-  const { data: pod } = useResourceDetail({
-    clusterId: decodeURIComponent(clusterId),
+  const decodedClusterId = decodeURIComponent(clusterId);
+  const { data: pod, error: podError, mutate: mutatePod } = useResourceDetail({
+    clusterId: decodedClusterId,
     namespace,
     resourceType: 'pods',
     name: podName,
   });
 
-  const containers = useMemo(() => pod?.spec?.containers || [], [pod]);
+  // Init and ephemeral containers too, like the panel tab: a crash-looping
+  // init container is often exactly the one whose logs are needed.
+  const containers = useMemo(() => listLogContainerNames(pod), [pod]);
   const [container, setContainer] = useState('');
   const [follow, setFollow] = useState(true);
-  const [baseHtml, setBaseHtml] = useState('');
-  const [truncated, setTruncated] = useState(false);
-  const [hasOutput, setHasOutput] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
-  const [reconnectNonce, setReconnectNonce] = useState(0);
   const logRef = useRef<HTMLPreElement>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const retryRef = useRef(0);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasStreamedRef = useRef(false);
-  const logTargetRef = useRef<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const bufferRef = useRef<LogBuffer>(createLogBuffer());
-  const pendingRef = useRef('');
-  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stream = useLogStream({ clusterId: decodedClusterId, namespace, podName, container });
+  const { html: baseHtml, truncated, hasOutput, connectionState, reconnect } = stream;
 
   const search = useLogSearch({
     html: baseHtml,
@@ -68,116 +46,11 @@ export default function PodLogsPage() {
     onScrollToMatch: () => setFollow(false),
   });
 
-  const flushBuffer = useCallback(() => {
-    flushTimerRef.current = null;
-    const chunk = pendingRef.current;
-    if (!chunk) return;
-    pendingRef.current = '';
-
-    const buffer = bufferRef.current;
-    buffer.append(chunk);
-    setBaseHtml(buffer.html);
-    setTruncated(buffer.truncated);
-    setHasOutput(true);
-  }, []);
-
-  const scheduleFlush = useCallback(() => {
-    if (flushTimerRef.current) return;
-    flushTimerRef.current = setTimeout(flushBuffer, RENDER_INTERVAL_MS);
-  }, [flushBuffer]);
-
-
   useEffect(() => {
     if (containers.length > 0 && !container) {
-      setContainer(containers[0].name);
+      setContainer(containers[0]);
     }
   }, [containers, container]);
-
-  useEffect(() => {
-    if (!container) return;
-
-    const logTarget = `${podName}\u0000${container}`;
-    if (logTargetRef.current !== logTarget) {
-      logTargetRef.current = logTarget;
-      retryRef.current = 0;
-      hasStreamedRef.current = false;
-      pendingRef.current = '';
-      bufferRef.current = createLogBuffer();
-      setBaseHtml('');
-      setTruncated(false);
-      setHasOutput(false);
-    }
-
-    let disposed = false;
-    setConnectionState(retryRef.current > 0 ? 'reconnecting' : 'connecting');
-
-    void (async () => {
-      try {
-        const decodedCluster = decodeURIComponent(clusterId);
-        const tailLines = hasStreamedRef.current ? 0 : 500;
-        const logPath = `/ws/logs/${encodeURIComponent(decodedCluster)}/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}?container=${encodeURIComponent(container)}&follow=true&timestamps=true&tailLines=${tailLines}`;
-        const ws = new WebSocket(await buildWebSocketUrl(logPath));
-        if (disposed) {
-          ws.close();
-          return;
-        }
-
-        wsRef.current = ws;
-        ws.onopen = () => {
-          if (disposed) return;
-          retryRef.current = 0;
-          setConnectionState('connected');
-        };
-        ws.onmessage = (event) => {
-          if (disposed || typeof event.data !== 'string') return;
-          hasStreamedRef.current = true;
-          try {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'error') {
-              pendingRef.current += `\n[ERROR] ${msg.message}\n`;
-              scheduleFlush();
-              return;
-            }
-          } catch { /* not JSON, it's log data */ }
-          pendingRef.current += event.data;
-          scheduleFlush();
-        };
-        ws.onclose = (event) => {
-          if (disposed) return;
-          if (event.wasClean) {
-            setConnectionState('disconnected');
-            return;
-          }
-
-          if (canRetryStream({ intentional: disposed, normalExit: false, attempt: retryRef.current, maxAttempts: MAX_RETRIES })) {
-            const attempt = retryRef.current++;
-            setConnectionState('reconnecting');
-            reconnectTimerRef.current = setTimeout(
-              () => setReconnectNonce((value) => value + 1),
-              getReconnectDelay(attempt),
-            );
-          } else {
-            setConnectionState('disconnected');
-          }
-        };
-      } catch {
-        if (!disposed) setConnectionState('disconnected');
-      }
-    })();
-
-    return () => {
-      disposed = true;
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
-      }
-      wsRef.current?.close();
-      wsRef.current = null;
-      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
-      flushTimerRef.current = null;
-      pendingRef.current = '';
-    };
-  }, [container, clusterId, namespace, podName, reconnectNonce, scheduleFlush]);
 
   const { open: openSearch, highlightedHtml } = search;
   const logsHtml = hasOutput ? highlightedHtml : 'Connecting...';
@@ -188,10 +61,11 @@ export default function PodLogsPage() {
     }
   }, [logsHtml, follow]);
 
-  // Cmd+F / Ctrl+F keyboard shortcut
+  // Cmd+F / Ctrl+F keyboard shortcut (the bottom panel handles its own).
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        if (document.activeElement?.closest('[data-bottom-panel]')) return;
         e.preventDefault();
         openSearch();
         setTimeout(() => searchInputRef.current?.focus(), 0);
@@ -207,11 +81,11 @@ export default function PodLogsPage() {
     setDownloading(true);
     try {
       await downloadPodLogs({
-        clusterId: decodeURIComponent(clusterId),
+        clusterId: decodedClusterId,
         namespace,
         podName,
         container,
-        fallbackText: bufferRef.current.text,
+        fallbackText: stream.getText(),
       });
     } finally {
       setDownloading(false);
@@ -228,13 +102,10 @@ export default function PodLogsPage() {
     else scrollToBottom();
   };
 
-  const reconnect = () => {
-    retryRef.current = 0;
-    setConnectionState('connecting');
-    setReconnectNonce((value) => value + 1);
-  };
-
-  if (!pod) return <LoadingSkeleton />;
+  if (!pod) {
+    if (podError) return <ErrorDisplay error={podError} onRetry={() => mutatePod()} clusterId={clusterId} />;
+    return <LoadingSkeleton />;
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -250,8 +121,8 @@ export default function PodLogsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {containers.map((c: Record<string, unknown>) => (
-                  <SelectItem key={c.name as string} value={c.name as string}>{c.name as string}</SelectItem>
+                {containers.map((name) => (
+                  <SelectItem key={name} value={name}>{name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -290,11 +161,11 @@ export default function PodLogsPage() {
             <Search className="h-4 w-4 mr-1" />
             Search
           </Button>
-          <div className={`h-2 w-2 rounded-full ${connectionState === 'connected' ? 'bg-green-500' : connectionState === 'reconnecting' ? 'bg-yellow-500' : 'bg-red-500'}`} />
+          <div className={`h-2 w-2 rounded-full ${logConnectionDotClass(connectionState)}`} />
           <span className="text-xs text-muted-foreground">
-            {connectionState === 'connected' ? 'Streaming' : connectionState === 'reconnecting' ? 'Reconnecting…' : connectionState === 'connecting' ? 'Connecting…' : 'Disconnected'}
+            {describeLogConnection(connectionState)}
           </span>
-          {connectionState === 'disconnected' && (
+          {(connectionState === 'disconnected' || connectionState === 'ended') && (
             <Button variant="outline" size="sm" onClick={reconnect}>
               Reconnect
             </Button>

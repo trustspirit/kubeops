@@ -1,25 +1,35 @@
 'use client';
 
-import { SWRConfig } from 'swr';
+import { SWRConfig, type Cache, type SWRConfiguration, type State } from 'swr';
 import { type ReactNode } from 'react';
 import { fetcher } from '@/lib/api-client';
+import { createLRUCache, ERROR_RETRY_MAX_MS, getErrorRetryDelay, isRetryableError } from './swr-policy';
 
-function createLRUCache() {
-  const map = new Map();
-  const MAX_SIZE = 500;
-  return {
-    get: (key: string) => map.get(key),
-    set: (key: string, value: unknown) => {
-      if (map.size >= MAX_SIZE) {
-        const firstKey = map.keys().next().value;
-        map.delete(firstKey);
-      }
-      map.set(key, value);
-    },
-    delete: (key: string) => map.delete(key),
-    keys: () => map.keys(),
-  };
-}
+/**
+ * SWR stops `refreshInterval` polling while a key is in error and, with the
+ * default handler, gives up after `errorRetryCount` attempts — so a page that
+ * hit a VPN drop or a laptop sleep never recovered. Transient errors keep
+ * retrying with capped backoff; permanent ones (401/403/404) stop.
+ */
+const onErrorRetry: NonNullable<SWRConfiguration['onErrorRetry']> = (
+  error,
+  _key,
+  config,
+  revalidate,
+  opts,
+) => {
+  const { retryCount } = opts;
+  if (!isRetryableError(error)) return;
+  // A hook may still opt into a hard limit.
+  if (typeof config.errorRetryCount === 'number' && retryCount > config.errorRetryCount) return;
+  // revalidateOnFocus is off, so a hidden window must keep retrying (slowly)
+  // or it would never pick up again once shown.
+  const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+  const delay = hidden ? ERROR_RETRY_MAX_MS : getErrorRetryDelay(retryCount);
+  setTimeout(() => { void revalidate(opts); }, delay);
+};
+
+const createCache = (): Cache => createLRUCache<State>(500);
 
 export function SWRProvider({ children }: { children: ReactNode }) {
   return (
@@ -28,8 +38,8 @@ export function SWRProvider({ children }: { children: ReactNode }) {
         fetcher,
         revalidateOnFocus: false,
         dedupingInterval: 5000,
-        errorRetryCount: 3,
-        provider: createLRUCache,
+        onErrorRetry,
+        provider: createCache,
       }}
     >
       {children}

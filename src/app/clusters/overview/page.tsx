@@ -24,7 +24,7 @@ export default function MultiClusterOverviewPage() {
   const connectedCount = clusterData.filter((c) => c.status === 'connected').length;
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Header */}
       <header className="electron-header-inset flex h-14 items-center justify-between border-b px-4 shrink-0 drag-region">
         <div className="flex items-center gap-3 no-drag-region">
@@ -142,6 +142,9 @@ export default function MultiClusterOverviewPage() {
                               <p className="text-[10px] text-muted-foreground">Warnings</p>
                             </div>
                           </div>
+                        )}
+                        {cluster.warning && (
+                          <p className="mt-2 text-[10px] text-muted-foreground">{cluster.warning}</p>
                         )}
                       </CardContent>
                     </Card>

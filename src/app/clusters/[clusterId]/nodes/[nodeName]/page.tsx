@@ -3,7 +3,7 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
-import { ErrorDisplay } from '@/components/shared/error-display';
+import { ErrorDisplay, RefreshFailedBanner } from '@/components/shared/error-display';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,7 +35,7 @@ export default function NodeDetailPage() {
   });
 
   if (isLoading) return <LoadingSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
+  if (error && !data) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
   if (!data) return null;
 
   const resource = data;
@@ -59,6 +59,7 @@ export default function NodeDetailPage() {
 
   return (
     <div className="flex flex-col gap-4 p-6">
+      {error && data && <RefreshFailedBanner error={error} onRetry={() => mutate()} />}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => router.back()} aria-label="Go back">
           <ArrowLeft className="h-4 w-4" />
@@ -136,7 +137,8 @@ export default function NodeDetailPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="yaml" className="mt-4">
+        {/* Kept mounted so unsaved YAML edits survive switching tabs. */}
+        <TabsContent value="yaml" forceMount className="mt-4 data-[state=inactive]:hidden">
           <YamlEditor
             data={resource}
             apiUrl={`/api/clusters/${clusterId}/resources/_/nodes/${nodeName}`}

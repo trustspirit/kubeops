@@ -4,11 +4,10 @@ import { Header } from './header';
 import { Sidebar } from './sidebar';
 import { Breadcrumbs } from './breadcrumbs';
 import { CommandPalette } from './command-palette';
-import { BottomPanel } from '@/components/panel/bottom-panel';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <Header />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
@@ -17,7 +16,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Breadcrumbs />
             {children}
           </main>
-          <BottomPanel />
+          {/* The bottom panel lives in the /clusters layout so it survives cluster switches. */}
         </div>
       </div>
       <CommandPalette />

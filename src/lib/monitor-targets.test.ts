@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  ALERT_RESOURCE_TYPE_OPTIONS,
   ALERT_RESOURCE_TYPES,
   getActiveTarget,
   getBackgroundTargets,
@@ -106,5 +107,19 @@ describe('getActiveTarget', () => {
     const active = getActiveTarget(targets, 'prod');
     assert.equal(background.length + (active ? 1 : 0), targets.length);
     assert.equal(background.some((t) => t.clusterId === 'prod'), false);
+  });
+});
+
+describe('ALERT_RESOURCE_TYPES', () => {
+  it('subscribes to every resource type the rule dialog offers', () => {
+    for (const option of ALERT_RESOURCE_TYPE_OPTIONS) {
+      assert.ok(ALERT_RESOURCE_TYPES.includes(option.value), option.value);
+    }
+  });
+
+  it('includes the types that were previously offered but never watched', () => {
+    for (const type of ['cronjobs', 'services', 'horizontalpodautoscalers'] as const) {
+      assert.ok(ALERT_RESOURCE_TYPES.includes(type), type);
+    }
   });
 });

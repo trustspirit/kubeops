@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useWatch, type WatchEventCallback } from '@/hooks/use-watch';
 import { useAlertStore } from '@/stores/alert-store';
 import { usePodWatcherStore } from '@/stores/pod-watcher-store';
-import { evaluateRules } from '@/lib/alert-evaluator';
+import { evaluateRules, getAlertCooldownKey } from '@/lib/alert-evaluator';
 import { evaluatePodRestart } from '@/lib/pod-restart-snapshot';
 import { toast } from 'sonner';
 import type { MonitorTarget } from '@/lib/monitor-targets';
@@ -70,7 +70,7 @@ export function ClusterMonitor({ target, subscribe }: ClusterMonitorProps) {
 
     for (const alert of evaluateRules(enabled, event, lastTriggeredRef.current)) {
       addAlert(alert);
-      setLastTriggered(alert.ruleId, alert.timestamp);
+      setLastTriggered(getAlertCooldownKey(alert.ruleId, event.object), alert.timestamp);
       notify(`Alert: ${alert.ruleName}`, `${alert.resourceName}: ${alert.message}`);
     }
   }, [clusterId, addAlert, setLastTriggered]);

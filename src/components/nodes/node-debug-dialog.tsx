@@ -18,8 +18,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Bug, Loader2 } from 'lucide-react';
+import { Bug, Loader2, ShieldAlert } from 'lucide-react';
+import { DialogContextList } from '@/components/shared/confirm-dialog';
 import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
+import { guardOpenChange } from '@/lib/dialog-busy';
 import { toast } from 'sonner';
 import { usePanelStore } from '@/stores/panel-store';
 
@@ -44,13 +46,14 @@ export function NodeDebugDialog({ open, onOpenChange, clusterId, nodeName }: Nod
   const { addTab } = usePanelStore();
 
   const handleStart = async () => {
+    if (loading) return;
     setLoading(true);
     setError(null);
 
     try {
       const encodedClusterId = encodeURIComponent(clusterId);
       const result = await apiClient.post<{ podName: string; namespace: string; status: string }>(
-        `/api/clusters/${encodedClusterId}/nodes/${nodeName}/debug`,
+        `/api/clusters/${encodedClusterId}/nodes/${encodeURIComponent(nodeName)}/debug`,
         { image },
         { timeoutMs: LONG_RUNNING_TIMEOUT_MS },
       );
@@ -79,8 +82,8 @@ export function NodeDebugDialog({ open, onOpenChange, clusterId, nodeName }: Nod
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={guardOpenChange(loading, onOpenChange)}>
+      <DialogContent busy={loading}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Bug className="h-5 w-5" />
@@ -91,6 +94,18 @@ export function NodeDebugDialog({ open, onOpenChange, clusterId, nodeName }: Nod
             The pod will be automatically cleaned up after 1 hour.
           </DialogDescription>
         </DialogHeader>
+
+        {/* A privileged pod with host access: make the target unmistakable. */}
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm space-y-2" role="alert">
+          <div className="flex items-center gap-2 font-medium text-destructive">
+            <ShieldAlert className="h-4 w-4 shrink-0" />
+            Privileged pod with full host access
+          </div>
+          <DialogContextList
+            className="bg-background/60"
+            entries={{ cluster: clusterId, node: nodeName, namespace: 'default' }}
+          />
+        </div>
 
         <div className="space-y-4 py-2">
           <div className="space-y-2">

@@ -12,7 +12,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { DialogContextList } from '@/components/shared/confirm-dialog';
 import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
+import { guardOpenChange } from '@/lib/dialog-busy';
 import { toast } from 'sonner';
 import { Loader2, Search, Plus, Package } from 'lucide-react';
 
@@ -43,6 +45,9 @@ export function HelmInstallDialog({ open, onOpenChange, clusterId, onInstalled }
   const [releaseName, setReleaseName] = useState('');
   const [namespace, setNamespace] = useState('default');
   const [values, setValues] = useState('');
+  // Off by default: creating a namespace is a side effect the user should opt
+  // into, and a typo in the namespace field otherwise silently made a new one.
+  const [createNamespace, setCreateNamespace] = useState(false);
   const [installing, setInstalling] = useState(false);
 
   const resetState = () => {
@@ -55,6 +60,7 @@ export function HelmInstallDialog({ open, onOpenChange, clusterId, onInstalled }
     setReleaseName('');
     setNamespace('default');
     setValues('');
+    setCreateNamespace(false);
     setInstalling(false);
   };
 
@@ -89,7 +95,7 @@ export function HelmInstallDialog({ open, onOpenChange, clusterId, onInstalled }
   };
 
   const handleInstall = async () => {
-    if (!releaseName || !selectedChart || !namespace) return;
+    if (!releaseName || !selectedChart || !namespace || installing) return;
     setInstalling(true);
     try {
       await apiClient.post(
@@ -99,7 +105,7 @@ export function HelmInstallDialog({ open, onOpenChange, clusterId, onInstalled }
           chart: selectedChart,
           namespace,
           values: values || undefined,
-          createNamespace: true,
+          createNamespace,
         },
         { timeoutMs: LONG_RUNNING_TIMEOUT_MS }
       );
@@ -118,8 +124,8 @@ export function HelmInstallDialog({ open, onOpenChange, clusterId, onInstalled }
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+    <Dialog open={open} onOpenChange={guardOpenChange(installing, handleOpenChange)}>
+      <DialogContent className="sm:max-w-2xl" busy={installing}>
         <DialogHeader>
           <DialogTitle>Install Helm Chart</DialogTitle>
           <DialogDescription>
@@ -208,6 +214,7 @@ export function HelmInstallDialog({ open, onOpenChange, clusterId, onInstalled }
 
         {step === 'configure' && (
           <div className="space-y-4">
+            <DialogContextList entries={{ cluster: clusterId, namespace: namespace || '—', chart: selectedChart }} />
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Release Name</label>
@@ -224,6 +231,15 @@ export function HelmInstallDialog({ open, onOpenChange, clusterId, onInstalled }
                   onChange={(e) => setNamespace(e.target.value)}
                   placeholder="default"
                 />
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={createNamespace}
+                    onChange={(e) => setCreateNamespace(e.target.checked)}
+                    className="rounded"
+                  />
+                  Create the namespace if it does not exist (--create-namespace)
+                </label>
               </div>
             </div>
             <div className="space-y-2">

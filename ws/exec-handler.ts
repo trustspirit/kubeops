@@ -7,6 +7,11 @@ import { resolveCli } from '../src/lib/cli-path';
 import { sanitizeServerError } from '../src/lib/server-error';
 
 const KEEPALIVE_INTERVAL_MS = 30_000;
+// Pause the PTY once this much output is still queued on the socket, so
+// `cat bigfile` or a runaway `yes` cannot grow the send buffer without bound
+// while the renderer is busy painting. Same approach as the logs handler.
+const MAX_SOCKET_BACKLOG_BYTES = 1024 * 1024;
+const DRAIN_POLL_MS = 50;
 
 const kubectlPath = resolveCli('kubectl');
 console.log(`[Exec] Using kubectl: ${kubectlPath}`);
@@ -68,6 +73,8 @@ export function handleExecConnection(ws: WebSocket, req: IncomingMessage) {
   ws.send(JSON.stringify({ type: 'connected' }));
 
   let cleanedUp = false;
+  let paused = false;
+  let drainTimer: ReturnType<typeof setTimeout> | null = null;
   let dataSubscription: pty.IDisposable | null = null;
   let exitSubscription: pty.IDisposable | null = null;
 
@@ -81,6 +88,8 @@ export function handleExecConnection(ws: WebSocket, req: IncomingMessage) {
     if (cleanedUp) return;
     cleanedUp = true;
     clearInterval(keepalive);
+    if (drainTimer) clearTimeout(drainTimer);
+    drainTimer = null;
     dataSubscription?.dispose();
     exitSubscription?.dispose();
     ws.off('message', handleMessage);
@@ -91,10 +100,25 @@ export function handleExecConnection(ws: WebSocket, req: IncomingMessage) {
     }
   };
 
+  const resumeWhenDrained = () => {
+    drainTimer = null;
+    if (!paused || cleanedUp) return;
+    if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount > MAX_SOCKET_BACKLOG_BYTES) {
+      drainTimer = setTimeout(resumeWhenDrained, DRAIN_POLL_MS);
+      return;
+    }
+    paused = false;
+    try { ptyProcess.resume(); } catch { /* already dead */ }
+  };
+
   // PTY output → browser
   dataSubscription = ptyProcess.onData((data: string) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(data);
+    if (ws.readyState !== WebSocket.OPEN) return;
+    ws.send(data);
+    if (!paused && ws.bufferedAmount > MAX_SOCKET_BACKLOG_BYTES) {
+      paused = true;
+      try { ptyProcess.pause(); } catch { /* already dead */ }
+      drainTimer = setTimeout(resumeWhenDrained, DRAIN_POLL_MS);
     }
   });
 

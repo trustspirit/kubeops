@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RBACSummary } from '@/components/rbac/rbac-summary';
 import { AccessReviewForm } from '@/components/rbac/access-review-form';
-import { ErrorDisplay } from '@/components/shared/error-display';
+import { ErrorDisplay, RefreshFailedBanner } from '@/components/shared/error-display';
 import { useRBACSummary } from '@/hooks/use-rbac-summary';
 import { ShieldQuestion } from 'lucide-react';
 
@@ -15,7 +15,7 @@ export default function RBACPage() {
 
   const { data, error, isLoading, mutate } = useRBACSummary({ clusterId: decodedClusterId });
 
-  if (error && !isLoading) {
+  if (error && !isLoading && !data) {
     return (
       <div className="flex flex-col gap-6 p-6">
         <div>
@@ -33,6 +33,7 @@ export default function RBACPage() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
+      {error && data && <RefreshFailedBanner error={error} onRetry={() => mutate()} />}
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="rounded-lg p-2.5 bg-violet-500/10">

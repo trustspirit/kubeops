@@ -4,7 +4,7 @@ import { useState, useMemo, useRef, useCallback, useEffect, createContext, useCo
 import type { KubeResource } from '@/types/resource';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Save, RotateCcw, Pencil, Table2, Code, ChevronRight, ChevronDown, Plug, ExternalLink, X, GitCompareArrows, Globe } from 'lucide-react';
+import { Save, RotateCcw, Pencil, Table2, Code, ChevronRight, ChevronDown, Plug, ExternalLink, X, GitCompareArrows, Globe, Copy } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -16,6 +16,7 @@ import { YamlDiffView } from '@/components/shared/yaml-diff-view';
 import { MultiClusterApplyDialog } from '@/components/multi-cluster/multi-cluster-apply-dialog';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { useModifierKeyLabel } from '@/hooks/use-modifier-key';
+import { looksLikeResource, toEditableYaml, toPortableYaml } from '@/lib/portable-manifest';
 
 // === Types ===
 
@@ -29,9 +30,15 @@ interface PortForwardContext {
 interface YamlEditorProps {
   data: KubeResource;
   apiUrl: string;
-  onSaved?: () => void;
+  /**
+   * Revalidates the resource. Return the promise (e.g. `() => mutate()`) so a
+   * conflict reload can wait for, and rebuild from, the fresh object.
+   */
+  onSaved?: () => unknown;
   portForwardContext?: PortForwardContext;
   clusterScoped?: boolean;
+  /** Reports whether there are unapplied edits, so a parent can guard navigation. */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 
@@ -42,8 +49,9 @@ const PFContext = createContext<PortForwardContext | null>(null);
 
 function PortForwardButton({ containerPort }: { containerPort: number }) {
   const ctx = useContext(PFContext);
-  const { forwards, markStopped } = usePortForwards();
+  const { forwards, markStopped, unmarkStopped } = usePortForwards();
   const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
 
   if (!ctx) return null;
   const active = findMatchingPortForward(forwards, {
@@ -75,15 +83,20 @@ function PortForwardButton({ containerPort }: { containerPort: number }) {
   };
 
   const stopForward = async () => {
-    if (!active) return;
+    if (!active || stopping) return;
+    setStopping(true);
     try {
-      // Suppress the "stopped unexpectedly" warning for a deliberate stop.
+      // Suppress the "stopped unexpectedly" warning before the DELETE so a poll
+      // landing mid-request is not read as a drop; undone if the stop fails.
       markStopped(active.id);
       await apiClient.delete(`/api/port-forward?id=${encodeURIComponent(active.id)}`);
       globalMutate('/api/port-forward');
       toast.success('Port forward stopped');
     } catch (err: unknown) {
+      unmarkStopped(active.id);
       toast.error(`Failed to stop port forward: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setStopping(false);
     }
   };
 
@@ -102,7 +115,8 @@ function PortForwardButton({ containerPort }: { containerPort: number }) {
         </a>
         <button
           onClick={stopForward}
-          className="text-muted-foreground hover:text-destructive p-0.5"
+          disabled={stopping}
+          className="text-muted-foreground hover:text-destructive p-0.5 disabled:opacity-50"
           aria-label={`Stop port forward on local port ${active.localPort}`}
         >
           <X className="h-3 w-3" />
@@ -307,9 +321,17 @@ function ActiveForwardsBanner() {
 
 // === Main Component ===
 
-export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterScoped }: YamlEditorProps) {
+export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterScoped, onDirtyChange }: YamlEditorProps) {
   const [mode, setMode] = useState<'table' | 'yaml' | 'edit' | 'review'>('table');
   const [saving, setSaving] = useState(false);
+  // Synchronous in-flight guard: Cmd+S auto-repeat or a double click fired
+  // several PUTs, and every one after the first failed with a false 409.
+  const savingRef = useRef(false);
+  const [reloadConfirmOpen, setReloadConfirmOpen] = useState(false);
+  const [reloading, setReloading] = useState(false);
+  /** The user's text from before a conflict reload, kept so it is not lost. */
+  const [previousDraft, setPreviousDraft] = useState<string | null>(null);
+  const [showDraftDiff, setShowDraftDiff] = useState(false);
   const [editValue, setEditValue] = useState('');
   const [originalYaml, setOriginalYaml] = useState('');
   const [yamlError, setYamlError] = useState<string | null>(null);
@@ -324,29 +346,50 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
     [data, mode]
   );
 
-  const startEditing = useCallback(() => {
+  const beginEditing = useCallback((source: KubeResource) => {
     // `status` is server-owned and often hundreds of lines; showing it buries
-    // the handful of spec fields the user actually came to edit. `resourceVersion`
-    // stays so the API can reject a write that raced with someone else.
-    const clean = { ...data, metadata: { ...data.metadata } } as Record<string, unknown>;
-    const metadata = clean.metadata as Record<string, unknown> | undefined;
-    if (metadata?.managedFields) delete metadata.managedFields;
-    delete clean.status;
-
-    const yamlStr = yaml.dump(clean, { lineWidth: -1 });
+    // the handful of spec fields the user actually came to edit.
+    const yamlStr = toEditableYaml(source);
     setEditValue(yamlStr);
     setOriginalYaml(yamlStr);
     setYamlError(null);
     setMode('edit');
-  }, [data]);
+  }, []);
+
+  const startEditing = useCallback(() => {
+    setPreviousDraft(null);
+    setShowDraftDiff(false);
+    beginEditing(data);
+  }, [beginEditing, data]);
 
   const isDirty = mode !== 'table' && mode !== 'yaml' && editValue !== originalYaml;
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  // Report clean on unmount so a parent guard does not stay armed.
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+
+  // Closing or reloading the window would silently drop unapplied edits.
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
 
   const cancelEditing = useCallback(() => {
     setMode('table');
     setEditValue('');
     setOriginalYaml('');
     setYamlError(null);
+    setConflict(false);
+    setPreviousDraft(null);
+    setShowDraftDiff(false);
     setDiscardOpen(false);
   }, []);
 
@@ -377,6 +420,7 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
   }, [editValue]);
 
   const handleSave = async () => {
+    if (savingRef.current) return;
     let parsed: Record<string, unknown> | undefined;
     try {
       parsed = yaml.load(editValue) as Record<string, unknown>;
@@ -390,6 +434,7 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
       setMode('edit');
       return;
     }
+    savingRef.current = true;
     setSaving(true);
     setYamlError(null);
     setConflict(false);
@@ -400,26 +445,63 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
       setMode('table');
       setEditValue('');
       setOriginalYaml('');
-      onSaved?.();
+      setPreviousDraft(null);
+      setShowDraftDiff(false);
+      void Promise.resolve(onSaved?.()).catch(() => {
+        // Saved; the next poll will pick the new version up.
+      });
     } catch (err: unknown) {
       const status = (err as { status?: number })?.status;
       // 409 means someone (or a controller) changed the object underneath us.
       setConflict(status === 409);
       setYamlError(`Save failed: ${(err instanceof Error ? err.message : 'Unknown error')}`);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
-  // Pull the server's current version into the editor, keeping the user's text
-  // available to copy across.
-  const reloadFromServer = useCallback(() => {
-    onSaved?.();
-    setConflict(false);
-    setYamlError(null);
-    startEditing();
-    toast.info('Reloaded the current version from the cluster');
-  }, [onSaved, startEditing]);
+  // Pull the server's current version into the editor. The revalidation is
+  // awaited so the editor is rebuilt from the fresh object rather than the
+  // stale one that just conflicted, and the user's text is kept alongside.
+  const reloadFromServer = useCallback(async () => {
+    if (reloading) return;
+    setReloading(true);
+    const draft = editValue;
+    try {
+      const fresh = await Promise.resolve(onSaved?.());
+      const source = looksLikeResource(fresh) ? (fresh as KubeResource) : data;
+      setConflict(false);
+      setYamlError(null);
+      beginEditing(source);
+      setPreviousDraft(draft);
+      setShowDraftDiff(false);
+      toast.info('Reloaded the current version from the cluster', {
+        description: 'Your edits were kept below so you can copy or compare them.',
+      });
+    } catch (err: unknown) {
+      toast.error(`Reload failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setReloading(false);
+      setReloadConfirmOpen(false);
+    }
+  }, [reloading, editValue, onSaved, data, beginEditing]);
+
+  const copyPreviousDraft = useCallback(async () => {
+    if (previousDraft === null) return;
+    try {
+      await navigator.clipboard.writeText(previousDraft);
+      toast.success('Previous edits copied to the clipboard');
+    } catch {
+      toast.error('Could not access the clipboard');
+    }
+  }, [previousDraft]);
+
+  // Only computed while the dialog is open; it snapshots this on open.
+  const multiApplyYaml = useMemo(
+    () => (multiApplyOpen ? toPortableYaml(data) : ''),
+    [multiApplyOpen, data]
+  );
 
   // Cmd+S in review mode → apply changes
   useEffect(() => {
@@ -427,7 +509,9 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
     const handler = (e: KeyboardEvent) => {
       if (e.key === 's' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        handleSave();
+        // Held keys auto-repeat; `handleSave` also guards against overlap.
+        if (e.repeat) return;
+        void handleSave();
       }
     };
     window.addEventListener('keydown', handler);
@@ -462,11 +546,11 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
                 <Save className="h-4 w-4 mr-1" />
                 {saving ? 'Saving...' : 'Apply Changes'}
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setMode('edit')}>
+              <Button variant="outline" size="sm" onClick={() => setMode('edit')} disabled={saving}>
                 <Pencil className="h-4 w-4 mr-1" />
                 Back to Edit
               </Button>
-              <Button variant="outline" size="sm" onClick={requestCancel}>
+              <Button variant="outline" size="sm" onClick={requestCancel} disabled={saving}>
                 <RotateCcw className="h-4 w-4 mr-1" />
                 Cancel
               </Button>
@@ -510,9 +594,36 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
                 <span className="text-xs">
                   The resource changed in the cluster after you started editing.
                 </span>
-                <Button variant="outline" size="sm" onClick={reloadFromServer}>
-                  Reload current version
+                <Button variant="outline" size="sm" onClick={() => setReloadConfirmOpen(true)} disabled={reloading}>
+                  {reloading ? 'Reloading...' : 'Reload current version'}
                 </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {previousDraft !== null && (mode === 'edit' || mode === 'review') && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs space-y-2" role="status">
+            <div className="flex flex-wrap items-center gap-2">
+              <span>
+                The editor now holds the cluster&apos;s current version. Your earlier edits were kept.
+              </span>
+              <Button variant="outline" size="sm" className="h-7" onClick={copyPreviousDraft}>
+                <Copy className="h-3.5 w-3.5 mr-1" />
+                Copy my edits
+              </Button>
+              <Button variant="outline" size="sm" className="h-7" onClick={() => setShowDraftDiff((v) => !v)}>
+                <GitCompareArrows className="h-3.5 w-3.5 mr-1" />
+                {showDraftDiff ? 'Hide comparison' : 'Compare with my edits'}
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7" onClick={() => { setPreviousDraft(null); setShowDraftDiff(false); }}>
+                Dismiss
+              </Button>
+            </div>
+            {showDraftDiff && (
+              <div>
+                <p className="mb-1 text-muted-foreground">Current version → your earlier edits</p>
+                <YamlDiffView original={originalYaml} modified={previousDraft} />
               </div>
             )}
           </div>
@@ -562,14 +673,17 @@ export function YamlEditor({ data, apiUrl, onSaved, portForwardContext, clusterS
         <MultiClusterApplyDialog
           open={multiApplyOpen}
           onOpenChange={setMultiApplyOpen}
-          initialYaml={(() => {
-            const clean = { ...data, metadata: { ...data.metadata } };
-            delete clean.metadata?.managedFields;
-            delete clean.metadata?.resourceVersion;
-            delete clean.metadata?.uid;
-            delete clean.metadata?.creationTimestamp;
-            return yaml.dump(clean, { lineWidth: -1 });
-          })()}
+          initialYaml={multiApplyYaml}
+        />
+
+        <ConfirmDialog
+          open={reloadConfirmOpen}
+          onOpenChange={setReloadConfirmOpen}
+          title="Replace your edits with the current version?"
+          description="The editor will be reset to what is in the cluster now. Your edited YAML is kept so you can copy it or compare it against the new version."
+          confirmLabel="Reload"
+          onConfirm={() => void reloadFromServer()}
+          loading={reloading}
         />
 
         <ConfirmDialog

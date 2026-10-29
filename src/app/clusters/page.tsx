@@ -299,7 +299,7 @@ export default function ClustersPage() {
   }, [clusterProviderOverrides, kubeLoggingIn, loginOperations]);
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Header bar */}
       <header className="electron-header-inset flex h-14 items-center justify-between border-b px-4 shrink-0 drag-region">
         <div className="flex items-center gap-3 no-drag-region">

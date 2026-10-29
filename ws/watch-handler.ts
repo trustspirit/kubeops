@@ -1,7 +1,8 @@
 import { IncomingMessage } from 'http';
 import { WebSocket } from 'ws';
 import { parse } from 'url';
-import { getWatchManager, type WatchCallback } from '../src/lib/k8s/watch-manager';
+import { getWatchManager, type WatchCallback, type WatchManager } from '../src/lib/k8s/watch-manager';
+import { isSafeCliScalar } from '../src/lib/exec-validation';
 import type { WatchEvent, WatchSubscription, WatchMessage } from '../src/types/watch';
 
 // A resync on a large cluster can emit thousands of ADDED events back to back.
@@ -29,9 +30,27 @@ export function handleWatchConnection(ws: WebSocket, req: IncomingMessage) {
     return;
   }
 
+  if (!isSafeCliScalar(clusterId)) {
+    ws.send(JSON.stringify({ type: 'error', resourceType: '', error: 'Invalid clusterId' }));
+    ws.close();
+    return;
+  }
+
   console.log(`[Watch] Client connected for cluster: ${clusterId}`);
 
-  const manager = getWatchManager(clusterId);
+  // Loading the kubeconfig throws on a malformed or half-written file (e.g.
+  // mid-way through `aws eks update-kubeconfig`). Report it on the socket
+  // rather than letting it escape the upgrade listener and kill the server.
+  let manager: WatchManager;
+  try {
+    manager = getWatchManager(clusterId);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unable to load kubeconfig';
+    console.error(`[Watch] Failed to create watch manager for ${clusterId}:`, message);
+    ws.send(JSON.stringify({ type: 'error', resourceType: '', error: `Unable to load kubeconfig: ${message}` }));
+    ws.close(1011, 'Unable to load kubeconfig');
+    return;
+  }
 
   // Track active subscriptions for cleanup on disconnect
   const activeSubscriptions = new Map<string, { resourceType: string; namespace?: string; callback: WatchCallback }>();

@@ -5,7 +5,7 @@ import {
   findAvailableLoopbackPort,
   validatePortForwardRequest,
 } from '@/lib/port-forward';
-import { waitForPortForwardReady } from '@/lib/port-forward-process';
+import { monitorPortForward, waitForPortForwardReady, waitForProcessExit } from '@/lib/port-forward-process';
 import { getForwards, killAllForwards, type PortForwardInfo } from '@/lib/port-forward-registry';
 import { resolveCli } from '@/lib/cli-path';
 import { sanitizeServerError } from '@/lib/server-error';
@@ -20,6 +20,22 @@ const pendingForwardIds = new Set<string>();
 const pendingLocalPorts = new Set<number>();
 let portSelectionQueue = Promise.resolve();
 
+// A forward whose kubectl died stays listed as status 'error' (with the
+// reason) so the UI can say *why* it stopped, then ages out.
+const FAILED_FORWARD_TTL_MS = 5 * 60_000;
+const failedAt = new Map<string, number>();
+// How long DELETE waits for kubectl to release the local port.
+const STOP_WAIT_MS = 3_000;
+
+function pruneFailedForwards(): void {
+  const now = Date.now();
+  for (const [id, at] of failedAt) {
+    if (now - at < FAILED_FORWARD_TTL_MS) continue;
+    failedAt.delete(id);
+    if (activeForwards.get(id)?.info.status === 'error') activeForwards.delete(id);
+  }
+}
+
 function deleteForwardIfSame(id: string, proc: ChildProcess): boolean {
   if (activeForwards.get(id)?.proc !== proc) return false;
   return activeForwards.delete(id);
@@ -33,7 +49,10 @@ async function reserveAvailableLocalPort(preferred: number): Promise<number> {
 
   try {
     const reserved = new Set([
-      ...Array.from(activeForwards.values(), entry => entry.info.localPort),
+      // A failed forward's kubectl has exited, so its port is free again.
+      ...Array.from(activeForwards.values())
+        .filter(entry => entry.info.status !== 'error')
+        .map(entry => entry.info.localPort),
       ...pendingLocalPorts,
     ]);
     const localPort = await findAvailableLoopbackPort(preferred, reserved);
@@ -53,8 +72,13 @@ export function cleanupAllForwards() {
 
 const kubectlPath = resolveCli('kubectl');
 
+// Detach the failure monitor before an intentional stop so it is not
+// reported as an error. Weak: entries die with their process.
+const stopMonitors = new WeakMap<ChildProcess, () => void>();
+
 // GET - list active port forwards
 export async function GET() {
+  pruneFailedForwards();
   const forwards = Array.from(activeForwards.values()).map(f => f.info);
   return NextResponse.json({ forwards });
 }
@@ -75,6 +99,11 @@ export async function POST(req: NextRequest) {
 
   const request = validation.value;
   const id = createPortForwardId(request);
+  // Restarting a failed forward replaces its 'error' entry.
+  if (activeForwards.get(id)?.info.status === 'error') {
+    activeForwards.delete(id);
+    failedAt.delete(id);
+  }
   if (activeForwards.has(id) || pendingForwardIds.has(id)) {
     return NextResponse.json({ error: 'Port forward already exists' }, { status: 409 });
   }
@@ -113,19 +142,30 @@ export async function POST(req: NextRequest) {
     activeForwards.set(id, { info, proc: startedProcess });
     pendingLocalPorts.delete(localPort);
 
-    proc.once('exit', code => {
+    // Startup-phase exit: the POST below reports the failure and drops the
+    // entry. Once active, monitorPortForward takes over.
+    const onStartupExit = (code: number | null) => {
       if (deleteForwardIfSame(id, startedProcess)) {
-        console.log(`[PortForward] ${id} exited with code ${code}`);
+        console.log(`[PortForward] ${id} exited during startup with code ${code}`);
       }
-    });
+    };
+    proc.once('exit', onStartupExit);
 
     await waitForPortForwardReady(startedProcess, 10_000);
     if (activeForwards.get(id)?.proc !== startedProcess) {
       throw new Error('Port forward was stopped during startup');
     }
+    proc.off('exit', onStartupExit);
     info.status = 'active';
-    proc.stdout?.resume();
-    proc.stderr?.resume();
+    const stopMonitoring = monitorPortForward(startedProcess, reason => {
+      if (activeForwards.get(id)?.proc !== startedProcess) return;
+      console.log(`[PortForward] ${id} stopped: ${reason}`);
+      info.status = 'error';
+      info.error = reason;
+      info.pid = undefined;
+      failedAt.set(id, Date.now());
+    });
+    stopMonitors.set(startedProcess, stopMonitoring);
     return NextResponse.json({ forward: info });
   } catch (error) {
     if (proc) {
@@ -157,8 +197,17 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
+  stopMonitors.get(entry.proc)?.();
   try { entry.proc.kill(); } catch { /* ignore */ }
   deleteForwardIfSame(id, entry.proc);
+  failedAt.delete(id);
+
+  // Respond only once kubectl has released the local port, so an immediate
+  // restart on the same port does not fail with "address already in use".
+  const exited = await waitForProcessExit(entry.proc, STOP_WAIT_MS);
+  if (!exited) {
+    try { entry.proc.kill('SIGKILL'); } catch { /* ignore */ }
+  }
 
   return NextResponse.json({ success: true });
 }

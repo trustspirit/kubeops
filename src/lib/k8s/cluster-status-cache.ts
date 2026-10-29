@@ -49,7 +49,7 @@ export async function checkClusterStatus(
   // browser tab on every health-check cycle for every cluster.
   // Instead, use tsh session validity as a proxy for cluster reachability.
   if (isTeleportContext(contextName)) {
-    const valid = isTshSessionValid();
+    const valid = await isTshSessionValid();
     const entry: StatusEntry = valid
       ? { status: 'connected', checkedAt: Date.now() }
       : { status: 'disconnected', error: 'Teleport session expired', checkedAt: Date.now() };

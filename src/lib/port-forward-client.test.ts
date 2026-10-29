@@ -39,4 +39,14 @@ describe('findMatchingPortForward', () => {
     assert.equal(findMatchingPortForward([forward], { ...base, resourceName: 'api' }), undefined);
     assert.equal(findMatchingPortForward([forward], { ...base, containerPort: 8081 }), undefined);
   });
+
+  it('ignores a forward that has died so the target can be started again', () => {
+    assert.equal(findMatchingPortForward([{ ...forward, status: 'error', error: 'pod not found' }], {
+      clusterId: 'dev',
+      namespace: 'default',
+      resourceType: 'pod',
+      resourceName: 'api-abc',
+      containerPort: 8080,
+    }), undefined);
+  });
 });

@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     const message = sanitizeServerError(error, 'Failed to add context');
-    return NextResponse.json({ error: message }, { status: 500 });
+    const exists = error instanceof Error && /already exists$/.test(error.message);
+    return NextResponse.json({ error: message }, { status: exists ? 409 : 500 });
   }
 }

@@ -1,5 +1,5 @@
 import type { AuthProvider, AuthProviderAvailability, AuthProviderStatus, AuthConfigField } from '../types';
-import { findCli, getCliVersion, runCli, extractCliError } from '../cli-utils';
+import { findCli, getCliVersion, runCli, extractCliError, findUnsafeCliValue } from '../cli-utils';
 
 // Preserve last successful status so transient `az` failures don't flip the
 // persisted client cache to authenticated:false and trigger a spurious
@@ -14,17 +14,17 @@ export const aksProvider: AuthProvider = {
   icon: 'Cloud',
 
   async checkAvailability(): Promise<AuthProviderAvailability> {
-    const path = findCli('az');
+    const path = await findCli('az');
     if (!path) return { available: false };
-    const version = getCliVersion(path, ['version', '--output', 'tsv']);
+    const version = await getCliVersion(path, ['version', '--output', 'tsv']);
     return { available: true, path, version };
   },
 
   async getStatus(): Promise<AuthProviderStatus> {
-    const path = findCli('az');
+    const path = await findCli('az');
     if (!path) return { authenticated: false };
     try {
-      const output = runCli(path, ['account', 'show', '--output', 'json'], 5_000);
+      const output = await runCli(path, ['account', 'show', '--output', 'json'], 5_000);
       const data = JSON.parse(output);
       // Best-effort: ask Azure for the actual token expiry. If this fails or
       // returns nothing parseable, fall back to a 50-minute approximation
@@ -32,7 +32,7 @@ export const aksProvider: AuthProvider = {
       // re-prompts the user on time instead of trusting the 12h default.
       let expiresAt: Date | undefined;
       try {
-        const tokenOutput = runCli(path, ['account', 'get-access-token', '--output', 'json'], 5_000);
+        const tokenOutput = await runCli(path, ['account', 'get-access-token', '--output', 'json'], 5_000);
         const tokenData = JSON.parse(tokenOutput);
         const raw = tokenData.expiresOn || tokenData.expires_on || tokenData.expiresOnTimestamp;
         if (raw) {
@@ -59,19 +59,22 @@ export const aksProvider: AuthProvider = {
   },
 
   async login(config: Record<string, string>) {
-    const path = findCli('az');
+    const path = await findCli('az');
     if (!path) return { success: false, error: 'az CLI not found in PATH' };
+
+    const { subscription, resourceGroup, clusterName } = config;
+    const unsafe = findUnsafeCliValue({ subscription, resourceGroup, clusterName });
+    if (unsafe) return { success: false, error: `Invalid ${unsafe}` };
 
     try {
       // Step 1: Azure login
-      runCli(path, ['login'], 120_000);
+      await runCli(path, ['login'], 120_000, { label: 'Login' });
 
       // Step 2: Get AKS credentials if info provided
-      const { subscription, resourceGroup, clusterName } = config;
       if (clusterName && resourceGroup) {
         const args = ['aks', 'get-credentials', '--resource-group', resourceGroup, '--name', clusterName];
         if (subscription) args.push('--subscription', subscription);
-        runCli(path, args, 30_000);
+        await runCli(path, args, 30_000);
       }
 
       return { success: true };

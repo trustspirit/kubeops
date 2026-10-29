@@ -177,7 +177,10 @@ export function DataTable<TData, TValue>({
     table.setPageSize(pageSize);
   }, [table, pageSize]);
 
-  const selectedRows = table.getSelectedRowModel().rows.map((row) => row.original);
+  // Only rows that match the current search count as selected: a bulk action
+  // must never reach rows the user can no longer see. Selection of hidden rows
+  // is kept, so clearing the search brings them back.
+  const selectedRows = table.getFilteredSelectedRowModel().rows.map((row) => row.original);
   const clearSelection = useCallback(() => setRowSelection({}), []);
 
   const filteredCount = table.getFilteredRowModel().rows.length;

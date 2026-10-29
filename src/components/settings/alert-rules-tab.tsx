@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAlertStore } from '@/stores/alert-store';
 import { AlertRuleDialog } from './alert-rule-dialog';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { Info, Plus, Pencil, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
 import { getAlertRuleActivity, summarizeAlertScope, type AlertRuleActivity } from '@/lib/alert-scope';
 import type { AlertRule } from '@/types/alert';
@@ -49,6 +50,7 @@ export function AlertRulesTab() {
   const scope = summarizeAlertScope(rules, activeClusterId);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AlertRule | null>(null);
 
   const handleEdit = (rule: AlertRule) => {
     setEditingRule(rule);
@@ -171,7 +173,7 @@ export function AlertRulesTab() {
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        onClick={() => deleteRule(rule.id)}
+                        onClick={() => setDeleteTarget(rule)}
                         aria-label={`Delete alert rule ${rule.name}`}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -189,6 +191,19 @@ export function AlertRulesTab() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         editRule={editingRule}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title={`Delete alert rule ${deleteTarget?.name ?? ''}?`}
+        description={`The rule "${deleteTarget?.name ?? ''}" will stop alerting and be removed. Its alert history is kept. This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => {
+          if (deleteTarget) deleteRule(deleteTarget.id);
+          setDeleteTarget(null);
+        }}
       />
     </div>
   );

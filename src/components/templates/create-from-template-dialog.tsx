@@ -86,7 +86,9 @@ export function CreateFromTemplateDialog({
       const resourceType = selectedTemplate.resourceType;
       const targetNamespace = variableValues['namespace'] || namespace;
       const response = await fetch(
-        `/api/clusters/${encodeURIComponent(clusterId)}/resources/${targetNamespace}/${resourceType}`,
+        // The namespace comes from a free-text template variable; unencoded,
+        // a value with `/` or `?` would address a different route.
+        `/api/clusters/${encodeURIComponent(clusterId)}/resources/${encodeURIComponent(targetNamespace)}/${encodeURIComponent(resourceType)}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

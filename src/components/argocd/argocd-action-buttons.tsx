@@ -22,6 +22,8 @@ interface ArgoCDActionButtonsProps {
   compact?: boolean;
   chart?: string;
   chartVersion?: string;
+  /** Only Refresh / Hard Refresh — for showing an app's actions from a workload page. */
+  refreshOnly?: boolean;
 }
 
 type PendingAction = 'refresh' | 'hard-refresh' | 'sync' | null;
@@ -34,6 +36,7 @@ export function ArgoCDActionButtons({
   compact = false,
   chart,
   chartVersion,
+  refreshOnly = false,
 }: ArgoCDActionButtonsProps) {
   const [pending, setPending] = useState<PendingAction>(null);
   const [syncConfirmOpen, setSyncConfirmOpen] = useState(false);
@@ -91,7 +94,7 @@ export function ArgoCDActionButtons({
           {pending === 'hard-refresh' ? <Loader2 className={`${iconClass} animate-spin`} /> : <RotateCw className={iconClass} />}
           {!compact && 'Hard Refresh'}
         </Button>
-        <Button
+        {!refreshOnly && <Button
           variant="outline"
           size={compact ? 'xs' : 'sm'}
           onClick={() => setSyncConfirmOpen(true)}
@@ -99,8 +102,8 @@ export function ArgoCDActionButtons({
         >
           {pending === 'sync' ? <Loader2 className={`${iconClass} animate-spin`} /> : <Play className={iconClass} />}
           {!compact && 'Sync'}
-        </Button>
-        {chart && (
+        </Button>}
+        {chart && !refreshOnly && (
           <Button
             variant="outline"
             size={compact ? 'xs' : 'sm'}
@@ -118,7 +121,8 @@ export function ArgoCDActionButtons({
         open={syncConfirmOpen}
         onOpenChange={setSyncConfirmOpen}
         title={`Sync ${appName}?`}
-        description={`This will request ArgoCD to sync Application "${appName}" in namespace "${namespace}".`}
+        description={`This will request ArgoCD to sync Application "${appName}".`}
+        context={{ cluster: clusterId, namespace, kind: 'Application', name: appName }}
         confirmLabel="Sync"
         onConfirm={requestSync}
         loading={pending === 'sync'}

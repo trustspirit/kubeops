@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRbacV1Api } from '@/lib/k8s/client-factory';
 import { extractK8sError } from '@/lib/k8s/error-handling';
-import { RBACEntry } from '@/types/rbac';
+import { toRbacRule } from '@/lib/k8s/rbac-rules';
+import { RBACEntry, RBACRule } from '@/types/rbac';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,26 +35,18 @@ export async function GET(
     const roles = rolesRes.items || [];
 
     // Build role rules lookup: "ClusterRole:name" -> rules, "Role:namespace/name" -> rules
-    const roleRulesMap = new Map<string, Array<{ apiGroups: string[]; resources: string[]; verbs: string[] }>>();
+    const roleRulesMap = new Map<string, RBACRule[]>();
 
     for (const cr of clusterRoles) {
       const name = cr.metadata?.name || '';
-      const rules = (cr.rules || []).map((r) => ({
-        apiGroups: r.apiGroups || [''],
-        resources: r.resources || [],
-        verbs: r.verbs || [],
-      }));
+      const rules = (cr.rules || []).map(toRbacRule);
       roleRulesMap.set(`ClusterRole:${name}`, rules);
     }
 
     for (const r of roles) {
       const name = r.metadata?.name || '';
       const ns = r.metadata?.namespace || '';
-      const rules = (r.rules || []).map((rule) => ({
-        apiGroups: rule.apiGroups || [''],
-        resources: rule.resources || [],
-        verbs: rule.verbs || [],
-      }));
+      const rules = (r.rules || []).map(toRbacRule);
       roleRulesMap.set(`Role:${ns}/${name}`, rules);
     }
 

@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import '@/lib/auth/providers';
 import { getProvider } from '@/lib/auth/registry';
-import { clearClientCache } from '@/lib/k8s/client-factory';
 import { validateConfig } from '@/lib/auth/validate-config';
+import { runLoginOnce } from '@/lib/auth/login-dedupe';
+import { invalidateKubeconfigDerivedCaches } from '@/lib/k8s/invalidate-config';
+import { invalidateTshSessionCache, clearTeleportContextCache } from '@/lib/k8s/tsh-session-guard';
 
 export const dynamic = 'force-dynamic';
 
+// Legacy endpoint: the UI logs in through /api/auth/[providerId]/login. Kept
+// for external callers, but it must invalidate the same caches — otherwise a
+// login here left Teleport clusters reported as 'disconnected' for up to 60s.
 export async function POST(request: NextRequest) {
   const provider = getProvider('tsh');
   if (!provider) {
@@ -21,10 +26,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  const result = await provider.login(config);
+  // Same single-flight key as the main login route, so the two endpoints
+  // cannot race each other into two browser flows either.
+  const result = await runLoginOnce('tsh', config, () => provider.login(config));
 
   if (result.success) {
-    clearClientCache();
+    invalidateKubeconfigDerivedCaches();
+    invalidateTshSessionCache();
+    clearTeleportContextCache();
     return NextResponse.json({ success: true, output: result.output });
   }
   return NextResponse.json({ error: result.error }, { status: 500 });

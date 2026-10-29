@@ -10,7 +10,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { DialogContextList } from '@/components/shared/confirm-dialog';
 import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
+import { guardOpenChange } from '@/lib/dialog-busy';
 import { toast } from 'sonner';
 import { Loader2, RotateCcw } from 'lucide-react';
 
@@ -36,6 +38,7 @@ export function HelmRollbackDialog({
   const [loading, setLoading] = useState(false);
 
   const handleRollback = async () => {
+    if (loading) return;
     setLoading(true);
     try {
       await apiClient.post(
@@ -54,8 +57,8 @@ export function HelmRollbackDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={guardOpenChange(loading, onOpenChange)}>
+      <DialogContent busy={loading}>
         <DialogHeader>
           <DialogTitle>Rollback Release</DialogTitle>
           <DialogDescription>
@@ -63,6 +66,7 @@ export function HelmRollbackDialog({
             This will create a new revision based on the selected one.
           </DialogDescription>
         </DialogHeader>
+        <DialogContextList entries={{ cluster: clusterId, namespace, release: releaseName, revision: String(revision) }} />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
             Cancel

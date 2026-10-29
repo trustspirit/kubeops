@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as k8s from '@kubernetes/client-node';
 import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
+import { extractK8sError } from '@/lib/k8s/error-handling';
+import { isEmptySelector, matchesLabelSelector, selectorToString, type LabelSelector } from '@/lib/k8s/label-selector';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,21 +27,21 @@ interface EdgeData {
   policy: string;
 }
 
-function labelsMatch(
-  selector: Record<string, string> | undefined,
-  labels: Record<string, string> | undefined
-): boolean {
-  if (!selector || Object.keys(selector).length === 0) return true; // empty selector matches all
-  if (!labels) return false;
-  return Object.entries(selector).every(([k, v]) => labels[k] === v);
+function selectorToId(selector: LabelSelector | undefined): string {
+  return selectorToString(selector) || 'all-pods';
 }
 
-function selectorToId(selector: Record<string, string>): string {
-  if (!selector || Object.keys(selector).length === 0) return 'all-pods';
-  return Object.entries(selector)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k}=${v}`)
-    .join(',');
+/** Adds every pod matching `selector` to `group`; returns the names matched. */
+function matchPodsInto(group: PodGroupData, selector: LabelSelector | undefined, pods: k8s.V1Pod[]): string[] {
+  const matched: string[] = [];
+  for (const pod of pods) {
+    const podName = pod.metadata?.name || '';
+    if (matchesLabelSelector(selector, pod.metadata?.labels)) {
+      if (!group.pods.includes(podName)) group.pods.push(podName);
+      matched.push(podName);
+    }
+  }
+  return matched;
 }
 
 function extractPorts(ports: k8s.V1NetworkPolicyPort[] | undefined): { port?: number | string; protocol?: string }[] {
@@ -82,13 +84,12 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
     for (const policy of policies) {
       const policyName = policy.metadata?.name || 'unknown';
-      const podSelector = policy.spec?.podSelector?.matchLabels || {};
+      const podSelector: LabelSelector | undefined = policy.spec?.podSelector;
       const policyTypes: string[] = policy.spec?.policyTypes || [];
       const groupId = selectorToId(podSelector);
 
       // Check for default deny (empty podSelector with policyTypes but no rules)
-      const isEmptySelector = Object.keys(podSelector).length === 0;
-      if (isEmptySelector) {
+      if (isEmptySelector(podSelector)) {
         const hasIngressRules = policy.spec?.ingress && policy.spec.ingress.length > 0;
         const hasEgressRules = policy.spec?.egress && policy.spec.egress.length > 0;
 
@@ -104,7 +105,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       if (!podGroupsMap.has(groupId)) {
         podGroupsMap.set(groupId, {
           id: groupId,
-          labels: podSelector,
+          labels: podSelector?.matchLabels || {},
           pods: [],
           policies: [],
         });
@@ -118,16 +119,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       policyTargetGroups.set(policyName, groupId);
 
       // Match pods to this group
-      for (const pod of pods) {
-        const podName = pod.metadata?.name || '';
-        const podLabels = pod.metadata?.labels || {};
-
-        if (labelsMatch(podSelector, podLabels)) {
-          if (!group.pods.includes(podName)) {
-            group.pods.push(podName);
-          }
-          matchedPodNames.add(podName);
-        }
+      for (const podName of matchPodsInto(group, podSelector, pods)) {
+        matchedPodNames.add(podName);
       }
     }
 
@@ -174,29 +167,19 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
         for (const from of fromSelectors) {
           if (from.podSelector) {
-            const fromLabels = from.podSelector.matchLabels || {};
-            const fromGroupId = selectorToId(fromLabels);
+            const peerSelector: LabelSelector = from.podSelector;
+            const fromGroupId = selectorToId(peerSelector);
 
             // Ensure source group exists
             if (!podGroupsMap.has(fromGroupId)) {
-              podGroupsMap.set(fromGroupId, {
+              const group: PodGroupData = {
                 id: fromGroupId,
-                labels: fromLabels,
+                labels: peerSelector.matchLabels || {},
                 pods: [],
                 policies: [],
-              });
-
-              // Match pods
-              for (const pod of pods) {
-                const podName = pod.metadata?.name || '';
-                const podLabels = pod.metadata?.labels || {};
-                if (labelsMatch(fromLabels, podLabels)) {
-                  const group = podGroupsMap.get(fromGroupId)!;
-                  if (!group.pods.includes(podName)) {
-                    group.pods.push(podName);
-                  }
-                }
-              }
+              };
+              podGroupsMap.set(fromGroupId, group);
+              matchPodsInto(group, peerSelector, pods);
             }
 
             const edgeId = `${fromGroupId}->ingress->${targetGroupId}/${policyName}`;
@@ -297,29 +280,19 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
         for (const to of toSelectors) {
           if (to.podSelector) {
-            const toLabels = to.podSelector.matchLabels || {};
-            const toGroupId = selectorToId(toLabels);
+            const peerSelector: LabelSelector = to.podSelector;
+            const toGroupId = selectorToId(peerSelector);
 
             // Ensure target group exists
             if (!podGroupsMap.has(toGroupId)) {
-              podGroupsMap.set(toGroupId, {
+              const group: PodGroupData = {
                 id: toGroupId,
-                labels: toLabels,
+                labels: peerSelector.matchLabels || {},
                 pods: [],
                 policies: [],
-              });
-
-              // Match pods
-              for (const pod of pods) {
-                const podName = pod.metadata?.name || '';
-                const podLabels = pod.metadata?.labels || {};
-                if (labelsMatch(toLabels, podLabels)) {
-                  const group = podGroupsMap.get(toGroupId)!;
-                  if (!group.pods.includes(podName)) {
-                    group.pods.push(podName);
-                  }
-                }
-              }
+              };
+              podGroupsMap.set(toGroupId, group);
+              matchPodsInto(group, peerSelector, pods);
             }
 
             const edgeId = `${targetGroupId}->egress->${toGroupId}/${policyName}`;
@@ -400,10 +373,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       defaultDeny,
     });
   } catch (error: unknown) {
-    const err = error as { statusCode?: number; response?: { statusCode?: number }; body?: { message?: string }; message?: string };
-    const status = err?.statusCode || err?.response?.statusCode || 500;
-    const message = err?.body?.message || err?.message || 'Failed to fetch network topology';
+    const { status, message } = extractK8sError(error);
     console.error(`[Network Topology] ${contextName}/${namespace}: ${message}`);
-    return NextResponse.json({ error: message }, { status: typeof status === 'number' ? status : 500 });
+    return NextResponse.json({ error: message }, { status });
   }
 }

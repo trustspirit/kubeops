@@ -14,6 +14,16 @@ export interface HelmSyncLatestArgsInput {
   dependencyUpdate?: boolean;
 }
 
+/** One entry of `helm list --output json`. */
+export interface HelmListEntry {
+  name: string;
+  namespace?: string;
+  revision?: string;
+  status?: string;
+  chart?: string;
+  app_version?: string;
+}
+
 export interface HelmChartSearchResult {
   name: string;
   version?: string;
@@ -79,7 +89,7 @@ export function buildHelmSyncLatestArgs({
   reuseValues = true,
   dependencyUpdate = true,
 }: HelmSyncLatestArgsInput): string[] {
-  const args = ['upgrade', releaseName, chart, '-n', namespace, '--output', 'json'];
+  const args = ['upgrade', '-n', namespace, '--output', 'json'];
 
   if (reuseValues) {
     args.push('--reuse-values');
@@ -93,6 +103,8 @@ export function buildHelmSyncLatestArgs({
     args.push('--version', version);
   }
 
+  // `--` ends flag parsing, so a release or chart name can never be read as a flag.
+  args.push('--', releaseName, chart);
   return args;
 }
 
@@ -128,4 +140,19 @@ export function parseHelmListChart(chart: string): { name: string; version?: str
 export function isSameChartVersion(currentVersion: string | undefined, latestVersion: string | undefined): boolean {
   if (!currentVersion || !latestVersion) return false;
   return currentVersion === latestVersion;
+}
+
+/**
+ * The deployed chart version of `releaseName`, from `helm list` output — read
+ * server-side so a stale or forged client value can't skip an upgrade.
+ */
+export function findCurrentChartVersion(entries: HelmListEntry[], releaseName: string): { version?: string; status?: string } | null {
+  const entry = entries.find((e) => e.name === releaseName);
+  if (!entry) return null;
+  return { version: entry.chart ? parseHelmListChart(entry.chart).version : undefined, status: entry.status };
+}
+
+/** pending-install / pending-upgrade / pending-rollback: another operation holds the release lock. */
+export function isPendingReleaseStatus(status: string | undefined): boolean {
+  return !!status && status.toLowerCase().startsWith('pending');
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as k8s from '@kubernetes/client-node';
 import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
+import { extractK8sError } from '@/lib/k8s/error-handling';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,11 +47,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ items: crds });
   } catch (error: unknown) {
-    const err = error as Record<string, unknown>;
-    const response = err?.response as Record<string, unknown> | undefined;
-    const body = err?.body as Record<string, unknown> | undefined;
-    const status = (err?.statusCode || response?.statusCode || 500) as number;
-    const message = (body?.message || err?.message || 'Failed to list CRDs') as string;
+    const { status, message } = extractK8sError(error);
     console.error(`[K8s API] GET CRDs: ${status} ${message}`);
     return NextResponse.json({ error: message }, { status });
   }

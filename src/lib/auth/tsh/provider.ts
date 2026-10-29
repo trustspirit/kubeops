@@ -1,5 +1,5 @@
 import type { AuthProvider, AuthProviderAvailability, AuthProviderStatus, AuthConfigField } from '../types';
-import { findCli, getCliVersion, runCli, extractCliError } from '../cli-utils';
+import { findCli, getCliVersion, runCli, extractCliError, findUnsafeCliValue } from '../cli-utils';
 
 // Preserve last successful status to avoid UI flicker when tsh is temporarily
 // slow or busy (timeout, parse error). Mirrors tsh-session-guard strategy.
@@ -14,21 +14,21 @@ export const tshProvider: AuthProvider = {
   icon: 'Shield',
 
   async checkAvailability(): Promise<AuthProviderAvailability> {
-    const path = findCli('tsh');
+    const path = await findCli('tsh');
     if (!path) return { available: false };
-    const version = getCliVersion(path, ['version']);
+    const version = await getCliVersion(path, ['version']);
     return { available: true, path, version };
   },
 
   async getStatus(): Promise<AuthProviderStatus> {
-    const path = findCli('tsh');
+    const path = await findCli('tsh');
     if (!path) {
       lastKnownStatus = { authenticated: false };
       lastKnownStatusAt = Date.now();
       return lastKnownStatus;
     }
     try {
-      const output = runCli(path, ['status', '--format=json'], 10_000);
+      const output = await runCli(path, ['status', '--format=json'], 10_000);
       const data = JSON.parse(output);
       const active = data?.active;
       if (!active?.username) {
@@ -55,7 +55,7 @@ export const tshProvider: AuthProvider = {
   },
 
   async login(config: Record<string, string>): Promise<{ success: boolean; output?: string; error?: string }> {
-    const path = findCli('tsh');
+    const path = await findCli('tsh');
     if (!path) return { success: false, error: 'tsh not found in PATH' };
 
     try {
@@ -65,13 +65,15 @@ export const tshProvider: AuthProvider = {
         if (!proxyUrl) return { success: false, error: 'proxyUrl is required' };
         const args = ['login', `--proxy=${proxyUrl}`];
         if (authType) args.push(`--auth=${authType}`);
-        const output = runCli(path, args, 120_000);
+        const output = await runCli(path, args, 120_000, { label: 'Login' });
         return { success: true, output };
       }
 
       if (action === 'kube-login') {
         if (!cluster) return { success: false, error: 'cluster is required' };
-        const output = runCli(path, ['kube', 'login', cluster], 30_000);
+        // Positional argument: a leading '-' would be parsed as a tsh flag.
+        if (findUnsafeCliValue({ cluster })) return { success: false, error: 'Invalid cluster name' };
+        const output = await runCli(path, ['kube', 'login', cluster], 30_000);
         return { success: true, output };
       }
 

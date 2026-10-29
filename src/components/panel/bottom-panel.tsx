@@ -55,11 +55,10 @@ export function BottomPanel() {
 
   if (tabs.length === 0) return null;
 
-  const activeTab = tabs.find((t) => t.id === activeTabId);
-
   return (
     <div
       ref={panelRef}
+      data-bottom-panel=""
       className="flex flex-col border-t bg-background shrink-0"
       style={{ height: open ? height : 36 }}
     >
@@ -122,24 +121,23 @@ export function BottomPanel() {
         </Button>
       </div>
 
-      {/* Tab content */}
-      {open && activeTab && (
-        <div className="flex-1 min-h-0 overflow-hidden">
-          {/* Terminal tabs use CSS hidden to preserve xterm state */}
-          {tabs.filter((tab) => tab.type === 'exec').map((tab) => (
-            <div key={tab.id} className={cn('h-full', tab.id === activeTabId ? 'block' : 'hidden')}>
-              <TerminalTab tab={tab} active={tab.id === activeTabId} />
-            </div>
-          ))}
-          {/* Preserve log buffers and search state while inactive; each tab
-              pauses its WebSocket until it becomes active again. */}
-          {tabs.filter((tab) => tab.type === 'logs').map((tab) => (
-            <div key={tab.id} className={cn('h-full', tab.id === activeTabId ? 'block' : 'hidden')}>
-              <LogsTab tab={tab} active={tab.id === activeTabId} />
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Tab content stays mounted while the panel is collapsed: unmounting
+          would kill exec shells and drop log buffers. */}
+      <div className={cn('flex-1 min-h-0 overflow-hidden', !open && 'hidden')} aria-hidden={!open || undefined}>
+        {/* Terminal tabs use CSS hidden to preserve xterm state */}
+        {tabs.filter((tab) => tab.type === 'exec').map((tab) => (
+          <div key={tab.id} className={cn('h-full', tab.id === activeTabId ? 'block' : 'hidden')}>
+            <TerminalTab tab={tab} active={tab.id === activeTabId} />
+          </div>
+        ))}
+        {/* Preserve log buffers and search state while inactive; each tab
+            pauses its WebSocket until it becomes active again. */}
+        {tabs.filter((tab) => tab.type === 'logs').map((tab) => (
+          <div key={tab.id} className={cn('h-full', tab.id === activeTabId ? 'block' : 'hidden')}>
+            <LogsTab tab={tab} active={tab.id === activeTabId} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

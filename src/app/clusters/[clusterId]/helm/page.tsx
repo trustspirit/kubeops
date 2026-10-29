@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useHelmReleases } from '@/hooks/use-helm-releases';
 import { DataTable } from '@/components/shared/data-table';
 import { ListSkeleton } from '@/components/shared/loading-skeleton';
-import { ErrorDisplay } from '@/components/shared/error-display';
+import { ErrorDisplay, RefreshFailedBanner } from '@/components/shared/error-display';
 import { helmReleaseColumns } from '@/components/resources/resource-columns';
 import { HelmInstallDialog } from '@/components/helm/helm-install-dialog';
 import { HelmSyncLatestDialog } from '@/components/helm/helm-sync-latest-dialog';
@@ -53,7 +53,7 @@ export default function HelmReleasesPage() {
     );
   }
 
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
+  if (error && !data) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
 
   const releases = data?.releases || [];
 
@@ -100,6 +100,7 @@ export default function HelmReleasesPage() {
 
   return (
     <div className="flex flex-col gap-4 p-6">
+      {error && data && <RefreshFailedBanner error={error} onRetry={() => mutate()} />}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Ship className="h-6 w-6" />

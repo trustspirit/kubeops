@@ -17,6 +17,7 @@ import { ExternalLink, Terminal, AlertTriangle, CircleCheck, Copy } from 'lucide
 import { useRouter } from 'next/navigation';
 import { usePanelStore } from '@/stores/panel-store';
 import type { ResourceNodeData } from './resource-node';
+import { getErrorPresentation } from '@/lib/error-presentation';
 
 /** Map node kind to the API resource type plural */
 const KIND_TO_RESOURCE_TYPE: Record<string, string> = {
@@ -170,6 +171,23 @@ function DrawerOverview({
   }
 
   if (!data) {
+    if (error) {
+      // 401/403/404 used to read as "No data available", hiding why.
+      const presentation = getErrorPresentation(error.message, error.status);
+      return (
+        <div className="space-y-2 py-4 text-sm" role="alert">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
+            {presentation.title}
+          </div>
+          <p className="text-xs text-muted-foreground">{presentation.summary}</p>
+          {presentation.details && (
+            <p className="break-all font-mono text-[11px] text-muted-foreground">{presentation.details}</p>
+          )}
+          <Button variant="outline" size="sm" className="h-7" onClick={() => void mutate()}>Retry</Button>
+        </div>
+      );
+    }
     return <p className="text-sm text-muted-foreground py-4">No data available</p>;
   }
 
@@ -243,13 +261,27 @@ function DrawerEvents({
       ? `/api/clusters/${clusterIdEnc}/resources/${namespace}/events`
       : null;
 
-  const { data, isLoading } = useSWR(apiUrl, { refreshInterval: 10000 });
+  const { data, error, isLoading, mutate } = useSWR(apiUrl, { refreshInterval: 10000 });
 
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 py-8 justify-center text-sm text-muted-foreground">
         <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
         Loading events...
+      </div>
+    );
+  }
+
+  if (error && !data) {
+    const presentation = getErrorPresentation(error.message, error.status);
+    return (
+      <div className="space-y-2 py-4 text-sm" role="alert">
+        <div className="flex items-center gap-2 font-medium">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
+          Events unavailable: {presentation.title}
+        </div>
+        <p className="text-xs text-muted-foreground">{presentation.summary}</p>
+        <Button variant="outline" size="sm" className="h-7" onClick={() => void mutate()}>Retry</Button>
       </div>
     );
   }

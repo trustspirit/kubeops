@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { isHelmAvailable } from './helm-runner';
+import { isHelmAvailable, isValidHelmName } from './helm-runner';
+import { classifyHelmError } from './errors';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -7,8 +8,8 @@ import * as os from 'os';
 const HELM_NOT_AVAILABLE_MSG = 'Helm CLI is not installed or not found in PATH.';
 
 /** Returns a 503 NextResponse if helm is not available, otherwise null. */
-export function requireHelm(): NextResponse | null {
-  if (!isHelmAvailable()) {
+export async function requireHelm(): Promise<NextResponse | null> {
+  if (!(await isHelmAvailable())) {
     return NextResponse.json({ error: HELM_NOT_AVAILABLE_MSG }, { status: 503 });
   }
   return null;
@@ -20,6 +21,23 @@ export function requireNamespaceParam(namespace: string | null): NextResponse | 
     return NextResponse.json({ error: 'namespace query parameter is required' }, { status: 400 });
   }
   return null;
+}
+
+/** Returns a 400 NextResponse if the release name is not a valid helm name, otherwise null. */
+export function requireReleaseName(releaseName: string): NextResponse | null {
+  if (!isValidHelmName(releaseName)) {
+    return NextResponse.json(
+      { error: 'Invalid release name (alphanumeric, hyphens, dots, underscores; must not start with a symbol)' },
+      { status: 400 },
+    );
+  }
+  return null;
+}
+
+/** Error response for a failed helm command: mapped status, sanitized stderr. */
+export function helmErrorResponse(result: { stderr: string; code: number }, fallback: string): NextResponse {
+  const { status, message } = classifyHelmError(result.stderr, result.code, fallback);
+  return NextResponse.json({ error: message }, { status });
 }
 
 /** Parse helm JSON stdout output. Returns null on failure. */

@@ -3,24 +3,25 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useResourceDetail } from '@/hooks/use-resource-detail';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
-import { ErrorDisplay } from '@/components/shared/error-display';
+import { ErrorDisplay, RefreshFailedBanner } from '@/components/shared/error-display';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Trash2, GitCompare, Globe } from 'lucide-react';
 import { RESOURCE_LABELS } from '@/lib/constants';
 import { AgeDisplay } from '@/components/shared/age-display';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { CascadeDeleteDialog } from '@/components/shared/cascade-delete-dialog';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import * as yaml from 'js-yaml';
+import { toPortableYaml } from '@/lib/portable-manifest';
 import { YamlEditor } from '@/components/shared/yaml-editor';
 import { ResourceDiffDialog } from '@/components/shared/resource-diff-dialog';
 import { MultiClusterApplyDialog } from '@/components/multi-cluster/multi-cluster-apply-dialog';
 import { useSWRConfig } from 'swr';
 import { isResourceListCacheKey } from '@/lib/resource-freshness';
+import { ArgoCDWorkloadBar } from '@/components/argocd/argocd-workload-bar';
 
 interface ResourceDetailPageProps {
   resourceType: string;
@@ -40,6 +41,9 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
   const [deleting, setDeleting] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
   const [multiApplyOpen, setMultiApplyOpen] = useState(false);
+  const [yamlDirty, setYamlDirty] = useState(false);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  const handleDirtyChange = useCallback((dirty: boolean) => setYamlDirty(dirty), []);
 
   const { data, error, isLoading, mutate } = useResourceDetail({
     clusterId: decodedClusterId || null,
@@ -52,18 +56,27 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
     ? `/api/clusters/${clusterId}/resources/_/${resourceType}/${name}`
     : `/api/clusters/${clusterId}/resources/${namespace}/${resourceType}/${name}`;
 
-  const resourceYaml = useMemo(() => {
-    if (!data) return '';
-    const clean = { ...data, metadata: { ...data.metadata } };
-    delete clean.metadata?.managedFields;
-    delete clean.metadata?.resourceVersion;
-    delete clean.metadata?.uid;
-    delete clean.metadata?.creationTimestamp;
-    return yaml.dump(clean, { lineWidth: -1 });
-  }, [data]);
+  // Seeded from polled data, but the dialog snapshots it on open; status and
+  // server-owned metadata are stripped so the seed is portable and stable.
+  const resourceYaml = useMemo(
+    () => (multiApplyOpen ? toPortableYaml(data) : ''),
+    [multiApplyOpen, data],
+  );
 
-  if (isLoading) return <LoadingSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
+  // Leaving the page drops unapplied YAML edits; switching tabs does not
+  // (the YAML tab stays mounted), so only navigation away needs a guard.
+  const goBack = () => {
+    if (yamlDirty) {
+      setLeaveConfirmOpen(true);
+      return;
+    }
+    router.back();
+  };
+
+  if (isLoading && !data) return <LoadingSkeleton />;
+  // Keep showing the last good copy (and any unsaved YAML edits) when a
+  // background refresh fails; only a first load with nothing to show is fatal.
+  if (error && !data) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
   if (!data) return null;
 
   const resource = data;
@@ -71,12 +84,18 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
   const labels = metadata.labels || {};
   const annotations = metadata.annotations || {};
 
-  const handleDelete = async () => {
+  const handleDelete = async (propagationPolicy?: string) => {
+    if (deleting) return;
     setDeleting(true);
     try {
-      const url = clusterScoped
+      const base = clusterScoped
         ? `/api/clusters/${clusterId}/resources/_/${resourceType}/${name}`
         : `/api/clusters/${clusterId}/resources/${namespace}/${resourceType}/${name}`;
+      // The cascade dialog's policy choice used to be dropped here, so
+      // "Orphan" still cascaded.
+      const url = propagationPolicy
+        ? `${base}?propagationPolicy=${encodeURIComponent(propagationPolicy)}`
+        : base;
       await apiClient.delete(url);
       void mutateCache(
         (key) => isResourceListCacheKey(key, decodedClusterId, resourceType),
@@ -95,8 +114,9 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
 
   return (
     <div className="flex flex-col gap-4 p-6">
+      {error && <RefreshFailedBanner error={error} onRetry={() => mutate()} />}
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => router.back()} aria-label="Go back">
+        <Button variant="ghost" size="icon" onClick={goBack} aria-label="Go back">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
@@ -124,11 +144,18 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
         </Button>
       </div>
 
+      <ArgoCDWorkloadBar clusterId={decodedClusterId} namespace={metadata.namespace} resources={[resource]} />
+
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           {children && <TabsTrigger value="extra">Details</TabsTrigger>}
-          <TabsTrigger value="yaml">YAML</TabsTrigger>
+          <TabsTrigger value="yaml">
+            YAML
+            {yamlDirty && (
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-label="Unsaved changes" title="Unsaved changes" />
+            )}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4 mt-4">
@@ -194,11 +221,16 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
           </TabsContent>
         )}
 
-        <TabsContent value="yaml" className="mt-4">
+        {/*
+          Force-mounted so in-progress edits survive switching tabs; Radix
+          marks it inactive and the class hides it.
+        */}
+        <TabsContent value="yaml" forceMount className="mt-4 data-[state=inactive]:hidden">
           <YamlEditor
             data={resource}
             apiUrl={yamlApiUrl}
             onSaved={() => mutate()}
+            onDirtyChange={handleDirtyChange}
             portForwardContext={
               !clusterScoped && (resourceType === 'services' || resourceType === 'pods')
                 ? {
@@ -222,7 +254,7 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
           namespace={namespace}
           resourceType={resourceType}
           name={name}
-          onConfirm={() => handleDelete()}
+          onConfirm={(propagationPolicy) => handleDelete(propagationPolicy)}
           loading={deleting}
         />
       ) : (
@@ -233,10 +265,23 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
           description={`This will permanently delete the ${resourceType.slice(0, -1)} "${metadata.name}". This action cannot be undone.`}
           confirmLabel="Delete"
           variant="destructive"
-          onConfirm={handleDelete}
+          onConfirm={() => handleDelete()}
           loading={deleting}
         />
       )}
+
+      <ConfirmDialog
+        open={leaveConfirmOpen}
+        onOpenChange={setLeaveConfirmOpen}
+        title="Leave with unsaved changes?"
+        description="Your YAML edits have not been applied and will be lost."
+        confirmLabel="Leave"
+        variant="destructive"
+        onConfirm={() => {
+          setLeaveConfirmOpen(false);
+          router.back();
+        }}
+      />
 
       {!clusterScoped && (
         <ResourceDiffDialog

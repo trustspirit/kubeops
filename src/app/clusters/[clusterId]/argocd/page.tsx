@@ -6,7 +6,7 @@ import { ColumnDef, CellContext } from '@tanstack/react-table';
 import { GitBranch, Layers3 } from 'lucide-react';
 import { DataTable } from '@/components/shared/data-table';
 import { ListSkeleton } from '@/components/shared/loading-skeleton';
-import { ErrorDisplay } from '@/components/shared/error-display';
+import { ErrorDisplay, RefreshFailedBanner } from '@/components/shared/error-display';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { useCustomResourceList } from '@/hooks/use-custom-resource-list';
@@ -38,7 +38,7 @@ export default function ArgoCDAppsPage() {
   });
 
   if (isLoading) return <ListSkeleton />;
-  if (error) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
+  if (error && !data) return <ErrorDisplay error={error} onRetry={() => mutate()} clusterId={clusterId} />;
 
   const apps = (data?.items || []) as ArgoCDApplication[];
 
@@ -146,6 +146,7 @@ export default function ArgoCDAppsPage() {
 
   return (
     <div className="flex flex-col gap-4 p-6">
+      {error && data && <RefreshFailedBanner error={error} onRetry={() => mutate()} />}
       <div className="flex items-center gap-3">
         <Layers3 className="h-6 w-6" />
         <div>

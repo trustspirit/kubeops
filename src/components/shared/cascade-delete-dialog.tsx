@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -26,6 +26,9 @@ import {
 } from '@/components/ui/tooltip';
 import { ChevronRight, ChevronDown, Loader2, Trash2, AlertTriangle, Info } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { assessDependents, type DependentsScanMeta } from '@/lib/cascade-dependents';
+import { guardOpenChange } from '@/lib/dialog-busy';
+import { DialogContextList } from '@/components/shared/confirm-dialog';
 
 interface DependentNode {
   kind: string;
@@ -158,43 +161,57 @@ export function CascadeDeleteDialog({
   const [totalCount, setTotalCount] = useState(0);
   const [fetchLoading, setFetchLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [scanMeta, setScanMeta] = useState<DependentsScanMeta | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
   const [propagationPolicy, setPropagationPolicy] = useState('Foreground');
+  const fetchIdRef = useRef(0);
 
   const fetchDependents = useCallback(async () => {
     if (!open) return;
+    const fetchId = ++fetchIdRef.current;
     setFetchLoading(true);
     setFetchError(null);
+    setScanMeta(null);
 
     try {
       const encodedClusterId = encodeURIComponent(clusterId);
-      const result = await apiClient.get<{ tree: DependentNode; totalCount: number }>(
+      const result = await apiClient.get<{ tree: DependentNode; totalCount: number } & DependentsScanMeta>(
         `/api/clusters/${encodedClusterId}/resources/${namespace}/${resourceType}/${name}/dependents`
       );
+      if (fetchId !== fetchIdRef.current) return;
       setTree(result.tree);
       setTotalCount(result.totalCount);
+      setScanMeta({ incomplete: result.incomplete, failed: result.failed });
     } catch (err: unknown) {
+      if (fetchId !== fetchIdRef.current) return;
       const errObj = err as { message?: string };
       setFetchError(errObj?.message || 'Failed to fetch dependent resources');
     } finally {
-      setFetchLoading(false);
+      if (fetchId === fetchIdRef.current) setFetchLoading(false);
     }
   }, [open, clusterId, namespace, resourceType, name]);
 
   useEffect(() => {
     if (open) {
+      setAcknowledged(false);
       fetchDependents();
     } else {
+      fetchIdRef.current += 1;
       setTree(null);
       setTotalCount(0);
       setFetchError(null);
+      setScanMeta(null);
+      setFetchLoading(false);
     }
   }, [open, fetchDependents]);
 
   const selectedPolicy = PROPAGATION_POLICIES.find(p => p.value === propagationPolicy)!;
+  const assessment = assessDependents(scanMeta, fetchError);
+  const needsAcknowledgement = assessment.unknown && propagationPolicy !== 'Orphan';
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+    <Dialog open={open} onOpenChange={guardOpenChange(externalLoading, onOpenChange)}>
+      <DialogContent className="max-w-lg" busy={externalLoading}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Trash2 className="h-5 w-5 text-destructive" />
@@ -205,11 +222,7 @@ export function CascadeDeleteDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-md border bg-muted/30 p-3 text-xs">
-          <dt className="text-muted-foreground">Cluster</dt><dd className="truncate font-mono" title={clusterId}>{clusterId}</dd>
-          <dt className="text-muted-foreground">Namespace</dt><dd className="truncate font-mono" title={namespace}>{namespace}</dd>
-          <dt className="text-muted-foreground">Resource</dt><dd className="truncate font-mono" title={`${resourceType}/${name}`}>{resourceType}/{name}</dd>
-        </dl>
+        <DialogContextList entries={{ cluster: clusterId, namespace, resource: `${resourceType}/${name}` }} />
 
         <div className="space-y-4 py-2">
           {/* Dependent tree */}
@@ -232,11 +245,42 @@ export function CascadeDeleteDialog({
               )}
               {!fetchLoading && !fetchError && !tree && (
                 <div className="text-sm text-muted-foreground py-4 text-center">
-                  No dependent resources found.
+                  {assessment.unknown ? 'Dependents unknown.' : 'No dependent resources found.'}
                 </div>
               )}
             </div>
+            {fetchError && !fetchLoading && (
+              <Button variant="outline" size="sm" onClick={() => void fetchDependents()}>
+                Retry scan
+              </Button>
+            )}
           </div>
+
+          {/* The tree may not show everything the delete takes with it. */}
+          {!fetchLoading && assessment.unknown && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 space-y-2 text-sm" role="alert">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-medium text-destructive">Dependents unknown</p>
+                  {assessment.reasons.map((reason) => (
+                    <p key={reason} className="text-xs text-muted-foreground">{reason}</p>
+                  ))}
+                </div>
+              </div>
+              {needsAcknowledgement && (
+                <label className="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={acknowledged}
+                    onChange={(e) => setAcknowledged(e.target.checked)}
+                    className="mt-0.5 rounded"
+                  />
+                  I understand this delete may also remove resources that are not listed above.
+                </label>
+              )}
+            </div>
+          )}
 
           {/* Total count */}
           {totalCount > 0 && (
@@ -288,8 +332,8 @@ export function CascadeDeleteDialog({
           </Button>
           <Button
             variant="destructive"
-            onClick={() => onConfirm(propagationPolicy)}
-            disabled={externalLoading || fetchLoading}
+            onClick={() => { if (!externalLoading) onConfirm(propagationPolicy); }}
+            disabled={externalLoading || fetchLoading || (needsAcknowledgement && !acknowledged)}
           >
             {externalLoading ? (
               <>

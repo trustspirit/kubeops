@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -11,7 +11,9 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DialogContextList } from '@/components/shared/confirm-dialog';
 import { apiClient, LONG_RUNNING_TIMEOUT_MS } from '@/lib/api-client';
+import { guardOpenChange } from '@/lib/dialog-busy';
 import { toast } from 'sonner';
 import { Loader2, RefreshCw } from 'lucide-react';
 
@@ -46,18 +48,22 @@ export function HelmSyncLatestDialog({
   const [reuseValues, setReuseValues] = useState(true);
   const [dependencyUpdate, setDependencyUpdate] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const wasOpenRef = useRef(false);
 
+  // Reset on the closed → open transition only. `syncing` is left alone: the
+  // dialog cannot close mid-sync, and clearing it would re-enable the button.
   useEffect(() => {
-    if (!open) return;
-    setChart(currentChart);
-    setReuseValues(true);
-    setDependencyUpdate(true);
-    setSyncing(false);
+    if (open && !wasOpenRef.current) {
+      setChart(currentChart);
+      setReuseValues(true);
+      setDependencyUpdate(true);
+    }
+    wasOpenRef.current = open;
   }, [open, currentChart]);
 
   const handleSync = async () => {
     const chartRef = chart.trim();
-    if (!chartRef) return;
+    if (!chartRef || syncing) return;
 
     setSyncing(true);
     try {
@@ -90,8 +96,8 @@ export function HelmSyncLatestDialog({
   const currentChartLabel = [currentChart, currentVersion].filter(Boolean).join('-') || '-';
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+    <Dialog open={open} onOpenChange={guardOpenChange(syncing, onOpenChange)}>
+      <DialogContent className="sm:max-w-lg" busy={syncing}>
         <DialogHeader>
           <DialogTitle>Sync Latest Chart</DialogTitle>
           <DialogDescription>
@@ -100,16 +106,9 @@ export function HelmSyncLatestDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="rounded-md border bg-muted/30 p-3 text-xs">
-            <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-y-1.5">
-              <span className="text-muted-foreground">Release</span>
-              <span className="font-mono truncate">{releaseName}</span>
-              <span className="text-muted-foreground">Namespace</span>
-              <span className="font-mono truncate">{namespace}</span>
-              <span className="text-muted-foreground">Current chart</span>
-              <span className="font-mono truncate">{currentChartLabel}</span>
-            </div>
-          </div>
+          <DialogContextList
+            entries={{ cluster: clusterId, namespace, release: releaseName, 'current chart': currentChartLabel }}
+          />
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Chart Reference</label>

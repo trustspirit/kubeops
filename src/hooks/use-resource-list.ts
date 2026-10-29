@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import useSWR from 'swr';
 import { useWatchContext } from '@/providers/watch-provider';
+import { fetcher } from '@/lib/api-client';
 import type { WatchEvent } from '@/types/watch';
 import type { KubeList } from '@/types/resource';
 import {
@@ -9,6 +10,12 @@ import {
   shouldRevalidateAfterWatchTransition,
   type ResourceWatchConnectionState,
 } from '@/lib/resource-sync';
+import {
+  buildResourceListUrl,
+  canUseWatchConnection,
+  mergeNamespaceLists,
+  normalizeNamespaceSelection,
+} from './resource-list-policy';
 
 interface UseResourceListOptions {
   clusterId: string | null;
@@ -16,7 +23,16 @@ interface UseResourceListOptions {
   resourceType: string;
   refreshInterval?: number;
   enabled?: boolean;
+  /**
+   * Fetch exactly these namespaces (each on its own request) and merge them.
+   * Namespace-scoped users cannot list `_all`, so a multi-namespace selection
+   * must not fall back to an all-namespaces request. Overrides `namespace`
+   * when it holds more than one entry.
+   */
+  namespaces?: readonly string[];
 }
+
+const MULTI_NAMESPACE_KEY_PREFIX = 'multi-ns:';
 
 // Default polling interval when Watch is not connected
 const DEFAULT_POLL_INTERVAL = 15000;
@@ -29,10 +45,14 @@ export function useResourceList({
   resourceType,
   refreshInterval,
   enabled = true,
+  namespaces,
 }: UseResourceListOptions) {
   const watchCtx = useWatchContext();
-  const subscribe = watchCtx?.subscribe;
-  const connectionState = watchCtx?.connectionState ?? 'disconnected';
+  // Only the page's own cluster may use its Watch connection; anything else
+  // (e.g. a bottom-panel tab for another cluster) polls instead.
+  const watchUsable = canUseWatchConnection(watchCtx?.clusterId, clusterId);
+  const subscribe = watchUsable ? watchCtx?.subscribe : undefined;
+  const connectionState = watchUsable ? (watchCtx?.connectionState ?? 'disconnected') : 'disconnected';
   const isWatchConnected = connectionState === 'connected';
 
   // Determine refresh interval:
@@ -46,13 +66,28 @@ export function useResourceList({
         ? WATCH_POLL_INTERVAL
         : DEFAULT_POLL_INTERVAL;
 
+  const selectedNamespaces = normalizeNamespaceSelection(namespaces);
+  const multiNamespace = selectedNamespaces.length > 1;
+  const namespacesKey = selectedNamespaces.join(',');
+
   const key =
     enabled && clusterId
-      ? `/api/clusters/${encodeURIComponent(clusterId)}/resources/${namespace}/${resourceType}`
+      ? multiNamespace
+        ? `${MULTI_NAMESPACE_KEY_PREFIX}${buildResourceListUrl(clusterId, namespacesKey, resourceType)}`
+        : buildResourceListUrl(clusterId, namespace, resourceType)
       : null;
+
+  const multiFetcher = useCallback(async () => {
+    if (!clusterId) throw new Error('No cluster selected');
+    const results = await Promise.allSettled(
+      namespacesKey.split(',').map((ns) => fetcher<KubeList>(buildResourceListUrl(clusterId, ns, resourceType))),
+    );
+    return mergeNamespaceLists(results);
+  }, [clusterId, namespacesKey, resourceType]);
 
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const { data, error, isLoading, isValidating, mutate } = useSWR(key, {
+    ...(multiNamespace ? { fetcher: multiFetcher } : {}),
     refreshInterval: effectiveRefreshInterval,
     onSuccess: () => setLastUpdatedAt(Date.now()),
   });
@@ -108,16 +143,15 @@ export function useResourceList({
     if (isLoading) return; // Wait for initial data before subscribing
     if (!enabled || !clusterId) return;
 
-    const unsubscribe = subscribe(
-      resourceType,
-      normalizeWatchNamespace(namespace),
-      handleWatchEvent,
-    );
+    const watchNamespaces = namespacesKey.includes(',')
+      ? namespacesKey.split(',')
+      : [normalizeWatchNamespace(namespace)];
+    const unsubscribes = watchNamespaces.map((ns) => subscribe(resourceType, ns, handleWatchEvent));
 
     return () => {
-      unsubscribe();
+      for (const unsubscribe of unsubscribes) unsubscribe();
     };
-  }, [subscribe, isLoading, enabled, clusterId, resourceType, namespace, handleWatchEvent]);
+  }, [subscribe, isLoading, enabled, clusterId, resourceType, namespace, namespacesKey, handleWatchEvent]);
 
   return {
     data,

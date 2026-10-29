@@ -5,6 +5,10 @@ import { invalidateKubeconfigDerivedCaches } from '@/lib/k8s/invalidate-config';
 
 export const dynamic = 'force-dynamic';
 
+function errorStatus(error: unknown): number {
+  return error instanceof Error && /^Context ".*" not found$/.test(error.message) ? 404 : 500;
+}
+
 interface RouteParams {
   params: Promise<{ name: string }>;
 }
@@ -28,7 +32,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     const message = sanitizeServerError(error, 'Failed to update context');
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: errorStatus(error) });
   }
 }
 
@@ -42,6 +46,6 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     const message = sanitizeServerError(error, 'Failed to delete context');
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: errorStatus(error) });
   }
 }

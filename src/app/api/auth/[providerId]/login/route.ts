@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import '@/lib/auth/providers';
 import { getProvider } from '@/lib/auth/registry';
-import { clearClientCache } from '@/lib/k8s/client-factory';
-import { clearStatusCache } from '@/lib/k8s/cluster-status-cache';
 import { validateConfig } from '@/lib/auth/validate-config';
+import { runLoginOnce } from '@/lib/auth/login-dedupe';
+import { invalidateKubeconfigDerivedCaches } from '@/lib/k8s/invalidate-config';
 import { invalidateTshSessionCache, clearTeleportContextCache } from '@/lib/k8s/tsh-session-guard';
 
 export const dynamic = 'force-dynamic';
@@ -27,13 +27,15 @@ export async function POST(
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  const result = await provider.login(config);
+  // A double-click or a second window must not open a second SSO flow.
+  const result = await runLoginOnce(providerId, config, () => provider.login(config));
 
   if (result.success) {
-    clearClientCache();
-    // Clear all cached cluster statuses so the next health-check cycle
-    // re-evaluates from scratch (prevents stale 'disconnected' after login).
-    clearStatusCache();
+    // aws/gcloud/az (and tsh) rewrite ~/.kube/config during login. Drop every
+    // kubeconfig-derived cache — API clients, cluster statuses (prevents a
+    // stale 'disconnected' after login) — and point running watches at the
+    // fresh credentials.
+    invalidateKubeconfigDerivedCaches();
     // After successful auth, clear cached session state so that the next
     // health-check cycle re-evaluates Teleport contexts immediately.
     if (providerId === 'tsh') {

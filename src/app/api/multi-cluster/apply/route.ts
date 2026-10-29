@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as k8s from '@kubernetes/client-node';
 import { getKubeConfigForContext } from '@/lib/k8s/kubeconfig-manager';
 import { describeResource, parseManifest } from '@/lib/manifest';
+import { extractK8sError, isObjectNotFound } from '@/lib/k8s/error-handling';
+import {
+  describeFieldManagerConflict,
+  isFieldManagerConflict,
+  mapWithConcurrency,
+  TimeoutError,
+  withTimeout,
+} from '@/lib/k8s/apply-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +23,8 @@ interface ApplyRequest {
   yaml: string;
   action: 'apply' | 'delete';
   dryRun?: boolean;
+  /** Server-Side Apply `force`: take ownership of fields another manager owns. */
+  force?: boolean;
 }
 
 interface ApplyResult {
@@ -22,8 +32,10 @@ interface ApplyResult {
   namespace: string;
   status: 'success' | 'error';
   message?: string;
-  /** Identifies which document in a multi-document manifest this result is for. */
+  /** `Kind/name` of the document this result is for (always set). */
   resource?: string;
+  /** Set when the request hit the per-request timeout; the outcome on the cluster is unknown. */
+  timedOut?: boolean;
 }
 
 const CLUSTER_SCOPED_KINDS = new Set([
@@ -47,113 +59,167 @@ const CLUSTER_SCOPED_KINDS = new Set([
   'VolumeAttachment',
 ]);
 
-function isClusterScopedResource(resource: k8s.KubernetesObject): boolean {
+/** Field manager recorded in managedFields for everything this route applies. */
+const FIELD_MANAGER = 'kubeops';
+/** Per-request budget, so one hung cluster cannot hold every other target's results. */
+const REQUEST_TIMEOUT_MS = 30_000;
+/** Same cap as clusters/status: exec credential plugins (tsh) choke on bursts. */
+const MAX_CONCURRENT_TARGETS = 5;
+
+/** `KubernetesObjectApi.resource` is protected but is exactly the cached discovery lookup we need. */
+interface ObjectApiDiscovery {
+  resource(apiVersion: string, kind: string): Promise<k8s.V1APIResource | undefined>;
+}
+
+/**
+ * Asks the cluster whether the kind is namespaced (covers CRDs), falling back
+ * to the built-in list when discovery fails.
+ */
+async function isClusterScopedResource(client: k8s.KubernetesObjectApi, resource: k8s.KubernetesObject): Promise<boolean> {
+  try {
+    const discovered = await (client as unknown as ObjectApiDiscovery).resource(resource.apiVersion || '', resource.kind || '');
+    if (discovered) return !discovered.namespaced;
+  } catch {
+    // Fall through to the static list; the apply itself will report a real error.
+  }
   return CLUSTER_SCOPED_KINDS.has(resource.kind || '');
 }
 
-function extractK8sError(error: unknown): string {
-  const err = error as { body?: string | { message?: string }; message?: string };
-  let body = err?.body;
-  if (typeof body === 'string') {
-    try { body = JSON.parse(body) as { message?: string }; } catch { /* keep as string */ }
+function prepareResource(resource: k8s.KubernetesObject, namespace: string, clusterScoped: boolean, action: 'apply' | 'delete'): k8s.KubernetesObject {
+  const copy = JSON.parse(JSON.stringify(resource)) as k8s.KubernetesObject;
+  copy.metadata = copy.metadata || {};
+  if (clusterScoped) {
+    delete copy.metadata.namespace;
+  } else {
+    copy.metadata.namespace = namespace;
   }
-  const bodyMsg = typeof body === 'object' && body !== null ? (body as { message?: string }).message : undefined;
-  return bodyMsg || err?.message || 'Unknown error';
+  if (action === 'apply') {
+    // Server-Side Apply treats resourceVersion as a precondition and rejects
+    // managedFields; the rest are server-owned.
+    delete copy.metadata.resourceVersion;
+    delete copy.metadata.uid;
+    delete copy.metadata.creationTimestamp;
+    delete copy.metadata.managedFields;
+    delete copy.metadata.generation;
+    delete copy.metadata.selfLink;
+  }
+  return copy;
 }
 
-async function applyToTarget(
+async function applyOne(
+  client: k8s.KubernetesObjectApi,
   target: ApplyTarget,
   resource: k8s.KubernetesObject,
   action: 'apply' | 'delete',
   dryRun: boolean,
+  force: boolean,
 ): Promise<ApplyResult> {
+  const base = { clusterId: target.clusterId, namespace: target.namespace, resource: describeResource(resource) };
   try {
-    const kc = getKubeConfigForContext(target.clusterId);
-    const client = k8s.KubernetesObjectApi.makeApiClient(kc);
-
-    // Create a deep copy and set the namespace
-    const resourceCopy = JSON.parse(JSON.stringify(resource));
-    if (resourceCopy.metadata) {
-      if (isClusterScopedResource(resourceCopy)) {
-        delete resourceCopy.metadata.namespace;
-      } else {
-        resourceCopy.metadata.namespace = target.namespace;
-      }
-      // Remove resourceVersion for apply to avoid conflicts
-      if (action === 'apply') {
-        delete resourceCopy.metadata.resourceVersion;
-        delete resourceCopy.metadata.uid;
-        delete resourceCopy.metadata.creationTimestamp;
-        delete resourceCopy.metadata.managedFields;
-      }
-    }
+    const clusterScoped = await withTimeout(
+      isClusterScopedResource(client, resource),
+      REQUEST_TIMEOUT_MS,
+      `Timed out after ${REQUEST_TIMEOUT_MS / 1000}s discovering ${resource.kind}`,
+    );
+    const resourceCopy = prepareResource(resource, target.namespace, clusterScoped, action);
 
     if (action === 'apply') {
-      try {
-        // Try patch first (update existing)
-        await client.patch(
+      // Server-Side Apply: one idempotent call that creates or updates, works
+      // for CRDs (no strategic-merge schema needed), and reports field
+      // ownership conflicts instead of silently clobbering them.
+      await withTimeout(
+        client.patch(
           resourceCopy,
           undefined,
           dryRun ? 'All' : undefined,
-          undefined,
-          undefined,
-          undefined,
-        );
-        return {
-          clusterId: target.clusterId,
-          namespace: target.namespace,
-          status: 'success',
-          message: dryRun ? 'Dry run: would update resource' : 'Resource updated',
-        };
-      } catch (patchError: unknown) {
-        const pe = patchError as { statusCode?: number; response?: { statusCode?: number } };
-        const statusCode = pe?.statusCode || pe?.response?.statusCode;
-        if (statusCode === 404) {
-          // Resource doesn't exist, create it
-          await client.create(
-            resourceCopy,
-            undefined,
-            dryRun ? 'All' : undefined,
-          );
-          return {
-            clusterId: target.clusterId,
-            namespace: target.namespace,
-            status: 'success',
-            message: dryRun ? 'Dry run: would create resource' : 'Resource created',
-          };
-        }
-        throw patchError;
-      }
-    } else {
-      // delete action
-      await client.delete(
-        resourceCopy,
-        undefined,
-        dryRun ? 'All' : undefined,
+          FIELD_MANAGER,
+          force,
+          k8s.PatchStrategy.ServerSideApply,
+        ),
+        REQUEST_TIMEOUT_MS,
+        `Timed out after ${REQUEST_TIMEOUT_MS / 1000}s; the change may still be applied on the cluster`,
       );
-      return {
-        clusterId: target.clusterId,
-        namespace: target.namespace,
-        status: 'success',
-        message: dryRun ? 'Dry run: would delete resource' : 'Resource deleted',
-      };
+      return { ...base, status: 'success', message: dryRun ? 'Dry run: would apply resource' : 'Resource applied' };
     }
+
+    try {
+      await withTimeout(
+        client.delete(resourceCopy, undefined, dryRun ? 'All' : undefined),
+        REQUEST_TIMEOUT_MS,
+        `Timed out after ${REQUEST_TIMEOUT_MS / 1000}s; the delete may still complete on the cluster`,
+      );
+    } catch (deleteError: unknown) {
+      const { status } = extractK8sError(deleteError);
+      const body = (deleteError as { body?: unknown })?.body;
+      if (isObjectNotFound(status, body, resourceCopy.metadata?.name)) {
+        // Already absent: the desired end state, so a retried delete succeeds.
+        return { ...base, status: 'success', message: dryRun ? 'Dry run: resource does not exist' : 'Resource already absent' };
+      }
+      throw deleteError;
+    }
+    return { ...base, status: 'success', message: dryRun ? 'Dry run: would delete resource' : 'Resource deleted' };
   } catch (error: unknown) {
-    const message = extractK8sError(error);
-    console.error(`[Multi-cluster Apply] ${action} to ${target.clusterId}/${target.namespace}: ${message}`);
-    return {
+    const { status, message } = extractK8sError(error);
+    const body = (error as { body?: unknown })?.body;
+    const finalMessage = isFieldManagerConflict(status, body) ? describeFieldManagerConflict(message) : message;
+    const timedOut = error instanceof TimeoutError;
+    console.error(`[Multi-cluster Apply] ${action} ${base.resource} to ${target.clusterId}/${target.namespace}: ${status} ${finalMessage}`);
+    return { ...base, status: 'error', message: finalMessage, ...(timedOut ? { timedOut: true } : {}) };
+  }
+}
+
+/**
+ * Runs every document against one target in manifest order (so a Namespace
+ * declared first exists before what goes in it). After a timeout, the rest of
+ * that target's documents are reported as not attempted rather than each
+ * waiting out its own timeout against a hung cluster.
+ */
+async function applyToTarget(
+  target: ApplyTarget,
+  documents: k8s.KubernetesObject[],
+  action: 'apply' | 'delete',
+  dryRun: boolean,
+  force: boolean,
+): Promise<ApplyResult[]> {
+  let client: k8s.KubernetesObjectApi;
+  try {
+    const kc = getKubeConfigForContext(target.clusterId);
+    client = k8s.KubernetesObjectApi.makeApiClient(kc);
+  } catch (error: unknown) {
+    const { message } = extractK8sError(error);
+    return documents.map((doc) => ({
       clusterId: target.clusterId,
       namespace: target.namespace,
-      status: 'error',
+      resource: describeResource(doc),
+      status: 'error' as const,
       message,
-    };
+    }));
   }
+
+  const results: ApplyResult[] = [];
+  let timedOut = false;
+  for (const doc of documents) {
+    if (timedOut) {
+      results.push({
+        clusterId: target.clusterId,
+        namespace: target.namespace,
+        resource: describeResource(doc),
+        status: 'error',
+        message: 'Not attempted: an earlier request to this cluster timed out',
+      });
+      continue;
+    }
+    const result = await applyOne(client, target, doc, action, dryRun, force);
+    if (result.timedOut) timedOut = true;
+    results.push(result);
+  }
+  return results;
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body: ApplyRequest = await req.json();
-    const { targets, yaml: yamlStr, action, dryRun = false } = body;
+    const { targets, yaml: yamlStr, action, dryRun = false, force = false } = body;
 
     // Validate request
     if (!targets || !Array.isArray(targets) || targets.length === 0) {
@@ -173,19 +239,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
     const { documents } = parsed;
-    const multiDocument = documents.length > 1;
 
-    // Fan out across targets in parallel, but keep the documents in manifest
-    // order within a target so a Namespace declared first is created first.
-    const results = (await Promise.all(
-      targets.map(async (target) => {
-        const perTarget: ApplyResult[] = [];
-        for (const resource of documents) {
-          const result = await applyToTarget(target, resource, action, dryRun);
-          perTarget.push(multiDocument ? { ...result, resource: describeResource(resource) } : result);
-        }
-        return perTarget;
-      }),
+    // Fan out across targets with a concurrency cap; results stay in target order.
+    const results = (await mapWithConcurrency(
+      targets,
+      MAX_CONCURRENT_TARGETS,
+      (target) => applyToTarget(target, documents, action, dryRun, force === true),
     )).flat();
 
     const succeeded = results.filter((r) => r.status === 'success').length;

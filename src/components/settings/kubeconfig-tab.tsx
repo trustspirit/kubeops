@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSWRConfig } from 'swr';
 import { Plus, Pencil, Trash2, Star, StarOff, FileText, Merge } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,7 +20,13 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { toast } from 'sonner';
 
 export function KubeconfigTab() {
-  const { contexts, isLoading, mutate } = useKubeconfigContexts();
+  const { contexts, isLoading, mutate: mutateContexts } = useKubeconfigContexts();
+  const { mutate: globalMutate } = useSWRConfig();
+  // Every kubeconfig write changes the cluster list too (sidebar, selector).
+  const mutate = () => {
+    void mutateContexts();
+    void globalMutate('/api/clusters');
+  };
   const [showAddContext, setShowAddContext] = useState(false);
   const [editContext, setEditContext] = useState<string | null>(null);
   const [showMerge, setShowMerge] = useState(false);
@@ -27,8 +34,12 @@ export function KubeconfigTab() {
   const [rawYaml, setRawYaml] = useState('');
   const [deleteContextName, setDeleteContextName] = useState<string | null>(null);
   const [deletingContext, setDeletingContext] = useState(false);
+  const [switchContextName, setSwitchContextName] = useState<string | null>(null);
+  const [switchingContext, setSwitchingContext] = useState(false);
 
-  const handleSetCurrent = async (name: string) => {
+  const handleSetCurrent = async (name: string | null) => {
+    if (!name || switchingContext) return;
+    setSwitchingContext(true);
     try {
       const response = await fetch(`/api/kubeconfig/contexts/${encodeURIComponent(name)}`, {
         method: 'PUT',
@@ -43,11 +54,14 @@ export function KubeconfigTab() {
       mutate();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setSwitchingContext(false);
+      setSwitchContextName(null);
     }
   };
 
   const handleDelete = async (name: string | null) => {
-    if (!name) return;
+    if (!name || deletingContext) return;
     setDeletingContext(true);
     try {
       const response = await fetch(`/api/kubeconfig/contexts/${encodeURIComponent(name)}`, {
@@ -118,7 +132,8 @@ export function KubeconfigTab() {
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7"
-                  onClick={() => handleSetCurrent(ctx.name)}
+                  onClick={() => { if (!ctx.isCurrent) setSwitchContextName(ctx.name); }}
+                  disabled={switchingContext}
                   title={ctx.isCurrent ? 'Current context' : 'Set as current'}
                   aria-label={`Set ${ctx.name} as current context`}
                 >
@@ -202,6 +217,16 @@ export function KubeconfigTab() {
         variant="destructive"
         onConfirm={() => handleDelete(deleteContextName)}
         loading={deletingContext}
+      />
+
+      <ConfirmDialog
+        open={!!switchContextName}
+        onOpenChange={(open) => { if (!open && !switchingContext) setSwitchContextName(null); }}
+        title={`Switch current context to ${switchContextName}?`}
+        description={`This changes current-context in your kubeconfig file. kubectl, helm and other tools in every terminal will start targeting "${switchContextName}".`}
+        confirmLabel="Switch"
+        onConfirm={() => handleSetCurrent(switchContextName)}
+        loading={switchingContext}
       />
 
       <MergeKubeconfigDialog

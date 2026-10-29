@@ -2,19 +2,31 @@ import type { AlertRule } from '@/types/alert';
 import type { WatchedPod } from '@/stores/pod-watcher-store';
 
 /**
+ * Resource types an alert rule can target. The rule dialog offers exactly
+ * these, and a cluster with rules subscribes to exactly these, so a rule can
+ * never be created for a type that is not being watched.
+ */
+export const ALERT_RESOURCE_TYPE_OPTIONS = [
+  { value: 'pods', label: 'Pods' },
+  { value: 'deployments', label: 'Deployments' },
+  { value: 'statefulsets', label: 'StatefulSets' },
+  { value: 'daemonsets', label: 'DaemonSets' },
+  { value: 'replicasets', label: 'ReplicaSets' },
+  { value: 'jobs', label: 'Jobs' },
+  { value: 'cronjobs', label: 'CronJobs' },
+  { value: 'services', label: 'Services' },
+  { value: 'events', label: 'Events' },
+  { value: 'nodes', label: 'Nodes' },
+  { value: 'horizontalpodautoscalers', label: 'HPA' },
+] as const;
+
+export type AlertResourceType = (typeof ALERT_RESOURCE_TYPE_OPTIONS)[number]['value'];
+
+/**
  * Resource types alert rules can match against. A cluster with rules needs the
  * full set; one that only has watched pods needs pods alone.
  */
-export const ALERT_RESOURCE_TYPES = [
-  'pods',
-  'deployments',
-  'statefulsets',
-  'daemonsets',
-  'replicasets',
-  'jobs',
-  'events',
-  'nodes',
-] as const;
+export const ALERT_RESOURCE_TYPES: readonly AlertResourceType[] = ALERT_RESOURCE_TYPE_OPTIONS.map((o) => o.value);
 
 export const POD_ONLY_RESOURCE_TYPES = ['pods'] as const;
 

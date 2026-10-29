@@ -16,6 +16,12 @@ interface ActiveSub {
 
 const MIN_BACKOFF = 1000;
 const MAX_BACKOFF = 30000;
+/**
+ * Navigating between pages unsubscribes the old page's lists a moment before
+ * the new page subscribes. Closing immediately tore the socket down and
+ * re-handshook on every navigation, so the close is deferred.
+ */
+const IDLE_CLOSE_DELAY_MS = 5000;
 
 export function useWatch(clusterId: string | null) {
   const [connectionState, setConnectionState] = useState<WatchConnectionState>('disconnected');
@@ -23,6 +29,7 @@ export function useWatch(clusterId: string | null) {
   const subscriptionsRef = useRef<Map<string, ActiveSub>>(new Map());
   const backoffRef = useRef(MIN_BACKOFF);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
   const clusterIdRef = useRef(clusterId);
   const connectionAttemptGateRef = useRef(new ConnectionAttemptGate());
@@ -209,6 +216,10 @@ export function useWatch(clusterId: string | null) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
       }
+      if (idleCloseTimerRef.current) {
+        clearTimeout(idleCloseTimerRef.current);
+        idleCloseTimerRef.current = null;
+      }
       subs.clear();
       backoffRef.current = MIN_BACKOFF;
       setConnectionState('disconnected');
@@ -232,6 +243,10 @@ export function useWatch(clusterId: string | null) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
       }
+      if (idleCloseTimerRef.current) {
+        clearTimeout(idleCloseTimerRef.current);
+        idleCloseTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -245,6 +260,12 @@ export function useWatch(clusterId: string | null) {
     callback: WatchEventCallback,
   ): (() => void) => {
     const key = subKey(resourceType, namespace);
+
+    // A new subscriber arrived within the idle grace period: keep the socket.
+    if (idleCloseTimerRef.current) {
+      clearTimeout(idleCloseTimerRef.current);
+      idleCloseTimerRef.current = null;
+    }
 
     let sub = subscriptionsRef.current.get(key);
     const isNewSub = !sub;
@@ -293,24 +314,26 @@ export function useWatch(clusterId: string | null) {
           ws.send(JSON.stringify(msg));
         }
 
-        // If no more subscriptions, disconnect
-        if (subscriptionsRef.current.size === 0 && ws) {
-          connectionAttemptGateRef.current.invalidate();
-          ws.onclose = null;
-          try { ws.close(); } catch { /* ignore */ }
-          wsRef.current = null;
-          setConnectionState('disconnected');
-          if (reconnectTimerRef.current) {
-            clearTimeout(reconnectTimerRef.current);
-            reconnectTimerRef.current = null;
-          }
-        } else if (subscriptionsRef.current.size === 0) {
-          connectionAttemptGateRef.current.invalidate();
-          setConnectionState('disconnected');
-          if (reconnectTimerRef.current) {
-            clearTimeout(reconnectTimerRef.current);
-            reconnectTimerRef.current = null;
-          }
+        // If no more subscriptions, disconnect — after a grace period, so a
+        // page navigation that resubscribes right away reuses the socket.
+        if (subscriptionsRef.current.size === 0) {
+          if (idleCloseTimerRef.current) clearTimeout(idleCloseTimerRef.current);
+          idleCloseTimerRef.current = setTimeout(() => {
+            idleCloseTimerRef.current = null;
+            if (subscriptionsRef.current.size > 0) return;
+            connectionAttemptGateRef.current.invalidate();
+            const idleWs = wsRef.current;
+            if (idleWs) {
+              idleWs.onclose = null;
+              try { idleWs.close(); } catch { /* ignore */ }
+              wsRef.current = null;
+            }
+            if (isMountedRef.current) setConnectionState('disconnected');
+            if (reconnectTimerRef.current) {
+              clearTimeout(reconnectTimerRef.current);
+              reconnectTimerRef.current = null;
+            }
+          }, IDLE_CLOSE_DELAY_MS);
         }
       }
     };

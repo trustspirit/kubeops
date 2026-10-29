@@ -1,7 +1,7 @@
 import { clearClientCache } from './client-factory';
 import { invalidateKubeConfigCache } from './kubeconfig-manager';
 import { clearStatusCache } from './cluster-status-cache';
-import { shutdownAllWatchManagers } from './watch-manager';
+import { reloadAllWatchManagers } from './watch-manager';
 
 /**
  * Called after the app itself writes to the kubeconfig (merge, add/edit/delete
@@ -15,6 +15,8 @@ export function invalidateKubeconfigDerivedCaches(): void {
   invalidateKubeConfigCache();
   clearClientCache();
   clearStatusCache();
-  // Watches hold a KubeConfig snapshot taken at construction time.
-  shutdownAllWatchManagers();
+  // Watches hold a KubeConfig snapshot taken at construction time. Reload it
+  // in place: open WebSocket handlers keep a reference to their manager, so
+  // shutting it down would silently stop their live updates.
+  reloadAllWatchManagers();
 }
