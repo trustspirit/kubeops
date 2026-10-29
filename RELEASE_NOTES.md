@@ -1,3 +1,19 @@
+# v0.8.1 — Argo CD Refresh via the Argo CD Server
+
+## Added
+
+- **Refresh apps managed by a root Argo CD.** When a workload's Application is
+  not reachable through any kubeconfig context (e.g. `argocd-root.ovdr.io`
+  managing `central-ea`), the Argo CD bar on Deployment / StatefulSet / Pod
+  pages now finds the app through the Argo CD server using your `argocd` login
+  (Settings > Auth Providers), shows sync/health and destination, links to the
+  Argo CD web UI, and offers **Refresh / Hard Refresh**.
+
+## Fixed
+
+- An expired Argo CD SSO session (`oauth2: invalid_grant`) now asks you to log
+  in instead of reporting a generic failure — here and in Sync to Latest.
+
 # v0.8.0 — Reliability Pass & Argo CD Refresh from Workloads
 
 ## Added
