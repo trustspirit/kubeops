@@ -13,6 +13,10 @@ import { useModifierKeyLabel } from '@/hooks/use-modifier-key';
 import { useCommandPaletteStore } from '@/stores/command-palette-store';
 import { getInstallStageCopy } from '@/lib/update-state';
 import { toast } from 'sonner';
+import { useParams } from 'next/navigation';
+import { EnvironmentBadge, ENVIRONMENT_BAR_STYLES } from '@/components/clusters/environment-badge';
+import { getClusterEnvironment } from '@/lib/cluster-environment';
+import { cn } from '@/lib/utils';
 
 const RELEASES_URL = 'https://github.com/trustspirit/kubeops/releases/latest';
 
@@ -229,16 +233,24 @@ export function Header() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const openCommandPalette = useCommandPaletteStore((s) => s.setOpen);
   const modifierKey = useModifierKeyLabel();
+  const params = useParams();
+  const clusterName = typeof params?.clusterId === 'string' ? decodeURIComponent(params.clusterId) : null;
+  const environment = getClusterEnvironment(clusterName);
 
   return (
-    <header className="electron-header-inset flex h-14 items-center justify-between border-b px-4 drag-region">
-      <div className="flex items-center gap-3 no-drag-region">
+    <header className="electron-header-inset relative flex h-14 items-center justify-between gap-3 border-b px-4 drag-region">
+      {/* Production and staging get a coloured edge so they never look like dev. */}
+      {environment && (
+        <div className={cn('pointer-events-none absolute inset-x-0 top-0 h-[3px]', ENVIRONMENT_BAR_STYLES[environment])} aria-hidden="true" />
+      )}
+      <div className="flex min-w-0 items-center gap-3 no-drag-region">
         {/* The app name is chrome, not the page heading — pages own their h1. */}
         <span className="text-lg font-bold tracking-tight">KubeOps</span>
         <ClusterSelector />
+        <EnvironmentBadge clusterName={clusterName} />
         <NamespaceSelector />
       </div>
-      <div className="flex items-center gap-2 no-drag-region">
+      <div className="flex shrink-0 items-center gap-2 no-drag-region">
         <Button
           variant="outline"
           size="sm"

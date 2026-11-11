@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -13,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePodWatcherStore } from '@/stores/pod-watcher-store';
 import { useAlertStore } from '@/stores/alert-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { Bell, BellOff, LogIn } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { AlertRulesTab } from './alert-rules-tab';
 import { AlertHistory } from './alert-history';
@@ -31,21 +30,13 @@ function SettingsDialogContent({ onOpenChange }: { onOpenChange: (open: boolean)
   const autoLoginOnLaunch = useSettingsStore((s) => s.autoLoginOnLaunch);
   const setAutoLoginOnLaunch = useSettingsStore((s) => s.setAutoLoginOnLaunch);
 
-  const [notifEnabled, setNotifEnabled] = useState(notificationsEnabled);
-  const [autoLogin, setAutoLogin] = useState(autoLoginOnLaunch);
-
-  const handleSave = () => {
-    setNotificationsEnabled(notifEnabled);
-    setAutoLoginOnLaunch(autoLogin);
-    onOpenChange(false);
-  };
-
-  const handleToggleNotifications = () => {
-    const next = !notifEnabled;
+  // Settings apply as soon as they are changed: a switch that also needed
+  // "Save" left it unclear whether flipping it had done anything.
+  const handleNotificationsChange = (next: boolean) => {
     if (next && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
+      void Notification.requestPermission();
     }
-    setNotifEnabled(next);
+    setNotificationsEnabled(next);
   };
 
   return (
@@ -72,45 +63,39 @@ function SettingsDialogContent({ onOpenChange }: { onOpenChange: (open: boolean)
         </TabsList>
 
         <TabsContent value="general" className="mt-4">
-          <div className="space-y-4">
-            <div className="space-y-3">
-              <h4 className="text-sm font-semibold">Notifications</h4>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={handleToggleNotifications}
-              >
-                {notifEnabled ? (
-                  <><Bell className="h-4 w-4" />Desktop Notifications Enabled</>
-                ) : (
-                  <><BellOff className="h-4 w-4" />Desktop Notifications Disabled</>
-                )}
-              </Button>
+          <div className="divide-y rounded-md border">
+            <div className="flex items-start justify-between gap-4 p-4">
+              <div className="space-y-1">
+                <label htmlFor="setting-notifications" className="text-sm font-medium">Desktop notifications</label>
+                <p className="text-xs text-muted-foreground">
+                  Show a system notification when an alert rule fires or a watched pod restarts.
+                </p>
+              </div>
+              <Switch
+                id="setting-notifications"
+                checked={notificationsEnabled}
+                onCheckedChange={handleNotificationsChange}
+              />
             </div>
 
-            <div className="space-y-3">
-              <h4 className="text-sm font-semibold">Sign-in</h4>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={() => setAutoLogin((value) => !value)}
-                aria-pressed={autoLogin}
-              >
-                <LogIn className="h-4 w-4" />
-                {autoLogin ? 'Sign in automatically on launch' : 'Ask before signing in'}
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Automatic sign-in opens your browser as soon as KubeOps starts. When off,
-                use the provider button in the header instead.
-              </p>
+            <div className="flex items-start justify-between gap-4 p-4">
+              <div className="space-y-1">
+                <label htmlFor="setting-auto-login" className="text-sm font-medium">Sign in automatically on launch</label>
+                <p className="text-xs text-muted-foreground">
+                  Opens your browser to sign in as soon as KubeOps starts. When off,
+                  use the provider button in the header instead.
+                </p>
+              </div>
+              <Switch
+                id="setting-auto-login"
+                checked={autoLoginOnLaunch}
+                onCheckedChange={setAutoLoginOnLaunch}
+              />
             </div>
           </div>
 
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={handleSave}>Save</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Done</Button>
           </DialogFooter>
         </TabsContent>
 

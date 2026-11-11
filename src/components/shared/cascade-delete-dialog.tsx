@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useProductionConfirm } from './production-confirm';
 import {
   Dialog,
   DialogContent,
@@ -165,6 +166,7 @@ export function CascadeDeleteDialog({
   const [acknowledged, setAcknowledged] = useState(false);
   const [propagationPolicy, setPropagationPolicy] = useState('Foreground');
   const fetchIdRef = useRef(0);
+  const production = useProductionConfirm(clusterId, name, open);
 
   const fetchDependents = useCallback(async () => {
     if (!open) return;
@@ -326,6 +328,7 @@ export function CascadeDeleteDialog({
           </div>
         </div>
 
+        {production.field}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={externalLoading}>
             Cancel
@@ -333,7 +336,7 @@ export function CascadeDeleteDialog({
           <Button
             variant="destructive"
             onClick={() => { if (!externalLoading) onConfirm(propagationPolicy); }}
-            disabled={externalLoading || fetchLoading || (needsAcknowledgement && !acknowledged)}
+            disabled={externalLoading || fetchLoading || (needsAcknowledgement && !acknowledged) || production.blocked}
           >
             {externalLoading ? (
               <>

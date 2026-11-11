@@ -169,22 +169,25 @@ function ResourceTreeViewInner({
   const [nodes, setNodes, onNodesChange] = useNodesState(layoutedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(layoutedEdges);
 
-  // Track whether this is the initial render (fitView only on first load)
-  const initialFitDoneRef = useRef(false);
+  // The tree fills in over several requests. Fitting only once framed the
+  // first partial result and left later nodes clipped off-screen, so keep
+  // fitting as the topology grows — until the user pans or zooms, after which
+  // the view is theirs.
+  const userMovedRef = useRef(false);
+  const lastFitTopologyRef = useRef<string | null>(null);
 
-  // Sync nodes/edges when layout changes; only fitView on initial load
   useEffect(() => {
     setNodes(layoutedNodes);
     setEdges(layoutedEdges);
 
-    if (!initialFitDoneRef.current && layoutedNodes.length > 0) {
-      initialFitDoneRef.current = true;
-      const timer = setTimeout(() => {
-        fitView({ padding: 0.2, duration: 300 });
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [layoutedNodes, layoutedEdges, setNodes, setEdges, fitView]);
+    if (userMovedRef.current || layoutedNodes.length === 0) return;
+    if (lastFitTopologyRef.current === topologyKey) return;
+    lastFitTopologyRef.current = topologyKey;
+    const timer = setTimeout(() => {
+      fitView({ padding: 0.2, duration: 300 });
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [layoutedNodes, layoutedEdges, setNodes, setEdges, fitView, topologyKey]);
 
   useEffect(() => {
     if (highlightedNodeId && !treeNodes.some((node) => node.id === highlightedNodeId)) {
@@ -285,6 +288,8 @@ function ResourceTreeViewInner({
           setHighlightedNodeId((current) => current === node.id ? null : node.id);
         }}
         onPaneClick={() => setHighlightedNodeId(null)}
+        // `event` is null for programmatic moves such as our own fitView.
+        onMoveStart={(event) => { if (event) userMovedRef.current = true; }}
       >
         <Background gap={16} size={1} />
         <Controls showInteractive={false} className="!shadow-md" />

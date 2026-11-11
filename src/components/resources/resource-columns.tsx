@@ -12,7 +12,11 @@ const nsCol: ColumnDef<KubeResource> = {
   id: 'namespace',
   header: 'Namespace',
   cell: ({ row }) => (
-    <Badge variant="outline" className="font-normal text-xs">
+    <Badge
+      variant="outline"
+      className="block max-w-[14rem] truncate font-normal text-xs"
+      title={row.original.metadata?.namespace}
+    >
       {row.original.metadata?.namespace}
     </Badge>
   ),
@@ -31,27 +35,39 @@ function getPodRestarts(pod: KubeResource): number {
   );
 }
 
-function getReadyContainers(pod: KubeResource): string {
+/** "ready/total", highlighted only when they differ so problems stand out. */
+function ReadyCount({ ready, total, quiet }: { ready: number; total: number; quiet?: boolean }) {
+  const short = ready < total && !quiet;
+  return (
+    <span
+      className={short ? 'font-semibold text-amber-600 dark:text-amber-400' : undefined}
+      title={short ? `${total - ready} not ready` : undefined}
+    >
+      {ready}/{total}
+    </span>
+  );
+}
+
+function PodReady({ pod }: { pod: KubeResource }) {
   const status = pod.status as KubePod['status'];
   const spec = pod.spec as KubePod['spec'];
   const statuses = (status?.containerStatuses || []) as ContainerStatus[];
   const ready = statuses.filter((cs: ContainerStatus) => cs.ready).length;
-  return `${ready}/${statuses.length || spec?.containers?.length || 0}`;
+  // A completed pod's containers are "not ready" by design.
+  return <ReadyCount ready={ready} total={statuses.length || spec?.containers?.length || 0} quiet={status?.phase === 'Succeeded'} />;
 }
 
-function getDeploymentReady(dep: KubeResource): string {
-  const status = dep.status as KubeDeployment['status'];
-  const spec = dep.spec as KubeDeployment['spec'];
-  const ready = status?.readyReplicas || 0;
-  const desired = spec?.replicas || 0;
-  return `${ready}/${desired}`;
+function WorkloadReady({ workload }: { workload: KubeResource }) {
+  const status = workload.status as KubeDeployment['status'];
+  const spec = workload.spec as KubeDeployment['spec'];
+  return <ReadyCount ready={status?.readyReplicas || 0} total={spec?.replicas || 0} />;
 }
 
 export const podColumns: ColumnDef<KubeResource>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
   nsCol,
   { id: 'status', header: 'Status', cell: ({ row }) => <StatusBadge status={getPodStatus(row.original)} /> },
-  { id: 'ready', header: 'Ready', cell: ({ row }) => getReadyContainers(row.original) },
+  { id: 'ready', header: 'Ready', cell: ({ row }) => <PodReady pod={row.original} /> },
   { id: 'restarts', header: 'Restarts', cell: ({ row }) => getPodRestarts(row.original) },
   { id: 'node', header: 'Node', cell: ({ row }) => (row.original.spec as KubePod['spec'])?.nodeName || '-' },
   { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
@@ -60,7 +76,7 @@ export const podColumns: ColumnDef<KubeResource>[] = [
 export const deploymentColumns: ColumnDef<KubeResource>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
   nsCol,
-  { id: 'ready', header: 'Ready', cell: ({ row }) => getDeploymentReady(row.original) },
+  { id: 'ready', header: 'Ready', cell: ({ row }) => <WorkloadReady workload={row.original} /> },
   { id: 'upToDate', header: 'Up-to-date', cell: ({ row }) => (row.original.status as Record<string, unknown>)?.updatedReplicas || 0 },
   { id: 'available', header: 'Available', cell: ({ row }) => (row.original.status as Record<string, unknown>)?.availableReplicas || 0 },
   { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
@@ -106,7 +122,7 @@ export const serviceColumns: ColumnDef<KubeResource>[] = [
 export const statefulsetColumns: ColumnDef<KubeResource>[] = [
   { accessorFn: (row) => row.metadata?.name, id: 'name', header: 'Name' },
   nsCol,
-  { id: 'ready', header: 'Ready', cell: ({ row }) => `${(row.original.status as Record<string, unknown>)?.readyReplicas || 0}/${(row.original.spec as Record<string, unknown>)?.replicas || 0}` },
+  { id: 'ready', header: 'Ready', cell: ({ row }) => <WorkloadReady workload={row.original} /> },
   { id: 'age', header: 'Age', cell: ({ row }) => <AgeDisplay timestamp={row.original.metadata?.creationTimestamp} /> },
 ];
 

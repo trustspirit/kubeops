@@ -10,6 +10,33 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { Info, Plus, Pencil, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
 import { getAlertRuleActivity, summarizeAlertScope, type AlertRuleActivity } from '@/lib/alert-scope';
 import type { AlertRule } from '@/types/alert';
+import useSWR from 'swr';
+import { isMetricCondition, isMetricResourceType } from '@/lib/alert-metrics';
+
+/**
+ * CPU/memory rules depend on the metrics API. Without this note a rule on a
+ * cluster with no metrics-server simply never fires, with nothing to say why.
+ */
+function UsageRuleNote({ rule }: { rule: AlertRule }) {
+  const isUsageRule = isMetricCondition(rule.condition.type);
+  const supported = isMetricResourceType(rule.resourceType);
+  // Node metrics are a small list, so they make a cheap availability probe.
+  const { error, isLoading } = useSWR(
+    isUsageRule && supported && rule.enabled
+      ? `/api/clusters/${encodeURIComponent(rule.clusterId)}/metrics?type=nodes`
+      : null,
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+
+  if (!isUsageRule) return null;
+  if (!supported) {
+    return <p className="mt-0.5 font-sans text-[11px] text-amber-700 dark:text-amber-400">Never fires: usage is only available for Pods and Nodes.</p>;
+  }
+  if (error && !isLoading) {
+    return <p className="mt-0.5 font-sans text-[11px] text-amber-700 dark:text-amber-400">Cannot fire: no usage metrics from this cluster (metrics-server unreachable).</p>;
+  }
+  return null;
+}
 
 const ACTIVITY_BADGE: Record<AlertRuleActivity, { label: string; className: string; title: string }> = {
   active: {
@@ -127,7 +154,10 @@ export function AlertRulesTab() {
                       {rule.resourceType}
                     </Badge>
                   </td>
-                  <td className="px-3 py-2 text-xs font-mono">{conditionSummary(rule)}</td>
+                  <td className="px-3 py-2 text-xs font-mono">
+                    {conditionSummary(rule)}
+                    <UsageRuleNote rule={rule} />
+                  </td>
                   <td className="px-3 py-2">
                     {(() => {
                       const activity = getAlertRuleActivity(rule, activeClusterId);
