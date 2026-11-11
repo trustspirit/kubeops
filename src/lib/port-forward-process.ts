@@ -17,16 +17,22 @@ export function waitForPortForwardReady(proc: ChildProcess, timeoutMs: number): 
   return new Promise((resolve, reject) => {
     let settled = false;
     let stdout = '';
+    let stderr = '';
 
     const onStdout = (chunk: Buffer | string) => {
       stdout = `${stdout}${chunk.toString()}`.slice(-4096);
       if (stdout.includes('Forwarding from')) settle();
     };
+    // stderr alone is not fatal: kubectl and exec credential plugins print
+    // warnings there and still go on to forward. A real failure makes kubectl
+    // exit, so keep the text and report it as the reason when that happens.
     const onStderr = (chunk: Buffer | string) => {
-      settle(new Error(sanitizeStartupReason(chunk.toString(), 'Port forward failed to start')));
+      stderr = `${stderr}${chunk.toString()}`.slice(-4096);
     };
     const onError = () => settle(new Error('Unable to start port forward'));
-    const onExit = () => settle(new Error('Port forward exited before readiness'));
+    const onExit = () => settle(new Error(
+      sanitizeStartupReason(stderr, 'Port forward exited before readiness'),
+    ));
 
     const cleanup = () => {
       clearTimeout(timer);
@@ -51,7 +57,8 @@ export function waitForPortForwardReady(proc: ChildProcess, timeoutMs: number): 
 
     const timer = setTimeout(() => {
       try { proc.kill(); } catch { /* process already stopped */ }
-      settle(new Error('Port forward startup timed out'));
+      const reason = sanitizeStartupReason(stderr, '');
+      settle(new Error(reason ? `Port forward startup timed out: ${reason}` : 'Port forward startup timed out'));
     }, timeoutMs);
   });
 }

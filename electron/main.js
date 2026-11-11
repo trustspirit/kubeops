@@ -115,6 +115,20 @@ async function macOSManualInstall() {
 
   writeErrorLog('updater:manual-install', `Zip: ${zipPath}, App: ${appBundlePath}`);
 
+  // The swap happens in a detached script after this process has quit, so a
+  // failure there is invisible. Check up front that we can actually replace
+  // the bundle; throwing here keeps the app running and shows the manual
+  // update UI instead of quitting into nothing.
+  if (!appBundlePath.endsWith('.app')) {
+    throw new Error(`Unexpected app bundle path: ${appBundlePath}`);
+  }
+  try {
+    fs.accessSync(path.dirname(appBundlePath), fs.constants.W_OK);
+    fs.accessSync(appBundlePath, fs.constants.W_OK);
+  } catch {
+    throw new Error(`No permission to replace ${appBundlePath}`);
+  }
+
   const tempDir = path.join(app.getPath('temp'), 'kubeops-update');
 
   if (fs.existsSync(tempDir)) {
@@ -159,7 +173,9 @@ async function macOSManualInstall() {
     // Move the old bundle aside instead of deleting it up front: if the
     // replacement move fails, the user still has a working app to restore.
     'BACKUP="$1.old-$$"',
-    'mv "$1" "$BACKUP" || exit 1',
+    // If even that fails, relaunch the untouched app rather than leaving the
+    // user with nothing running.
+    'if ! mv "$1" "$BACKUP"; then rm -rf "$3"; open "$1"; exit 1; fi',
     'if ! mv "$2" "$1"; then mv "$BACKUP" "$1"; rm -rf "$3"; open "$1"; exit 1; fi',
     'rm -rf "$BACKUP"',
     'rm -rf "$3"',
@@ -603,6 +619,10 @@ function startProductionServer() {
 }
 
 app.whenReady().then(async () => {
+  // `app.quit()` above is asynchronous, so a second instance can still get
+  // here. It must not start another server or open a window.
+  if (!gotTheLock) return;
+
   buildMenu();
 
   // Set dock icon for macOS dev mode (production uses .icns from bundle)

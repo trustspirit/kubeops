@@ -36,3 +36,21 @@ describe('alert rule validation', () => {
     );
   });
 });
+
+describe('usage rule resource types', () => {
+  it('only allows CPU and memory thresholds on pods and nodes', () => {
+    assert.equal(validateAlertRuleDraft({ ...base, resourceType: 'pods' }).ok, true);
+    assert.equal(validateAlertRuleDraft({ ...base, resourceType: 'nodes' }).ok, true);
+
+    const result = validateAlertRuleDraft({ ...base, resourceType: 'deployments' });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.match(result.errors.resourceType ?? '', /Pods and Nodes/);
+  });
+
+  it('does not restrict other conditions by resource type', () => {
+    assert.equal(validateAlertRuleDraft({
+      ...base, conditionType: 'restart_count', value: '3', resourceType: 'deployments',
+    }).ok, true);
+  });
+});

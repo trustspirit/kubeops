@@ -5,6 +5,16 @@ import { useWatch, type WatchEventCallback } from '@/hooks/use-watch';
 import { useAlertStore } from '@/stores/alert-store';
 import { usePodWatcherStore } from '@/stores/pod-watcher-store';
 import { evaluateRules } from '@/lib/alert-evaluator';
+import {
+  METRIC_POLL_INTERVAL_MS,
+  evaluateMetricRules,
+  getMetricResourceTypes,
+  isMetricResourceType,
+  parseMetricsList,
+  selectMetricRules,
+  type MetricSample,
+} from '@/lib/alert-metrics';
+import { apiClient } from '@/lib/api-client';
 import { evaluatePodRestart } from '@/lib/pod-restart-snapshot';
 import { toast } from 'sonner';
 import type { MonitorTarget } from '@/lib/monitor-targets';
@@ -113,6 +123,56 @@ export function ClusterMonitor({ target, subscribe }: ClusterMonitorProps) {
     evaluateAlertRules(event);
     if (resourceType === 'pods') evaluateWatchedPod(event);
   }, [evaluateAlertRules, evaluateWatchedPod]);
+
+  // CPU/memory rules need usage, which only the metrics API has. Poll it, but
+  // only for the lists this cluster's rules actually need.
+  const metricTypesKey = getMetricResourceTypes(rules, clusterId).join(',');
+  useEffect(() => {
+    const types = metricTypesKey.split(',').filter(isMetricResourceType);
+    if (types.length === 0) return;
+
+    let cancelled = false;
+    let inFlight = false;
+    const controller = new AbortController();
+
+    const poll = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const samples: MetricSample[] = [];
+        for (const type of types) {
+          try {
+            const payload = await apiClient.get<unknown>(
+              `/api/clusters/${encodeURIComponent(clusterId)}/metrics?type=${type}`,
+              { signal: controller.signal },
+            );
+            samples.push(...parseMetricsList(type, payload));
+          } catch {
+            // metrics-server missing or unreachable: nothing to evaluate for
+            // this list. Try again on the next tick.
+          }
+        }
+        if (cancelled || samples.length === 0) return;
+
+        const metricRules = selectMetricRules(rulesRef.current, clusterId);
+        for (const alert of evaluateMetricRules(metricRules, samples, lastTriggeredRef.current)) {
+          addAlert(alert);
+          setLastTriggered(alert.ruleId, alert.timestamp);
+          notify(`Alert: ${alert.ruleName}`, `${alert.resourceName}: ${alert.message}`);
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void poll();
+    const timer = setInterval(() => { void poll(); }, METRIC_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      controller.abort();
+    };
+  }, [clusterId, metricTypesKey, addAlert, setLastTriggered]);
 
   // `resourceTypes` comes from a memoized target list, so this only re-runs when
   // the subscription set genuinely changes.

@@ -1,9 +1,12 @@
 import type { ConditionOperator, ConditionType } from '@/types/alert';
+import { isMetricResourceType } from './alert-metrics';
 import { isValidK8sQuantity, parseK8sQuantity } from './k8s-quantity';
 
 export interface AlertRuleDraft {
   name: string;
   clusterId: string;
+  /** Optional so callers that only validate the condition keep working. */
+  resourceType?: string;
   conditionType: ConditionType;
   operator: ConditionOperator;
   value: string;
@@ -11,7 +14,7 @@ export interface AlertRuleDraft {
 }
 
 export type AlertRuleValidationErrors = Partial<Record<
-  'name' | 'clusterId' | 'operator' | 'value' | 'cooldown',
+  'name' | 'clusterId' | 'resourceType' | 'operator' | 'value' | 'cooldown',
   string
 >>;
 
@@ -53,6 +56,10 @@ export function validateAlertRuleDraft(draft: AlertRuleDraft): AlertRuleValidati
     const quantity = parseK8sQuantity(value);
     if (!isValidK8sQuantity(value) || !Number.isFinite(quantity) || quantity < 0) {
       errors.value = 'Enter a non-negative Kubernetes quantity.';
+    }
+    // Usage comes from the metrics API, which only reports pods and nodes.
+    if (draft.resourceType !== undefined && !isMetricResourceType(draft.resourceType)) {
+      errors.resourceType = 'CPU and memory thresholds are only available for Pods and Nodes.';
     }
   } else if (!value) {
     errors.value = 'Value is required.';

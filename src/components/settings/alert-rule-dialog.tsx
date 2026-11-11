@@ -102,6 +102,7 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
     const validation = validateAlertRuleDraft({
       name,
       clusterId,
+      resourceType,
       conditionType,
       operator,
       value,
@@ -200,6 +201,7 @@ export function AlertRuleDialog({ open, onOpenChange, editRule }: AlertRuleDialo
                 ))}
               </SelectContent>
             </Select>
+            {errors.resourceType && <p className="text-xs text-destructive">{errors.resourceType}</p>}
           </div>
 
           <div className="grid grid-cols-3 gap-3">

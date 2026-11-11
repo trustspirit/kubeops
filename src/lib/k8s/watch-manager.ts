@@ -216,6 +216,28 @@ export class WatchManager {
           const currentActive = this.watches.get(key);
           if (!currentActive) return;
 
+          // The API server reports an expired resourceVersion as an in-stream
+          // ERROR event (a Status object) on an HTTP 200 response, not as a
+          // failed request. Treating it like a normal event would reset the
+          // backoff and keep the stale resourceVersion, restarting forever.
+          if (phase === 'ERROR') {
+            const status = apiObj as { code?: unknown; message?: unknown } | undefined;
+            if (Number(status?.code) === 410) {
+              currentActive.resourceVersion = '';
+            }
+            const errorEvent: WatchEvent = {
+              type: 'ERROR',
+              object: {
+                message: typeof status?.message === 'string' ? status.message : 'Watch stream error',
+                code: Number(status?.code) || undefined,
+              },
+            };
+            for (const cb of currentActive.callbacks) {
+              try { cb(errorEvent); } catch { /* ignore callback errors */ }
+            }
+            return;
+          }
+
           // Track resourceVersion for reconnection
           const metadata = apiObj?.metadata as Record<string, unknown> | undefined;
           if (metadata?.resourceVersion) {

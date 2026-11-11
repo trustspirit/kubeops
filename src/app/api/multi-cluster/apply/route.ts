@@ -106,8 +106,10 @@ async function applyToTarget(
           message: dryRun ? 'Dry run: would update resource' : 'Resource updated',
         };
       } catch (patchError: unknown) {
-        const pe = patchError as { statusCode?: number; response?: { statusCode?: number } };
-        const statusCode = pe?.statusCode || pe?.response?.statusCode;
+        // @kubernetes/client-node 1.x throws ApiException, which carries the
+        // HTTP status in `code`; the older shapes are kept as a fallback.
+        const pe = patchError as { code?: number; statusCode?: number; response?: { statusCode?: number } };
+        const statusCode = pe?.code || pe?.statusCode || pe?.response?.statusCode;
         if (statusCode === 404) {
           // Resource doesn't exist, create it
           await client.create(

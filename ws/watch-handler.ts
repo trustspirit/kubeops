@@ -8,6 +8,7 @@ import type { WatchEvent, WatchSubscription, WatchMessage } from '../src/types/w
 // If the renderer cannot keep up, drop events rather than growing the send
 // buffer without bound — the client revalidates via SWR on reconnect anyway.
 const MAX_SOCKET_BACKLOG_BYTES = 4 * 1024 * 1024;
+const BACKLOG_POLL_INTERVAL_MS = 250;
 
 export function handleWatchConnection(ws: WebSocket, req: IncomingMessage) {
   const { pathname } = parse(req.url!, true);
@@ -158,10 +159,15 @@ export function handleWatchConnection(ws: WebSocket, req: IncomingMessage) {
   });
 
   let cleanedUp = false;
+  let backlogTimer: ReturnType<typeof setInterval> | null = null;
   function cleanup() {
     if (cleanedUp) return;
     cleanedUp = true;
     clearInterval(pingInterval);
+    if (backlogTimer) {
+      clearInterval(backlogTimer);
+      backlogTimer = null;
+    }
     // Unsubscribe all active subscriptions
     for (const [, sub] of activeSubscriptions) {
       manager.unsubscribe(sub.resourceType, sub.namespace, sub.callback);
@@ -170,6 +176,41 @@ export function handleWatchConnection(ws: WebSocket, req: IncomingMessage) {
   }
 
   let droppedEvents = 0;
+  // Subscriptions that lost at least one event while the socket was backlogged.
+  const droppedSubscriptions = new Map<string, { resourceType: string; namespace?: string }>();
+
+  // Tell the client which views may have gaps so it can do a full refetch.
+  // Returns false while the socket is still backlogged.
+  function flushBacklogNotice(): boolean {
+    if (droppedEvents === 0) return true;
+    if (ws.readyState !== WebSocket.OPEN) return true;
+    if (ws.bufferedAmount > MAX_SOCKET_BACKLOG_BYTES) return false;
+
+    console.log(`[Watch] Backlog cleared on cluster ${clusterId} after ${droppedEvents} dropped events`);
+    droppedEvents = 0;
+    for (const sub of droppedSubscriptions.values()) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        resourceType: sub.resourceType,
+        namespace: sub.namespace,
+        error: 'Watch backlog cleared — resynchronizing',
+      } satisfies WatchMessage));
+    }
+    droppedSubscriptions.clear();
+    return true;
+  }
+
+  // The notice cannot wait for the next message: a resync burst is usually
+  // followed by silence, which would leave the client with gaps indefinitely.
+  function scheduleBacklogCheck() {
+    if (backlogTimer || cleanedUp) return;
+    backlogTimer = setInterval(() => {
+      if (flushBacklogNotice() && backlogTimer) {
+        clearInterval(backlogTimer);
+        backlogTimer = null;
+      }
+    }, BACKLOG_POLL_INTERVAL_MS);
+  }
 
   function sendMessage(msg: WatchMessage) {
     if (ws.readyState !== WebSocket.OPEN) return;
@@ -178,21 +219,18 @@ export function handleWatchConnection(ws: WebSocket, req: IncomingMessage) {
       // Never drop control messages — only the high-volume event stream.
       if (msg.type === 'event') {
         droppedEvents++;
+        droppedSubscriptions.set(subscriptionKey(msg.resourceType, msg.namespace), {
+          resourceType: msg.resourceType,
+          namespace: msg.namespace,
+        });
         if (droppedEvents === 1 || droppedEvents % 1000 === 0) {
           console.warn(`[Watch] Backlogged on cluster ${clusterId}; dropped ${droppedEvents} events`);
         }
+        scheduleBacklogCheck();
         return;
       }
-    } else if (droppedEvents > 0) {
-      console.log(`[Watch] Backlog cleared on cluster ${clusterId} after ${droppedEvents} dropped events`);
-      droppedEvents = 0;
-      // Tell the client its view may have gaps so it can do a full refetch.
-      ws.send(JSON.stringify({
-        type: 'error',
-        resourceType: msg.resourceType,
-        namespace: msg.namespace,
-        error: 'Watch backlog cleared — resynchronizing',
-      } satisfies WatchMessage));
+    } else {
+      flushBacklogNotice();
     }
 
     ws.send(JSON.stringify(msg));

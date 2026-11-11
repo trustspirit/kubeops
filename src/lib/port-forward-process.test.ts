@@ -50,10 +50,22 @@ describe('port-forward process readiness', () => {
     await ready;
   });
 
-  it('rejects stderr startup failure and terminates on timeout', async () => {
+  it('does not treat a stderr warning as a startup failure', async () => {
+    const proc = createFakeProcess();
+    const ready = wait(proc, 100);
+    proc.stderr.write('Warning: credential plugin is deprecated\n');
+    await new Promise(resolve => setImmediate(resolve));
+    proc.stdout.write('Forwarding from 127.0.0.1:18080 -> 8080\n');
+    await ready;
+    assert.equal(proc.killed, false);
+  });
+
+  it('reports stderr as the reason when kubectl exits, and terminates on timeout', async () => {
     const failed = createFakeProcess();
     const failure = wait(failed, 100);
     failed.stderr.write('error: unable to listen on any requested ports\n');
+    await new Promise(resolve => setImmediate(resolve));
+    failed.emit('exit', 1, null);
     await assert.rejects(failure, /unable to listen/);
 
     const timedOut = createFakeProcess();

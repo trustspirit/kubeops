@@ -1,6 +1,5 @@
 import type { AlertRule, AlertEvent, AlertCondition } from '@/types/alert';
 import type { WatchEvent, WatchEventObject } from '@/types/watch';
-import { parseK8sQuantity } from './k8s-quantity';
 
 interface EvalResult {
   matched: boolean;
@@ -68,50 +67,12 @@ function evaluateCondition(condition: AlertCondition, resource: WatchEventObject
       return { matched: false, message: '' };
     }
 
-    case 'cpu_threshold': {
-      // Check annotations or resource status for CPU
-      const cpuAnnotations = resource?.metadata?.annotations as Record<string, string> | undefined;
-      const cpuStatusObj = resource?.status as Record<string, unknown> | undefined;
-      const cpuCapacity = cpuStatusObj?.capacity as Record<string, string> | undefined;
-      const cpuUsage = cpuAnnotations?.['metrics.k8s.io/cpu'] ||
-        cpuCapacity?.cpu || '';
-      if (!cpuUsage) return { matched: false, message: '' };
-      const cpuNum = parseK8sQuantity(cpuUsage);
-      const threshold = parseK8sQuantity(String(value));
-      if (!Number.isFinite(cpuNum) || !Number.isFinite(threshold)) return { matched: false, message: '' };
-      if (operator === '>' && cpuNum > threshold) {
-        return { matched: true, message: `CPU usage ${cpuNum} > ${threshold}` };
-      }
-      if (operator === '<' && cpuNum < threshold) {
-        return { matched: true, message: `CPU usage ${cpuNum} < ${threshold}` };
-      }
-      if (operator === '==' && cpuNum === threshold) {
-        return { matched: true, message: `CPU usage is ${cpuNum}` };
-      }
+    case 'cpu_threshold':
+    case 'memory_threshold':
+      // Usage is not part of a Watch event (a node's `status.capacity` is its
+      // size, not its load). These rules are evaluated from the metrics API
+      // instead — see `alert-metrics.ts`.
       return { matched: false, message: '' };
-    }
-
-    case 'memory_threshold': {
-      const memAnnotations = resource?.metadata?.annotations as Record<string, string> | undefined;
-      const memStatusObj = resource?.status as Record<string, unknown> | undefined;
-      const memCapacity = memStatusObj?.capacity as Record<string, string> | undefined;
-      const memUsage = memAnnotations?.['metrics.k8s.io/memory'] ||
-        memCapacity?.memory || '';
-      if (!memUsage) return { matched: false, message: '' };
-      const memNum = parseK8sQuantity(memUsage);
-      const threshold = parseK8sQuantity(String(value));
-      if (!Number.isFinite(memNum) || !Number.isFinite(threshold)) return { matched: false, message: '' };
-      if (operator === '>' && memNum > threshold) {
-        return { matched: true, message: `Memory usage ${memNum} > ${threshold}` };
-      }
-      if (operator === '<' && memNum < threshold) {
-        return { matched: true, message: `Memory usage ${memNum} < ${threshold}` };
-      }
-      if (operator === '==' && memNum === threshold) {
-        return { matched: true, message: `Memory usage is ${memNum}` };
-      }
-      return { matched: false, message: '' };
-    }
 
     case 'event_match': {
       // For K8s Event objects: match reason or message

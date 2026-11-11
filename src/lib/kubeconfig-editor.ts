@@ -5,8 +5,41 @@ import * as jsYaml from 'js-yaml';
 
 const KUBECONFIG_PATH = path.join(os.homedir(), '.kube', 'config');
 
+const MAX_TIMESTAMPED_BACKUPS = 10;
+
+/**
+ * `KUBECONFIG` is a path-delimited list, not a single path. Like kubectl, the
+ * editor writes to the first file in the list.
+ */
+export function resolveKubeconfigPath(envValue: string | undefined, fallback: string): string {
+  const first = (envValue ?? '')
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .find((entry) => entry.length > 0);
+  return first || fallback;
+}
+
 function getKubeconfigPath(): string {
-  return process.env.KUBECONFIG || KUBECONFIG_PATH;
+  return resolveKubeconfigPath(process.env.KUBECONFIG, KUBECONFIG_PATH);
+}
+
+/**
+ * Keep only the newest timestamped backups. Each one is a full copy of the
+ * credentials, so they must not accumulate forever.
+ */
+async function pruneBackups(configPath: string): Promise<void> {
+  try {
+    const dir = path.dirname(configPath);
+    const prefix = `${path.basename(configPath)}.bak.`;
+    const backups = (await fs.readdir(dir))
+      .filter((name) => name.startsWith(prefix))
+      // ISO timestamps sort chronologically as plain strings.
+      .sort();
+    const stale = backups.slice(0, Math.max(0, backups.length - MAX_TIMESTAMPED_BACKUPS));
+    await Promise.all(stale.map((name) => fs.unlink(path.join(dir, name)).catch(() => {})));
+  } catch {
+    // Pruning is best effort; never fail a write because of it.
+  }
 }
 
 export interface KubeconfigCluster {
@@ -68,6 +101,7 @@ export async function backup(): Promise<string> {
   await fs.copyFile(configPath, timestampedPath);
   // Also maintain the .bak file as the latest backup for easy recovery
   await fs.copyFile(configPath, latestPath);
+  await pruneBackups(configPath);
   return timestampedPath;
 }
 
