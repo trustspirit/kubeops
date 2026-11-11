@@ -1,3 +1,25 @@
+# v0.8.2 — CPU/Memory Alerts from Real Usage
+
+## Changed
+
+- **CPU and memory threshold alerts now use real usage.** These rules poll the
+  cluster's metrics API (metrics-server) every 60 seconds and compare actual
+  pod and node usage. Previously they compared a node's *capacity* and never
+  fired for pods. One alert is raised per rule per check, naming the worst
+  offender. They are available for Pods and Nodes only; a cluster without
+  metrics-server raises no usage alerts.
+
+## Fixed
+
+- After a burst of changes overflowed the live-update connection, lists could
+  stay out of date until the next change; they now refresh as soon as the
+  backlog clears.
+- macOS update: if the app cannot be replaced (no write permission), the update
+  now reports an error instead of quitting the app.
+- Launching KubeOps twice no longer starts a second background server.
+- A node debug pod that fails to start is now cleaned up instead of being left
+  behind in the `default` namespace.
+
 # v0.8.1 — Argo CD Refresh via the Argo CD Server
 
 ## Added
