@@ -49,6 +49,14 @@ function formatMemory(val: number): string {
   return `${Math.round(val)} MiB`;
 }
 
+const IO_STALL_SAMPLES = 12;
+
+/** Axis ticks: a mostly idle pod used to show "0m" on every gridline. */
+function formatCpuTick(val: number): string {
+  if (val > 0 && val < 10 && !Number.isInteger(val)) return `${val.toFixed(1)}m`;
+  return formatCpu(val);
+}
+
 function formatNetRate(val: number): string {
   if (val >= 1024) return `${(val / 1024).toFixed(1)} MB/s`;
   return `${Math.round(val)} KB/s`;
@@ -88,7 +96,7 @@ export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: Po
   const rateStateRef = useRef<CounterRateState>(createCounterRateState(4));
   const [history, setHistory] = useState<MetricsPoint[]>([]);
 
-  const { data } = useSWR(
+  const { data, error: metricsError } = useSWR(
     `/api/clusters/${encodeURIComponent(clusterId)}/metrics?type=pods&namespace=${namespace}&name=${podName}`,
     { refreshInterval: 5000 }
   );
@@ -139,6 +147,10 @@ export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: Po
     setHistory((prev) => [...prev, point].slice(-60)); // Keep 5 min at 5s interval
   }, [data]);
 
+  // "Collecting…" forever reads as broken. After about a minute of samples
+  // with still no I/O rate, say plainly that none is being reported.
+  const ioStalled = history.length >= IO_STALL_SAMPLES;
+
   if (history.length === 0) {
     return (
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -150,7 +162,7 @@ export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: Po
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-2 flex items-center justify-center h-[120px] text-xs text-muted-foreground">
-              Waiting for metrics...
+              {metricsError ? 'Metrics are not available (is metrics-server installed?)' : 'Waiting for metrics...'}
             </CardContent>
           </Card>
         ))}
@@ -199,7 +211,7 @@ export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: Po
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
               <XAxis dataKey="time" tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} tickFormatter={(v) => formatCpu(v)} width={45} />
+              <YAxis tick={{ fontSize: 9, fill: 'currentColor' }} tickLine={false} axisLine={false} tickFormatter={(v) => formatCpuTick(v)} width={45} />
               <Tooltip content={<MetricTooltip />} />
               <Area type="monotone" dataKey="cpu" stroke="#3b82f6" strokeWidth={1.5} fill="url(#cpuGrad)" dot={false} />
             </AreaChart>
@@ -251,7 +263,7 @@ export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: Po
                 <span className="text-orange-500 font-medium">Tx {formatNetRate(latestTx)}</span>
               </span>
             ) : (
-              <span className="text-xs text-muted-foreground">Collecting...</span>
+              <span className="text-xs text-muted-foreground">{ioStalled ? 'No data' : 'Collecting...'}</span>
             )}
           </CardTitle>
         </CardHeader>
@@ -279,7 +291,7 @@ export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: Po
             </ResponsiveContainer>
           ) : (
             <div className="flex items-center justify-center h-[120px] text-xs text-muted-foreground">
-              {promUnavailable ? 'Prometheus not found' : 'Waiting for network data...'}
+              {promUnavailable ? 'Prometheus not found' : ioStalled ? 'No network data is reported for this pod' : 'Waiting for network data...'}
             </div>
           )}
         </CardContent>
@@ -300,7 +312,7 @@ export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: Po
                 <span className="text-rose-500 font-medium">W {formatNetRate(latestFsWrite)}</span>
               </span>
             ) : (
-              <span className="text-xs text-muted-foreground">{promUnavailable ? 'No Prometheus' : 'Collecting...'}</span>
+              <span className="text-xs text-muted-foreground">{promUnavailable ? 'No Prometheus' : ioStalled ? 'No data' : 'Collecting...'}</span>
             )}
           </CardTitle>
         </CardHeader>
@@ -328,7 +340,7 @@ export function PodMetricsCharts({ clusterId, namespace, podName, nodeName }: Po
             </ResponsiveContainer>
           ) : (
             <div className="flex items-center justify-center h-[120px] text-xs text-muted-foreground">
-              {promUnavailable ? 'Prometheus not found' : 'Waiting for filesystem data...'}
+              {promUnavailable ? 'Prometheus not found' : ioStalled ? 'No filesystem data is reported for this pod' : 'Waiting for filesystem data...'}
             </div>
           )}
         </CardContent>

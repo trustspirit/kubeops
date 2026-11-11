@@ -22,7 +22,7 @@ export function Breadcrumbs() {
 
   if (namespace) {
     segments.push({
-      label: namespace,
+      label: namespace === '_all' ? 'All namespaces' : namespace,
       href: `/clusters/${clusterId}/namespaces/${namespace}/pods`,
     });
   }
@@ -76,17 +76,17 @@ export function Breadcrumbs() {
   }
 
   return (
-    <nav className="flex items-center gap-1 text-sm text-muted-foreground px-6 pt-4">
-      <Link href="/clusters" className="hover:text-foreground transition-colors">
+    <nav className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground px-6 pt-4" aria-label="Breadcrumb">
+      <Link href="/clusters" className="shrink-0 hover:text-foreground transition-colors" aria-label="All clusters">
         <Home className="h-3.5 w-3.5" />
       </Link>
       {segments.map((segment, i) => (
-        <div key={i} className="flex items-center gap-1">
-          <ChevronRight className="h-3.5 w-3.5" />
+        <div key={i} className="flex min-w-0 items-center gap-1">
+          <ChevronRight className="h-3.5 w-3.5 shrink-0" />
           {i === segments.length - 1 ? (
-            <span className="text-foreground font-medium truncate max-w-[200px]">{segment.label}</span>
+            <span className="text-foreground font-medium truncate" title={segment.label}>{segment.label}</span>
           ) : (
-            <Link href={segment.href} className="hover:text-foreground transition-colors truncate max-w-[200px]">
+            <Link href={segment.href} className="hover:text-foreground transition-colors truncate max-w-[22rem]" title={segment.label}>
               {segment.label}
             </Link>
           )}

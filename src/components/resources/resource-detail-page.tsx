@@ -22,6 +22,7 @@ import { MultiClusterApplyDialog } from '@/components/multi-cluster/multi-cluste
 import { useSWRConfig } from 'swr';
 import { isResourceListCacheKey } from '@/lib/resource-freshness';
 import { ArgoCDWorkloadBar } from '@/components/argocd/argocd-workload-bar';
+import { ResourceEvents } from '@/components/shared/resource-events';
 
 interface ResourceDetailPageProps {
   resourceType: string;
@@ -115,12 +116,12 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
   return (
     <div className="flex flex-col gap-4 p-6">
       {error && <RefreshFailedBanner error={error} onRetry={() => mutate()} />}
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={goBack} aria-label="Go back">
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+        <Button variant="ghost" size="icon" className="shrink-0" onClick={goBack} aria-label="Go back">
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold">{metadata.name}</h1>
+        <div className="min-w-[12rem] flex-1">
+          <h1 className="break-all text-xl font-bold leading-tight">{metadata.name}</h1>
           <p className="text-sm text-muted-foreground">
             {RESOURCE_LABELS[resourceType] || resourceType}
             {metadata.namespace && ` in ${metadata.namespace}`}
@@ -213,6 +214,16 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
               </div>
             </div>
           )}
+
+          {!clusterScoped && metadata.namespace && resource.kind && (
+            <ResourceEvents
+              clusterId={decodedClusterId}
+              namespace={metadata.namespace}
+              kind={resource.kind}
+              name={metadata.name}
+              uid={metadata.uid}
+            />
+          )}
         </TabsContent>
 
         {children && (
@@ -267,6 +278,7 @@ export function ResourceDetailPage({ resourceType, clusterScoped, children }: Re
           variant="destructive"
           onConfirm={() => handleDelete()}
           loading={deleting}
+          context={{ cluster: decodedClusterId, namespace: metadata.namespace, kind: resource.kind, name: metadata.name }}
         />
       )}
 

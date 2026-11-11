@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { guardOpenChange } from '@/lib/dialog-busy';
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
+import { useProductionConfirm } from './production-confirm';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -71,6 +72,14 @@ export function ConfirmDialog({
   context,
   children,
 }: ConfirmDialogProps) {
+  // Destructive actions on a production cluster need the target typed out.
+  // Bulk actions have no single name, so they ask for the word "delete".
+  const production = useProductionConfirm(
+    variant === 'destructive' ? context?.cluster : null,
+    context?.name || 'delete',
+    open,
+  );
+
   return (
     <Dialog open={open} onOpenChange={guardOpenChange(busy, onOpenChange)}>
       <DialogContent busy={busy}>
@@ -80,6 +89,7 @@ export function ConfirmDialog({
         </DialogHeader>
         {context && <DialogContextList entries={context} />}
         {children}
+        {production.field}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
             Cancel
@@ -87,7 +97,7 @@ export function ConfirmDialog({
           <Button
             variant={variant === 'destructive' ? 'destructive' : 'default'}
             onClick={() => { if (!busy) onConfirm(); }}
-            disabled={busy || confirmDisabled}
+            disabled={busy || confirmDisabled || production.blocked}
           >
             {loading ? `${confirmLabel} in progress…` : confirmLabel}
           </Button>

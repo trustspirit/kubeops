@@ -19,6 +19,7 @@ import { FreshnessIndicator } from '@/components/shared/freshness-indicator';
 import { Button } from '@/components/ui/button';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { BulkDeleteButton } from '@/components/resources/bulk-delete-button';
+import { getQuickFilters } from '@/lib/resource-quick-filters';
 
 interface ResourceListPageProps {
   resourceType: string;
@@ -137,6 +138,7 @@ export function ResourceListPage({ resourceType, clusterScoped }: ResourceListPa
         getRowId={getKubeResourceRowId}
         searchPlaceholder={`Search ${label.toLowerCase()}...`}
         viewId={`resources:${resourceType}`}
+        quickFilters={getQuickFilters(resourceType)}
         renderBulkActions={(rows, clearSelection) => (
           <BulkDeleteButton
             clusterId={decodedClusterId}

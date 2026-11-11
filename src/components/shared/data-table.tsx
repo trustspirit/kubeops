@@ -13,7 +13,7 @@ import {
   VisibilityState,
   useReactTable,
 } from '@tanstack/react-table';
-import { useCallback, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Table,
   TableBody,
@@ -50,6 +50,21 @@ interface DataTableProps<TData, TValue> {
   viewId?: string;
   /** Renders bulk actions for the checked rows. Enables row selection. */
   renderBulkActions?: (rows: TData[], clearSelection: () => void) => ReactNode;
+  /** One-click filters shown as chips above the table, each with a live count. */
+  quickFilters?: readonly DataTableQuickFilter<TData>[];
+}
+
+export interface DataTableQuickFilter<TData> {
+  id: string;
+  label: string;
+  matches: (row: TData) => boolean;
+}
+
+const INTERACTIVE_SELECTOR = 'a, button, input, select, textarea, label, [role="checkbox"], [role="menuitem"], [role="button"], [data-no-row-click]';
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
 }
 
 /** Turns a column id like "restartCount" into "Restart count". */
@@ -67,7 +82,37 @@ export function DataTable<TData, TValue>({
   getRowId,
   viewId,
   renderBulkActions,
+  quickFilters,
 }: DataTableProps<TData, TValue>) {
+  const [activeQuickFilter, setActiveQuickFilter] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const quickFilterCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const filter of quickFilters ?? []) counts[filter.id] = data.filter(filter.matches).length;
+    return counts;
+  }, [quickFilters, data]);
+
+  const activeFilter = quickFilters?.find((filter) => filter.id === activeQuickFilter);
+  const visibleData = useMemo(
+    () => (activeFilter ? data.filter(activeFilter.matches) : data),
+    [activeFilter, data],
+  );
+
+  // "/" jumps to the search box, as in most list UIs. Ignored while typing or
+  // when a dialog is open on top of the table.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isTypingTarget(event.target) || document.querySelector('[role="dialog"]')) return;
+      event.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   const storedView = useTableViewStore((s) => (viewId ? s.views[viewId] : undefined));
   const setView = useTableViewStore((s) => s.setView);
   const view = storedView ?? DEFAULT_TABLE_VIEW;
@@ -136,7 +181,7 @@ export function DataTable<TData, TValue>({
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
-    data,
+    data: visibleData,
     columns: allColumns,
     getRowId,
     getCoreRowModel: getCoreRowModel(),
@@ -192,9 +237,16 @@ export function DataTable<TData, TValue>({
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
+            ref={searchInputRef}
             placeholder={searchPlaceholder}
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setGlobalFilter('');
+                e.currentTarget.blur();
+              }
+            }}
             className="pl-8 pr-8 h-9"
             aria-label={searchPlaceholder}
           />
@@ -213,6 +265,28 @@ export function DataTable<TData, TValue>({
         <span className="text-sm text-muted-foreground" aria-live="polite">
           {filteredCount} items
         </span>
+        {quickFilters && quickFilters.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Quick filters">
+            {quickFilters.map((filter) => {
+              const count = quickFilterCounts[filter.id] ?? 0;
+              const active = filter.id === activeQuickFilter;
+              return (
+                <Button
+                  key={filter.id}
+                  variant={active ? 'default' : 'outline'}
+                  size="sm"
+                  className={cn('h-7 gap-1.5 rounded-full px-2.5 text-xs', !active && count === 0 && 'text-muted-foreground')}
+                  aria-pressed={active}
+                  disabled={count === 0 && !active}
+                  onClick={() => setActiveQuickFilter(active ? null : filter.id)}
+                >
+                  {filter.label}
+                  <span className={cn('tabular-nums', !active && count > 0 && 'font-semibold text-foreground')}>{count}</span>
+                </Button>
+              );
+            })}
+          </div>
+        )}
         <div className="ml-auto flex items-center gap-1">
           <Button
             variant="outline"
@@ -279,7 +353,10 @@ export function DataTable<TData, TValue>({
                 {headerGroup.headers.map((header) => (
                   <TableHead
                     key={header.id}
-                    className={header.column.getCanSort() ? 'cursor-pointer select-none' : 'w-[50px]'}
+                    className={cn(
+                      header.column.getCanSort() ? 'cursor-pointer select-none' : 'w-[50px]',
+                      header.column.id === 'actions' && 'sticky right-0 bg-background',
+                    )}
                     onClick={header.column.getCanSort() ? header.column.getToggleSortingHandler() : undefined}
                     aria-sort={
                       header.column.getIsSorted() === 'asc' ? 'ascending' :
@@ -312,10 +389,26 @@ export function DataTable<TData, TValue>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() ? 'selected' : undefined}
-                  className={cn(compact && 'h-8')}
+                  className={cn('group cursor-pointer', compact && 'h-8')}
+                  onClick={(event) => {
+                    // The whole row opens the resource, not just its name —
+                    // unless the click was on a control inside the row or the
+                    // user is selecting text.
+                    const target = event.target as HTMLElement;
+                    if (target.closest(INTERACTIVE_SELECTOR)) return;
+                    if (window.getSelection()?.toString()) return;
+                    event.currentTarget.querySelector<HTMLAnchorElement>('a[href]')?.click();
+                  }}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className={cn(compact && 'py-1')}>
+                    <TableCell
+                      key={cell.id}
+                      className={cn(
+                        compact && 'py-1',
+                        // Keep row actions reachable without scrolling sideways.
+                        cell.column.id === 'actions' && 'sticky right-0 bg-background group-hover:bg-muted group-data-[state=selected]:bg-muted',
+                      )}
+                    >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}
@@ -324,7 +417,11 @@ export function DataTable<TData, TValue>({
             ) : (
               <TableRow>
                 <TableCell colSpan={table.getVisibleLeafColumns().length} className="h-24 text-center text-muted-foreground">
-                  {data.length === 0 ? 'No resources found.' : `No results for “${globalFilter}”.`}
+                  {data.length === 0
+                    ? 'No resources found.'
+                    : globalFilter
+                      ? `No results for “${globalFilter}”.`
+                      : `Nothing matches “${activeFilter?.label ?? 'this filter'}”.`}
                 </TableCell>
               </TableRow>
             )}

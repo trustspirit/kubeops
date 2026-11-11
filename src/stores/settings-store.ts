@@ -35,6 +35,14 @@ interface SettingsState {
   argoCDHostClusters: string[];
   addArgoCDHostCluster: (clusterId: string) => void;
   removeArgoCDHostCluster: (clusterId: string) => void;
+
+  /**
+   * The "Argo CD app not found, configure a server" hint is shown on every
+   * workload page of a cluster without a reachable Argo CD. Once dismissed it
+   * stays hidden until Argo CD settings change.
+   */
+  argoCDHintDismissed: boolean;
+  setArgoCDHintDismissed: (dismissed: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -66,12 +74,16 @@ export const useSettingsStore = create<SettingsState>()(
           return { clusterProviderOverrides: rest };
         }),
 
+      argoCDHintDismissed: false,
+      setArgoCDHintDismissed: (dismissed) => set({ argoCDHintDismissed: dismissed }),
+
       argoCDHostClusters: [],
       addArgoCDHostCluster: (clusterId) =>
         set((state) => (
           state.argoCDHostClusters.includes(clusterId)
             ? state
-            : { argoCDHostClusters: [...state.argoCDHostClusters, clusterId] }
+            // Changing where to look is a reason to show the hint again.
+            : { argoCDHostClusters: [...state.argoCDHostClusters, clusterId], argoCDHintDismissed: false }
         )),
       removeArgoCDHostCluster: (clusterId) =>
         set((state) => ({

@@ -9,7 +9,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AgeDisplay } from '@/components/shared/age-display';
-import { ArrowLeft, Terminal, ScrollText, Trash2, KeyRound, GitCompare, Bug, Ship } from 'lucide-react';
+import { ArrowLeft, Terminal, ScrollText, Trash2, KeyRound, GitCompare, Bug, Ship, MoreHorizontal } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ResourceEvents } from '@/components/shared/resource-events';
 import { useState, useMemo } from 'react';
 import { usePanelStore } from '@/stores/panel-store';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -153,18 +161,23 @@ export default function PodDetailPage() {
   return (
     <div className="flex flex-col gap-4 p-6">
       {error && pod && <RefreshFailedBanner error={error} onRetry={() => mutate()} />}
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => router.back()} aria-label="Go back">
+      {/*
+        The name can be long and the window narrow, so the title wraps onto its
+        own line and the action group never pushes off-screen: everyday actions
+        stay visible, the rest live in the overflow menu.
+      */}
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+        <Button variant="ghost" size="icon" className="shrink-0" onClick={() => router.back()} aria-label="Go back">
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold">{podName}</h1>
+        <div className="min-w-[12rem] flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="min-w-0 break-all text-xl font-bold leading-tight">{podName}</h1>
             <StatusBadge status={phase} />
           </div>
           <p className="text-sm text-muted-foreground">Pod in {namespace}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           {(containers as ContainerSpec[]).map((c) => c.name).slice(0, 1).map((containerName: string) => (
             <div key={containerName} className="flex gap-2">
               <Button
@@ -199,25 +212,33 @@ export default function PodDetailPage() {
               </Button>
             </div>
           ))}
-          <Button variant="outline" size="sm" onClick={() => setDebugOpen(true)}>
-            <Bug className="h-4 w-4 mr-1" />Debug
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)}>
-            <GitCompare className="h-4 w-4 mr-1" />Compare
-          </Button>
-          {helmReleaseRef && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(`/clusters/${clusterId}/helm/${encodeURIComponent(helmReleaseRef.name)}?namespace=${encodeURIComponent(helmReleaseRef.namespace)}`)}
-            >
-              <Ship className="h-4 w-4 mr-1" />Helm Release
-            </Button>
-          )}
           <PodWatchButton clusterId={decodedClusterId} namespace={namespace} podName={podName} />
-          <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
-            <Trash2 className="h-4 w-4 mr-1" />Delete
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" aria-label="More actions">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setDebugOpen(true)}>
+                <Bug className="h-4 w-4 mr-2" />Debug container
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setCompareOpen(true)}>
+                <GitCompare className="h-4 w-4 mr-2" />Compare with…
+              </DropdownMenuItem>
+              {helmReleaseRef && (
+                <DropdownMenuItem
+                  onSelect={() => router.push(`/clusters/${clusterId}/helm/${encodeURIComponent(helmReleaseRef.name)}?namespace=${encodeURIComponent(helmReleaseRef.namespace)}`)}
+                >
+                  <Ship className="h-4 w-4 mr-2" />Helm release
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onSelect={() => setDeleteOpen(true)}>
+                <Trash2 className="h-4 w-4 mr-2" />Delete pod
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -230,25 +251,6 @@ export default function PodDetailPage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4 mt-4">
-          {/* Resource Tree */}
-          {treeRoot && (
-            <PodResourceTree
-              clusterId={decodedClusterId}
-              namespace={namespace}
-              rootKind={treeRoot.rootKind}
-              rootName={treeRoot.rootName}
-              focusPodName={podName}
-            />
-          )}
-
-          {/* Metrics */}
-          <PodMetricsCharts
-            clusterId={decodedClusterId}
-            namespace={namespace}
-            podName={podName}
-            nodeName={spec.nodeName}
-          />
-
           {/* Pod Info compact */}
           <div className="rounded-md border overflow-hidden">
             <table className="w-full text-xs">
@@ -310,6 +312,16 @@ export default function PodDetailPage() {
             {(containers as ContainerSpec[]).map((ctr: ContainerSpec, idx: number) => {
               const cs = (containerStatuses as ContainerStatus[]).find((s: ContainerStatus) => s.name === ctr.name);
               const stateKey = cs?.state ? Object.keys(cs.state)[0] : 'unknown';
+              // "Pending" alone says nothing; the reason (ImagePullBackOff,
+              // CrashLoopBackOff, OOMKilled…) is what the user is looking for.
+              const stateDetail = (cs?.state as Record<string, { reason?: string; message?: string } | undefined> | undefined)?.[stateKey];
+              const lastTerminated = (cs as { lastState?: { terminated?: { reason?: string; exitCode?: number } } } | undefined)?.lastState?.terminated;
+              const stateReason = stateKey !== 'running'
+                ? stateDetail?.reason
+                : lastTerminated?.reason
+                  ? `Last exit: ${lastTerminated.reason}${typeof lastTerminated.exitCode === 'number' ? ` (${lastTerminated.exitCode})` : ''}`
+                  : undefined;
+              const stateMessage = stateDetail?.message;
 
               return (
                 <div key={idx} className="rounded-md border overflow-hidden">
@@ -318,6 +330,11 @@ export default function PodDetailPage() {
                     <div className="flex items-center gap-2">
                       <h4 className="text-sm font-semibold">{ctr.name}</h4>
                       <StatusBadge status={stateKey === 'running' ? 'Running' : stateKey === 'waiting' ? 'Pending' : stateKey === 'terminated' ? 'Failed' : 'Unknown'} />
+                      {stateReason && (
+                        <span className="text-xs font-medium text-amber-700 dark:text-amber-400" title={stateMessage || undefined}>
+                          {stateReason}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-3">
                       {cs && <span className="text-xs text-muted-foreground">Restarts: {cs.restartCount || 0}</span>}
@@ -420,6 +437,32 @@ export default function PodDetailPage() {
             })}
           </div>
 
+          <ResourceEvents
+            clusterId={decodedClusterId}
+            namespace={namespace}
+            kind="Pod"
+            name={podName}
+            uid={metadata.uid}
+          />
+
+          {/* Resource Tree */}
+          {treeRoot && (
+            <PodResourceTree
+              clusterId={decodedClusterId}
+              namespace={namespace}
+              rootKind={treeRoot.rootKind}
+              rootName={treeRoot.rootName}
+              focusPodName={podName}
+            />
+          )}
+
+          {/* Metrics */}
+          <PodMetricsCharts
+            clusterId={decodedClusterId}
+            namespace={namespace}
+            podName={podName}
+            nodeName={spec.nodeName}
+          />
         </TabsContent>
 
         {/* Kept mounted so unsaved YAML edits survive switching tabs. */}
@@ -438,7 +481,7 @@ export default function PodDetailPage() {
         </TabsContent>
       </Tabs>
 
-      <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title={`Delete ${podName}?`} description={`This will delete the pod "${podName}". If managed by a controller, it will be recreated.`} confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} loading={deleting} />
+      <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title={`Delete ${podName}?`} description={`This will delete the pod "${podName}". If managed by a controller, it will be recreated.`} confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} loading={deleting} context={{ cluster: decodedClusterId, namespace, kind: 'Pod', name: podName }} />
       <ResourceDiffDialog open={compareOpen} onOpenChange={setCompareOpen} sourceClusterId={clusterId} sourceNamespace={namespace} resourceType="pods" resourceName={podName} sourceResource={pod} />
 
       <PodDebugDialog

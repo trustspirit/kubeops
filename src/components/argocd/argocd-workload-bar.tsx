@@ -74,6 +74,8 @@ async function listHostApps(hostIds: string[]): Promise<HostLookup> {
  */
 export function ArgoCDWorkloadBar({ clusterId, namespace, resources }: ArgoCDWorkloadBarProps) {
   const hostClusters = useSettingsStore((s) => s.argoCDHostClusters);
+  const hintDismissed = useSettingsStore((s) => s.argoCDHintDismissed);
+  const setHintDismissed = useSettingsStore((s) => s.setArgoCDHintDismissed);
   const addHost = useSettingsStore((s) => s.addArgoCDHostCluster);
   const removeHost = useSettingsStore((s) => s.removeArgoCDHostCluster);
   const argoCDServer = useSettingsStore((s) => s.authProviderConfigs['argocd']?.server?.trim() || '');
@@ -166,7 +168,7 @@ export function ArgoCDWorkloadBar({ clusterId, namespace, resources }: ArgoCDWor
 
   if (!match) {
     const searched = [...hostIds, ...(argoCDServer ? [argoCDServer] : [])].join(', ');
-    const notFound = argoSpecific ? (
+    const notFound = argoSpecific && !hintDismissed ? (
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
         <GitBranch className="h-4 w-4 shrink-0" />
         <span className="min-w-0 flex-1">
@@ -178,6 +180,16 @@ export function ArgoCDWorkloadBar({ clusterId, namespace, resources }: ArgoCDWor
             : ' Set the Argo CD server in Settings > Auth Providers, or add the cluster Argo CD runs on.'}
         </span>
         {manageButton('Choose Argo CD cluster')}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={() => setHintDismissed(true)}
+          aria-label="Hide this Argo CD hint"
+          title="Don't show this again"
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
       </div>
     ) : null;
 
