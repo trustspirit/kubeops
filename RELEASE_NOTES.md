@@ -1,3 +1,47 @@
+# v0.9.0 — Safer Production, Faster Lists
+
+## Added
+
+- **Environment badges.** Clusters whose name marks them as production,
+  staging or development show a coloured badge and header bar, in the header
+  and in the command palette.
+- **Typed confirmation on production.** Deleting on a production cluster now
+  requires typing the resource name (or `delete` for a bulk delete).
+- **Quick filters on lists.** Pods get Unhealthy / Pending / Restarted chips
+  with live counts; Deployments, StatefulSets, ReplicaSets and DaemonSets get
+  Not ready.
+- **Events on detail pages.** Pod and other namespaced resource pages show the
+  events for that object, with warnings highlighted.
+- **Workload search in the command palette.** Typing two or more characters
+  searches Pods, Deployments, StatefulSets and Services across the cluster.
+- Container cards show why a container is not running (e.g. `ImagePullBackOff`,
+  `CrashLoopBackOff`) and the reason for its last exit.
+
+## Changed
+
+- Clicking anywhere on a table row opens the resource; `/` focuses the search
+  box and `Esc` clears it; the row actions column stays visible when the table
+  scrolls sideways.
+- Pod page: long names wrap instead of pushing actions off-screen, less-used
+  actions moved into a "More actions" menu, and pod info and containers now
+  come before the resource tree and metrics.
+- General settings are switches that apply immediately.
+- Ages over a year read `1y151d` instead of `516d22h`.
+- Ready counts turn amber when fewer replicas are ready than desired.
+- The "Argo CD app not found" hint can be dismissed.
+
+## Fixed
+
+- The theme toggle did nothing on the first click when following the system
+  theme.
+- Searching the command palette for e.g. `cert` matched every cluster.
+- The resource tree could leave later-loaded nodes off-screen.
+- Metrics charts no longer say "Collecting…" forever when no network or
+  filesystem data is reported, and say so when metrics-server is unavailable.
+- Alert rules list now flags CPU/memory rules that can never fire.
+- Breadcrumbs show "All namespaces" instead of `_all` and no longer truncate
+  long names.
+
 # v0.8.2 — CPU/Memory Alerts from Real Usage
 
 ## Changed
