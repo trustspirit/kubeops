@@ -119,6 +119,12 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
           });
         }
         if (phase === 'Failed' || phase === 'Unknown') {
+          // Don't leave a privileged pod with the host root mounted behind.
+          try {
+            await api.deleteNamespacedPod({ name: podName, namespace: 'default' });
+          } catch {
+            // Best effort cleanup
+          }
           return NextResponse.json(
             { error: `Debug pod entered ${phase} state` },
             { status: 500 }
