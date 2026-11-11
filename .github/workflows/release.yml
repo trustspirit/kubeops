@@ -132,9 +132,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.check-version.outputs.version }}
         run: |
+          # Created as a draft: the app's updater looks at the latest published
+          # release, and a release published before its platform builds have
+          # uploaded makes every running app fail its update check with a 404
+          # on latest-mac.yml. publish-release makes it public once all builds
+          # are in.
           gh release create "v${VERSION}" \
             --title "v${VERSION}" \
             --generate-notes \
+            --draft \
             || echo "Release already exists, continuing..."
 
   release:
@@ -203,6 +209,24 @@ jobs:
             dist-electron/*.yml
             dist-electron/*.yaml
           if-no-files-found: ignore
+
+  # Only publish once every platform has uploaded its installer and update
+  # manifest. If a platform build fails the release stays a draft, so nobody is
+  # offered a half-uploaded update; fix and re-run, or publish it by hand.
+  publish-release:
+    needs: [check-version, release]
+    if: |
+      always() &&
+      needs.check-version.outputs.should_release == 'true' &&
+      needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: gh release edit "v${VERSION}" --draft=false --latest
 
   npm-publish:
     needs: [check-version, verify, release]
